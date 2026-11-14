@@ -5,6 +5,11 @@
 // out one above the other, 100 mm apart, in the order of the booklet; y runs up, so each
 // piece reads as in the diagrams (length left to right, the stock's first edge on top).
 //
+// Measured cuts (machine.ts) go on a layer per operation: POCKET_6.35MM, DRILL_D35MM_13MM,
+// DRILL_D5MM_THRU, CUTOUT_THRU, so a CAM program (VCarve, Carbide Create, Fusion) gives one
+// toolpath to each layer; holes are CIRCLEs at their true diameter. With `piece`, the file is
+// one sheet with its lower-left corner at the origin and part outlines on PROFILE_THRU.
+//
 // Two flavours, like the face outline export (crates/export dxf.rs): LWPOLYLINE, which
 // every laser and CAM program reads; or R12 (`$ACADVER` AC1009, POLYLINE / VERTEX / SEQEND)
 // for strict R12-only readers.
@@ -48,16 +53,71 @@ class Dxf {
   }
 }
 
+/** A length in mm for a layer name: at most two decimals, "6.35". R12 names allow only
+ * letters, digits, "_", "-" and "$", so there the point is a "P" ("6P35"). */
+function layerMm(m: number, r12: boolean): string {
+  const s = String(Math.round(m * MM * 100) / 100);
+  return r12 ? s.replace(".", "P") : s;
+}
+
+/** CNC layers, one per operation so a CAM program assigns one toolpath to each:
+ * POCKET_<depth>MM, DRILL_D<dia>MM_<depth>MM or DRILL_D<dia>MM_THRU, CUTOUT_THRU, and
+ * PROFILE_THRU for part outlines in a per-sheet file. Cuts from the other face are FLIP_... */
+export function featureLayers(f: BlankFeatures, r12 = false): { pockets: string[]; drills: string[]; flipPockets: string[]; flipDrills: string[] } {
+  const pocket = (d: number) => `POCKET_${layerMm(d, r12)}MM`;
+  const drill = (h: { diameter: number; depth: number; through: boolean }) => `DRILL_D${layerMm(h.diameter, r12)}MM_${h.through ? "THRU" : `${layerMm(h.depth, r12)}MM`}`;
+  return {
+    pockets: f.pockets.map((p) => pocket(p.depth)),
+    drills: f.drills.map(drill),
+    flipPockets: f.flip.pockets.map((p) => `FLIP_${pocket(p.depth)}`),
+    flipDrills: f.flip.drills.map((h) => `FLIP_${drill(h)}`),
+  };
+}
+
+export interface DxfOptions {
+  /** Only this piece (its index in `n.pieces`), with the sheet's lower-left corner at the
+   * origin and part outlines on PROFILE_THRU: one file per sheet, ready for a CAM job. */
+  piece?: number;
+}
+
 /** The whole nesting as one DXF. Without `features` the file is the rectangles only.
- * A measured profile replaces that part's rectangle. Pockets and drills are extra layers,
- * and only when a part actually has them. */
-export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>): string {
+ * A measured profile replaces that part's rectangle. Pockets, drills and cutouts go on a
+ * layer per operation (see `featureLayers`), and holes are circles. */
+export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>, options: DxfOptions = {}): string {
   const r12 = flavour === "r12";
   const d = new Dxf();
   const feat = (tag: string) => features?.get(tag);
-  const anyPocket = !!features && n.pieces.some((p) => p.placements.some((q) => (feat(q.tag)?.pockets.length ?? 0) > 0));
-  const anyDrill = !!features && n.pieces.some((p) => p.placements.some((q) => (feat(q.tag)?.drills.length ?? 0) > 0));
-  const layers = ["STOCK", "LABELS", ...n.pieces.map(pieceLayer), ...(anyPocket ? ["POCKETS"] : []), ...(anyDrill ? ["DRILL"] : [])];
+  const sheet = options.piece;
+  const pieces = sheet === undefined ? n.pieces.map((p, i) => ({ p, i })) : [{ p: n.pieces[sheet], i: sheet }];
+  if (sheet !== undefined && !n.pieces[sheet]) throw new Error(`no piece ${sheet}`);
+  const profileLayer = (p: StockPiece) => (sheet === undefined ? pieceLayer(p) : "PROFILE_THRU");
+  // Every layer the file uses, in a steady order.
+  const featureNames = new Set<string>();
+  let cutouts = false;
+  for (const { p } of pieces) {
+    for (const q of p.placements) {
+      const f = feat(q.tag);
+      if (!f) continue;
+      const l = featureLayers(f, r12);
+      for (const name of [...l.pockets, ...l.drills, ...l.flipPockets, ...l.flipDrills]) featureNames.add(name);
+      if (f.cutouts.length) cutouts = true;
+    }
+  }
+  const profiles = sheet === undefined ? n.pieces.map(pieceLayer) : ["PROFILE_THRU"];
+  const layers = ["STOCK", "LABELS", ...profiles, ...(cutouts ? ["CUTOUT_THRU"] : []), ...[...featureNames].sort()];
+  // Colours: stock grey (8), labels yellow (2), profiles through the ACI wheel, cutouts red,
+  // pockets cyan, drills blue, the other face magenta.
+  const colour = (name: string, i: number) => {
+    if (name === "0") return 7;
+    if (name === "STOCK") return 8;
+    if (name === "LABELS") return 2;
+    if (name.startsWith("FLIP_")) return 6;
+    if (name === "CUTOUT_THRU") return 1;
+    if (name.startsWith("POCKET_")) return 4;
+    if (name.startsWith("DRILL_")) return 5;
+    if (name === "PROFILE_THRU") return 3;
+    return 1 + ((i - 3) % 6);
+  };
   d.pair(0, "SECTION");
   d.pair(2, "HEADER");
   if (r12) {
@@ -83,12 +143,11 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   d.pair(0, "TABLE");
   d.pair(2, "LAYER");
   d.pair(70, layers.length + 1);
-  // Colours: stock grey (8), labels yellow (2), parts by piece through the ACI wheel.
   ["0", ...layers].forEach((name, i) => {
     d.pair(0, "LAYER");
     d.pair(2, name);
     d.pair(70, 0);
-    d.pair(62, name === "0" ? 7 : name === "STOCK" ? 8 : name === "LABELS" ? 2 : 1 + ((i - 3) % 6));
+    d.pair(62, colour(name, i));
     d.pair(6, "CONTINUOUS");
   });
   d.pair(0, "ENDTAB");
@@ -140,14 +199,25 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
     d.pair(21, dxfNum(y));
     d.pair(31, "0");
   };
+  const circle = (layer: string, x: number, y: number, r: number) => {
+    d.pair(0, "CIRCLE");
+    if (!r12) d.pair(100, "AcDbEntity");
+    d.pair(8, layer);
+    if (!r12) d.pair(100, "AcDbCircle");
+    d.pair(10, dxfNum(x));
+    d.pair(20, dxfNum(y));
+    d.pair(30, "0");
+    d.pair(40, dxfNum(r));
+  };
   const rect = (x: number, y: number, w: number, h: number): [number, number][] => [
     [x, y],
     [x + w, y],
     [x + w, y + h],
     [x, y + h],
   ];
-  const origins = pieceOrigins(n);
-  n.pieces.forEach((p, i) => {
+  const origins = sheet === undefined ? pieceOrigins(n) : [];
+  if (sheet !== undefined) origins[sheet] = [0, 0];
+  for (const { p, i } of pieces) {
     const [ox, oy] = origins[i];
     const W = p.width * MM;
     // Stock y (from the top edge) to file y (up): y' = oy + W - y.
@@ -158,36 +228,32 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       poly("STOCK", rect(ox + x0 * MM, fy(y1), (x1 - x0) * MM, (y1 - y0) * MM));
     }
     text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), `${p.index}. ${p.stock}${p.material ? ` - ${p.material}` : ""} (${p.seq} of ${p.count})`);
-    const layer = pieceLayer(p);
+    const layer = profileLayer(p);
     for (const q of p.placements) {
       // Blank (u, v) to file millimetres. v runs with the sheet's y, which the file flips.
       const f = feat(q.tag);
       const place = (u: number, v: number): [number, number] => [ox + (q.x + u) * MM, fy(q.y + v)];
       if (f?.profile && f.profile.length >= 3) poly(layer, f.profile.map(([u, v]) => place(u, v)));
       else poly(layer, rect(ox + q.x * MM, fy(q.y + q.dy), q.dx * MM, q.dy * MM));
-      const h = Math.max(1, Math.min(25, (q.dy * MM) / 4, (q.dx * MM) / (q.tag.length * 1.2 + 1)));
-      text("LABELS", ox + (q.x + q.dx / 2) * MM, fy(q.y + q.dy / 2) - h / 2, h, q.tag);
-      const labelAt = (loop: [number, number][]) => {
-        let u = 0;
-        let v = 0;
-        for (const pnt of loop) {
-          u += pnt[0];
-          v += pnt[1];
-        }
-        return place(u / loop.length, v / loop.length);
-      };
-      for (const pocket of f?.pockets ?? []) {
-        poly("POCKETS", pocket.loop.map(([u, v]) => place(u, v)));
-        const [x, y] = labelAt(pocket.loop);
-        text("POCKETS", x, y, Math.min(h, 8), `depth ${dxfNum(pocket.depth * MM)}`);
-      }
-      for (const drill of f?.drills ?? []) {
-        poly("DRILL", drill.loop.map(([u, v]) => place(u, v)));
-        const [x, y] = labelAt(drill.loop);
-        text("DRILL", x, y, Math.min(h, 8), `dia ${dxfNum(drill.diameter * MM)} depth ${dxfNum(drill.depth * MM)}`);
-      }
+      // A sheet on its own names each part, so the shop knows the left door from the right.
+      const label = sheet === undefined ? q.tag : `${q.tag} ${q.name}`;
+      const h = Math.max(1, Math.min(25, (q.dy * MM) / 4, (q.dx * MM) / (label.length * 0.9 + 1)));
+      text("LABELS", ox + (q.x + q.dx / 2) * MM, fy(q.y + q.dy / 2) - h / 2, h, label);
+      if (!f) continue;
+      const l = featureLayers(f, r12);
+      for (const c of f.cutouts) poly("CUTOUT_THRU", c.map(([u, v]) => place(u, v)));
+      f.pockets.forEach((pocket, k) => poly(l.pockets[k], pocket.loop.map(([u, v]) => place(u, v))));
+      f.flip.pockets.forEach((pocket, k) => poly(l.flipPockets[k], pocket.loop.map(([u, v]) => place(u, v))));
+      f.drills.forEach((drill, k) => {
+        const [x, y] = place(drill.center[0], drill.center[1]);
+        circle(l.drills[k], x, y, (drill.diameter * MM) / 2);
+      });
+      f.flip.drills.forEach((drill, k) => {
+        const [x, y] = place(drill.center[0], drill.center[1]);
+        circle(l.flipDrills[k], x, y, (drill.diameter * MM) / 2);
+      });
     }
-  });
+  }
   d.pair(0, "ENDSEC");
   d.pair(0, "EOF");
   return d.lines.join("\n") + "\n";

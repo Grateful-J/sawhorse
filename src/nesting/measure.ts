@@ -11,6 +11,8 @@ export interface MeasuredNest {
   features: Map<string, BlankFeatures>;
   /** Part names whose extra cuts were left out. */
   skipped: string[];
+  /** Part names with cuts in both faces (a second setup). */
+  flipped: string[];
 }
 
 /** Solids that belong to a placement: the solid itself, or the solids of an instance. */
@@ -19,6 +21,21 @@ function solidsOf(objects: { id: number; parent: number | null }[], q: Placement
   if ("object" in item) return [item.object];
   const node = item.node;
   return objects.filter((o) => o.parent === node).map((o) => o.id);
+}
+
+/** A ring's area in the plane normal to `n` (Newell). */
+function ringArea(ring: V3[], n: V3): number {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % ring.length];
+    x += (p[1] - q[1]) * (p[2] + q[2]);
+    y += (p[2] - q[2]) * (p[0] + q[0]);
+    z += (p[0] - q[0]) * (p[1] + q[1]);
+  }
+  return Math.abs(x * n[0] + y * n[1] + z * n[2]) / 2;
 }
 
 /**
@@ -30,8 +47,9 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
   const cache = new Map<number, FaceLoop[]>();
   const features = new Map<string, BlankFeatures>();
   const skipped: string[] = [];
-  const note = (name: string) => {
-    if (!skipped.includes(name)) skipped.push(name);
+  const flipped: string[] = [];
+  const note = (list: string[], name: string) => {
+    if (!list.includes(name)) list.push(name);
   };
   const loopsOf = async (id: number): Promise<FaceLoop[]> => {
     const hit = cache.get(id);
@@ -39,10 +57,14 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
     const faces = await kernel.faces(id);
     const loops: FaceLoop[] = [];
     for (const face of faces) {
-      const rings = await kernel.outline("face", id, face.id);
-      for (const ring of rings) {
-        if (ring.length >= 3) loops.push({ points: ring, normal: face.normal, origin: face.origin });
-      }
+      const rings = (await kernel.outline("face", id, face.id)).filter((r) => r.length >= 3);
+      if (!rings.length) continue;
+      // The outer ring encloses the most area; the rest are holes in the face.
+      let outer = 0;
+      rings.forEach((r, i) => {
+        if (ringArea(r, face.normal) > ringArea(rings[outer], face.normal)) outer = i;
+      });
+      loops.push({ points: rings[outer], holes: rings.filter((_, i) => i !== outer), normal: face.normal, origin: face.origin });
     }
     cache.set(id, loops);
     return loops;
@@ -56,12 +78,13 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
         for (const id of ids) loops.push(...(await loopsOf(id)));
         if (!loops.length) continue;
         const feat = machineBlank(q.size, loops, q.turned);
-        if (feat.skipped) note(q.name);
-        if (feat.profile || feat.pockets.length || feat.drills.length) features.set(q.tag, feat);
+        if (feat.skipped) note(skipped, q.name);
+        if (feat.flip.pockets.length || feat.flip.drills.length) note(flipped, q.name);
+        if (feat.profile || feat.cutouts.length || feat.pockets.length || feat.drills.length || feat.flip.pockets.length || feat.flip.drills.length) features.set(q.tag, feat);
       } catch {
-        note(q.name);
+        note(skipped, q.name);
       }
     }
   }
-  return { features, skipped };
+  return { features, skipped, flipped };
 }
