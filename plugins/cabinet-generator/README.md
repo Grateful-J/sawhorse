@@ -4,6 +4,8 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
 
 ## Use it
 
+The step-by-step guide, from a cabinet to the CAM job (shop setup, rows, base frames, the track saw, and what to change when a joint is too tight), is [CNC cabinets](../../docs/CNC-CABINETS.md). What follows is the plugin's own reference.
+
 1. Open the Plugins pane (the puzzle-piece tab at the end of the side panel) and click **Enable…** beside Cabinet generator. The dialog lists what it asks for: read the model, change the model, add a panel and a command, keep settings.
 2. The **Cabinet** section appears at the top of the pane, laid out like a cabinet shop's order form: **Start from**, **Name**, then eight numbered groups. Each group shows one line on what is in it while closed ("24 × 34 1/2 × 23 1/4 · 4 toe kick"); click one to open it (the one that was open closes). A field shows only when it applies.
    - **Start from** fills in a cabinet: Base (door and shelf), Drawer base (3 drawers), Sink base (2 doors, open top), Base (drawer over door), Trash pull-out (2 bins), Wall cabinet (doors, nailers), Tall pantry (needs sheets over 4 ft), or Open shelves. It sets the style, the usual sizes, the top and the name, and keeps your stock, joints and hardware. Base cabinets are 23 1/4 in deep (24 in with the door, the frameless standard, and a side and a top share a 4 x 4 sheet) with two stretchers for a top; in millimetres they are 870 tall with the toe kick (a 720 carcass on a plinth) and 560 deep.
