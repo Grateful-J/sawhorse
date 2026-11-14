@@ -3,7 +3,7 @@ import { audit, partMesh } from "../../plugins/cabinet-generator/mesh.js";
 
 const IN = 0.0254;
 
-function box(sx: number, sy: number, sz: number, prisms: { min: [number, number, number]; max: [number, number, number] }[] = [], holes: { axis: 0 | 1 | 2; at: number; inward: 1 | -1; center: [number, number]; radius: number; depth: number; sides?: number }[] = []) {
+function box(sx: number, sy: number, sz: number, prisms: { min: [number, number, number]; max: [number, number, number] }[] = [], holes: { axis: 0 | 1 | 2; at: number; inward: 1 | -1; center: [number, number]; radius: number; depth: number; sides?: number; through?: boolean }[] = []) {
   const mesh = partMesh("part", [sx, sy, sz], prisms, holes);
   const a = audit(mesh);
   expect(a.problems, a.problems.join("\n")).toEqual([]);
@@ -68,6 +68,23 @@ describe("cabinet part meshes", () => {
     const hole = Math.PI * r * r * depth;
     expect(v).toBeLessThan(full - 2 * hole * 0.95);
     expect(v).toBeGreaterThan(full - 2 * hole);
+  });
+
+  it("a through hole comes out of the other face", () => {
+    const t = 0.018;
+    const r = 0.0025;
+    const v = box(0.4, t, 0.2, [], [{ axis: 1, at: 0, inward: 1, center: [0.15, 0.1], radius: r, depth: t, through: true }]);
+    // A 16-gon is a little under the circle.
+    expect(v).toBeLessThan(0.4 * t * 0.2 - Math.PI * r * r * t * 0.95);
+    expect(v).toBeGreaterThan(0.4 * t * 0.2 - Math.PI * r * r * t);
+    const mesh = partMesh("part", [0.4, t, 0.2], [], [{ axis: 1, at: 0, inward: 1, center: [0.15, 0.1], radius: r, depth: t, through: true }]);
+    // No floor: both faces have the ring as a hole.
+    expect(mesh.faces.filter((f) => f.length === 2)).toHaveLength(2);
+  });
+
+  it("a prism past the blank is cut at the blank", () => {
+    const v = box(0.1, 0.1, 0.1, [{ min: [-1, 0.02, 0.09], max: [0.02, 0.2, 0.2] }]);
+    expect(v).toBeCloseTo(0.001 - 0.02 * 0.08 * 0.01, 12);
   });
 
   it("refuses a hole that crosses the edge", () => {

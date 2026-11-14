@@ -6,7 +6,9 @@
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {{ min: V3, max: V3 }} Prism */
-/** @typedef {{ axis: 0 | 1 | 2, at: number, inward: 1 | -1, center: [number, number], radius: number, depth: number, sides?: number }} Hole */
+/** A round hole drilled into the face at `at` on `axis`, `depth` deep toward `inward`.
+ * `through`: it comes out of the opposite face (`depth` is then the part's thickness).
+ * @typedef {{ axis: 0 | 1 | 2, at: number, inward: 1 | -1, center: [number, number], radius: number, depth: number, sides?: number, through?: boolean }} Hole */
 /** @typedef {{ name: string, positions: V3[], faces: number[][][], merge_coplanar: boolean }} Mesh */
 
 const EPS = 1e-9;
@@ -37,6 +39,14 @@ function inPrism(c, p) {
  */
 export function partMesh(name, size, prisms = [], holes = []) {
   if (size.some((s) => !(s > 0))) throw new Error(`${name}: every size must be positive`);
+  // A prism that runs past the blank (a dado out through the top) is cut at the blank:
+  // outside it there is nothing to remove.
+  prisms = prisms
+    .map((p) => ({
+      min: /** @type {V3} */ (p.min.map((v, k) => Math.max(0, Math.min(size[k], v)))),
+      max: /** @type {V3} */ (p.max.map((v, k) => Math.max(0, Math.min(size[k], v)))),
+    }))
+    .filter((p) => p.min.every((v, k) => p.max[k] - v > EPS));
   const cuts = /** @type {[number[], number[], number[]]} */ ([0, 1, 2].map((axis) => unique([0, size[axis], ...prisms.flatMap((p) => [p.min[axis], p.max[axis]])])));
   const [nx, ny, nz] = cuts.map((c) => c.length - 1);
   /** @type {boolean[][][]} */
@@ -123,10 +133,11 @@ function drill(hole, positions, faces, vid) {
     return a;
   };
   // The outer ring is f[0]. Later rings are holes already cut in that same face.
-  const face = faces.findIndex((f) => {
+  /** @param {number} plane */
+  const findFace = (plane) => faces.findIndex((f) => {
     const loop = f[0];
     if (!loop || loop.length < 4) return false;
-    if (!loop.every((i) => Math.abs(positions[i][axis] - at) <= 1e-8)) return false;
+    if (!loop.every((i) => Math.abs(positions[i][axis] - plane) <= 1e-8)) return false;
     const us = loop.map((i) => positions[i][axes[0]]);
     const vs = loop.map((i) => positions[i][axes[1]]);
     const u0 = Math.min(...us);
@@ -150,6 +161,7 @@ function drill(hole, positions, faces, vid) {
     }
     return true;
   });
+  const face = findFace(at);
   if (face < 0) throw new Error("a hole does not lie in one face; it crosses a joint or the edge");
   /** @type {V3[]} */
   const ring = [];
@@ -173,6 +185,9 @@ function drill(hole, positions, faces, vid) {
   })();
   const faceArea = area(faces[face][0]);
   if (ringArea * faceArea > 0) ring.reverse();
+  // A through hole needs its exit in one face too, found before anything is added.
+  const exit = hole.through ? findFace(at + inward * depth) : -1;
+  if (hole.through && exit < 0) throw new Error("a through hole does not come out in one face; it crosses a joint or the edge");
   const ids = ring.map(vid);
   faces[face].push(ids);
   /** @param {V3} p */
@@ -182,6 +197,16 @@ function drill(hole, positions, faces, vid) {
     return q;
   };
   const floor = [...ids].reverse().map((id) => vid(inset(positions[id])));
+  if (hole.through) {
+    // The floor ring becomes a hole in the exit face: it already winds against the wall.
+    faces[exit].push(floor);
+    for (let i = 0; i < ids.length; i++) {
+      const a = ids[i];
+      const b = ids[(i + 1) % ids.length];
+      faces.push([[b, a, vid(inset(positions[a])), vid(inset(positions[b]))]]);
+    }
+    return;
+  }
   // Wall: the face's hole edge is A->B, so the wall's opening edge is B->A.
   for (let i = 0; i < ids.length; i++) {
     const a = ids[i];

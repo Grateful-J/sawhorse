@@ -11,6 +11,8 @@ export interface Hole {
   radius: number;
   depth: number;
   sides?: number;
+  /** Comes out of the opposite face (`depth` is the thickness). */
+  through?: boolean;
 }
 export interface Mesh {
   name: string;
