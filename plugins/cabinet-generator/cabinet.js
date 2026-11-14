@@ -39,7 +39,7 @@ const MM = 0.001;
  *   name: string,
  *   width: number, height: number, depth: number,
  *   thickness: number, frontThickness: number, drawerThickness: number, backThickness: number,
- *   layout: Layout, shelves: number, drawers: number,
+ *   layout: Layout, shelves: number, drawers: number, drawerFront: number,
  *   base: Base, toeKick: number, toeSetback: number,
  *   back: boolean, backMount: BackMount, backInset: number, backGrooveDepth: number,
  *   front: Front, gap: number,
@@ -88,9 +88,11 @@ export const RUNNERS = {
     screwHeight: 37,
     bottomClearance: 14,
     heightDeduct: 21,
+    // A notched back's notch, 35 wide x 13 high (catalog p. 11). Not cut here: the back sits on
+    // the bottom, Blum's "no notching" option.
     rearNotch: 35,
     thinShift: 0,
-    lock: "T51.1901 R/L locking devices: screwed on, nothing to drill",
+    lock: "T51.1901 R/L locking devices: two 2.5 mm pilot holes each, 10 mm deep at 75 degrees, with the T65.1600.01 template",
   },
   movento: {
     name: "Blum MOVENTO 763H",
@@ -105,7 +107,8 @@ export const RUNNERS = {
     heightDeduct: 23,
     rearNotch: 50,
     // "If using 15/32 or 1/2 drawer thickness without T59.K010M, subtract 3 from setback and
-    // screw locations."
+    // screw locations" (2026 catalog p. 13). T59.K010M is for 12 and 13 mm sub-fronts: the
+    // box's front, here the drawer box stock.
     thinShift: 3,
     lock: "T51.7601 R/L locking devices: pre-bore 2.5 mm at 75 degrees with the T65.1600.01 template",
   },
@@ -116,13 +119,16 @@ const BLUM = {
   insideDeduct: 42,
   bottomRecess: 13,
   frontScrew: 37,
+  // Blum: 13 (1/2 in) to 16 (5/8 in), its table down to 12; 11.5 lets 15/32 in plywood in.
   minSide: 11.5,
   maxSide: 16.2,
   minInside: 170,
+  // The rear hook holes: in the drawer BACK's rear face, one at each end, 7 from the inside
+  // face of the drawer side and 11 above the 13 mm notch line (24 up from the bottom of the
+  // box), 6 across and 10 deep (TANDEM catalog p. 11, MOVENTO p. 11).
   hookDia: 6,
   hookDepth: 10,
   hookIn: 7,
-  // 11 above the 13 notch.
   hookUp: 24,
 };
 /** CLIP top: a 35 mm cup 13 mm deep; its centre is 17.5 mm plus the boring distance (3 to 7,
@@ -133,8 +139,11 @@ const CUP = { dia: 35, depth: 13, radius: 17.5, minK: 3, maxK: 7, plateSetback: 
 const PLATE_HALF = 26 * MM;
 /** The least wood left between a drilled hole and a cut or an edge. */
 const WEB = 3 * MM;
-/** System 32 screw holes for plates and runners (5 mm, for Blum system screws). */
+/** System 32 screw holes for runners (5 mm, for Blum system screws). */
 const SYS = { dia: 5, depth: 13 };
+/** Hinge mounting plate holes: Blum draws them 5 mm, 11.5 deep, for the plate's pre-mounted
+ * system screws (173L8100, 175L8100 ...; the 173L6100 family takes wood screws instead). */
+const PLATE_HOLE = { dia: 5, depth: 11.5 };
 /** A rail's tongue stops this short of the bottom of its dado, so the shoulders close. */
 const RELIEF = 0.5 * MM;
 /** Panels in grooves (backs, drawer bottoms) are this much smaller per edge than groove to groove. */
@@ -162,14 +171,14 @@ export const MATERIALS = {
  * @type {Preset[]}
  */
 export const PRESETS = [
-  { id: "base", label: "Base: door and a shelf", name: "Base", layout: "doors", shelves: 1, drawers: 0, base: "toekick", in: [24, 34.5, 24], mm: [600, 720, 560], doorPullFrom: "top" },
-  { id: "drawers", label: "Drawer base: three drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 24], mm: [450, 720, 560] },
-  { id: "sink", label: "Sink base: doors, no shelf", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 24], mm: [900, 720, 560], doorPullFrom: "top" },
-  { id: "mixed", label: "Base: a drawer over a door", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 24], mm: [600, 720, 560], doorPullFrom: "top" },
-  { id: "trash", label: "Trash pull-out: two bins", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 24], mm: [450, 720, 560], drawerPull: "top" },
+  { id: "base", label: "Base: door and a shelf", name: "Base", layout: "doors", shelves: 1, drawers: 0, base: "toekick", in: [24, 34.5, 23.25], mm: [600, 870, 560], doorPullFrom: "top" },
+  { id: "drawers", label: "Drawer base: three drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560] },
+  { id: "sink", label: "Sink base: doors, no shelf", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 23.25], mm: [900, 870, 560], doorPullFrom: "top" },
+  { id: "mixed", label: "Base: a drawer over a door", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 23.25], mm: [600, 870, 560], doorPullFrom: "top" },
+  { id: "trash", label: "Trash pull-out: two bins", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], drawerPull: "top" },
   { id: "wall", label: "Wall cabinet: doors, 12 in deep, nailers", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12], mm: [600, 720, 300], doorPullFrom: "bottom", doorPullEnd: [2.5, 64], nailers: "both" },
-  { id: "tall", label: "Tall pantry: 84 in (needs a sheet over 4 ft)", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 24], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
-  { id: "open", label: "Open shelves, no doors", name: "Shelves", layout: "shelves", shelves: 2, drawers: 0, base: "toekick", in: [30, 34.5, 12], mm: [600, 720, 300] },
+  { id: "tall", label: "Tall pantry: 84 in (needs a sheet over 4 ft)", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 23.25], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
+  { id: "open", label: "Open shelves, no doors", name: "Shelves", layout: "shelves", shelves: 2, drawers: 0, base: "toekick", in: [30, 34.5, 12], mm: [600, 870, 300] },
 ];
 
 /**
@@ -238,34 +247,40 @@ export function defaults(metric) {
   return metric
     ? {
         name: "Cabinet 1",
-        width: 600 * MM, height: 720 * MM, depth: 560 * MM,
-        thickness: 18 * MM, frontThickness: 12 * MM, drawerThickness: 12 * MM, backThickness: 6 * MM,
-        layout: "shelves", shelves: 1, drawers: 3,
+        // 870 with the toe kick: a 720 carcass on a 150 plinth, under a worktop at about 900.
+        width: 600 * MM, height: 870 * MM, depth: 560 * MM,
+        // Drawer fronts are door stock, so a drawer over a door is flush with it.
+        thickness: 18 * MM, frontThickness: 18 * MM, drawerThickness: 12 * MM, backThickness: 6 * MM,
+        layout: "shelves", shelves: 1, drawers: 3, drawerFront: 150 * MM,
         base: "toekick", toeKick: 100 * MM, toeSetback: 75 * MM,
         back: true, backMount: "groove", backInset: 12 * MM, backGrooveDepth: 8 * MM,
         front: "overlay", gap: 3 * MM,
-        dados: false, dadoDepth: 6 * MM, dadoStop: 12 * MM, fit: 0.2 * MM, bit: 6 * MM,
+        dados: true, dadoDepth: 6 * MM, dadoStop: 12 * MM, fit: 0.2 * MM, bit: 6 * MM,
         slides: "tandem", runner: 0,
-        hardware: false, hingeInset: 100 * MM, cupDistance: 4.5 * MM,
+        hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM,
         drawerPull: "center", drawerPullFromTop: 38 * MM, pullSpacing: 96 * MM, notchWidth: 100 * MM, notchDepth: 25 * MM,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 64 * MM, doorPullEdge: 38 * MM, doorPullSpacing: 96 * MM,
         pullHole: 5 * MM,
         doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 75 * MM,
-        trashBins: "deep", binWidth: 280 * MM, binLength: 230 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
+        // Placeholders (measure your bins): two 190 mm cutouts front to back fit the 457 mm runner
+        // a 560 mm box takes.
+        trashBins: "deep", binWidth: 280 * MM, binLength: 190 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
       }
     : {
         name: "Cabinet 1",
         // "3/4" plywood is 23/32 in, "1/2" is 15/32, "1/4" is 7/32 (the stock library says the
         // same). Measure yours and type it in: every joint is cut to these numbers.
-        width: 24 * IN, height: 34.5 * IN, depth: 24 * IN,
-        thickness: (23 / 32) * IN, frontThickness: (15 / 32) * IN, drawerThickness: (15 / 32) * IN, backThickness: (7 / 32) * IN,
-        layout: "shelves", shelves: 1, drawers: 3,
+        // A frameless box 23 1/4 in deep is 24 in with its door; and its side and top share a 4 x 4 sheet.
+        width: 24 * IN, height: 34.5 * IN, depth: 23.25 * IN,
+        // Drawer fronts are door stock, so a drawer over a door is flush with it.
+        thickness: (23 / 32) * IN, frontThickness: (23 / 32) * IN, drawerThickness: (15 / 32) * IN, backThickness: (7 / 32) * IN,
+        layout: "shelves", shelves: 1, drawers: 3, drawerFront: 6 * IN,
         base: "toekick", toeKick: 4 * IN, toeSetback: 3 * IN,
         back: true, backMount: "groove", backInset: 0.5 * IN, backGrooveDepth: (5 / 16) * IN,
         front: "overlay", gap: 0.125 * IN,
-        dados: false, dadoDepth: 0.25 * IN, dadoStop: 0.5 * IN, fit: 0.008 * IN, bit: 0.25 * IN,
+        dados: true, dadoDepth: 0.25 * IN, dadoStop: 0.5 * IN, fit: 0.008 * IN, bit: 0.25 * IN,
         slides: "tandem", runner: 0,
-        hardware: false, hingeInset: 3.5 * IN, cupDistance: 4.5 * MM,
+        hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM,
         drawerPull: "center", drawerPullFromTop: 1.5 * IN, pullSpacing: 3 * IN, notchWidth: 4 * IN, notchDepth: 1 * IN,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 2.5 * IN, doorPullEdge: 1.5 * IN, doorPullSpacing: 3 * IN,
         pullHole: 5 * MM,
@@ -304,6 +319,7 @@ export function normalize(saved, metric) {
     layout: pick("layout", /** @type {const} */ (["shelves", "doors", "drawers", "mixed", "trash"])),
     shelves: Math.round(num("shelves")),
     drawers: Math.round(num("drawers")),
+    drawerFront: num("drawerFront"),
     base,
     toeKick: oldNoKick ? d.toeKick : num("toeKick"),
     toeSetback: num("toeSetback"),
@@ -374,7 +390,7 @@ export function phrase(s, format, metric) {
   const shelves = `${n} ${n === 1 ? "shelf" : "shelves"}`;
   const drawers = `${s.drawers} ${s.drawers === 1 ? "drawer" : "drawers"}`;
   const bins = s.trashBins === "one" ? "one bin" : s.trashBins === "side" ? "two bins side by side" : "two bins front to back";
-  const layout = s.layout === "shelves" ? shelves : s.layout === "doors" ? `doors, ${n ? shelves : "no shelves"}` : s.layout === "drawers" ? drawers : s.layout === "trash" ? `trash pull-out, ${bins}` : `${drawers} and a door`;
+  const layout = s.layout === "shelves" ? shelves : s.layout === "doors" ? `doors, ${n ? shelves : "no shelves"}` : s.layout === "drawers" ? `${drawers}, equal fronts` : s.layout === "trash" ? `trash pull-out, ${bins}` : `${drawers} (${format(s.drawerFront)} ${s.drawers === 1 ? "front" : "fronts"}) over a door${n ? `, ${shelves}` : ""}`;
   const extra = `${s.dados ? ", blind dados" : ""}${s.hardware ? ", hardware holes" : ""}`;
   const runner = s.layout === "drawers" || s.layout === "mixed" || s.layout === "trash" ? `, ${RUNNERS[s.slides].name}` : "";
   const nailers = s.nailers === "top" ? ", top nailer" : s.nailers === "both" ? ", top and bottom nailers" : "";
@@ -417,6 +433,7 @@ function validate(s) {
   if (!Number.isInteger(s.drawers) || s.drawers < 0 || s.drawers > 8) return "Drawers: a whole number from 0 to 8.";
   const needsDrawers = s.layout === "drawers" || s.layout === "mixed";
   if (needsDrawers && s.drawers < 1) return "This layout needs at least one drawer.";
+  if (s.layout === "mixed" && !(s.drawerFront >= 3 * IN)) return "Each drawer front over the door must be at least 3 in (76 mm) tall.";
   if (!(s.gap >= 0) || s.gap > 0.5 * IN) return "The gap between fronts must be 0 to 1/2 in.";
   if (!(s.fit >= 0) || s.fit > 1 * MM) return "The fit must be 0 to 1 mm (0.04 in) over the stock.";
   if (!(s.bit > 0) || s.bit > 0.5 * IN) return "The bit diameter must be more than 0 and at most 1/2 in.";
@@ -476,13 +493,28 @@ function openings(s) {
     if (!(interior > s.shelves * t)) return "It is not tall enough for its shelves.";
     if (s.layout === "doors") bands.push({ z0: floor, z1: ceiling, kind: "door" });
   } else {
-    const n = s.layout === "drawers" ? s.drawers : s.drawers + 1;
-    const share = interior / n;
-    for (let i = 0; i < s.drawers; i++) bands.push({ z0: floor + i * share, z1: floor + (i + 1) * share, kind: "drawer" });
+    // Drawers are laid out by their fronts, as a shop draws them: a drawer cabinet's fronts are
+    // all one height, and drawers over a door are each `drawerFront` tall, stacked from the top,
+    // with the door under them. Overlay fronts cover the top and the bottom (or the toe kick
+    // line), so the top and bottom openings are a thickness shorter than the fronts' pitch.
+    const overlay = s.front === "overlay";
+    const top = overlay ? s.height : ceiling;
+    const bottom = overlay ? kick : floor;
+    const n = s.drawers;
+    const pitch = s.layout === "drawers" ? (top - bottom) / n : s.drawerFront + s.gap;
+    /** Where drawer k's front ends, counted down from the top (k = 0 is the top of the stack). */
+    const line = (/** @type {number} */ k) => top - k * pitch;
     if (s.layout === "mixed") {
-      const z0 = floor + s.drawers * share;
-      if (!(ceiling - z0 > s.shelves * t)) return "The opening above the drawers is not tall enough for its shelves.";
-      bands.push({ z0, z1: ceiling, kind: "door" });
+      const z1 = line(n);
+      if (!(z1 - floor > Math.max(s.shelves * t, 0) + 4 * IN)) return `The ${n === 1 ? "drawer takes" : "drawers take"} too much of the height to leave a door under ${n === 1 ? "it" : "them"}: make the drawer fronts shorter, or use fewer drawers.`;
+      bands.push({ z0: floor, z1, kind: "door" });
+    }
+    // Bottom to top: the fronts' order, and drawer 1 is the lowest.
+    for (let k = n - 1; k >= 0; k--) {
+      const z0 = s.layout === "drawers" && k === n - 1 ? floor : line(k + 1);
+      const z1 = k === 0 ? ceiling : line(k);
+      if (!(z1 - z0 > 0)) return "The drawer fronts are too short for their openings.";
+      bands.push({ z0, z1, kind: "drawer" });
     }
   }
   return { t, kick, innerW, innerD, floor, ceiling, bands };
@@ -607,11 +639,18 @@ function build(s, metric) {
   };
   /** @type {{ left: Hole[], right: Hole[] }} */
   const sideHoles = { left: [], right: [] };
-  /** @param {"left" | "right"} which @param {number} y @param {number} z @param {string} what @param {string} [fix] */
-  const sideHole = (which, y, z, what, fix) => {
+  /** What each side hole is for, to name the one a new hole would run into. */
+  const sideWhat = { left: /** @type {string[]} */ ([]), right: /** @type {string[]} */ ([]) };
+  /** @param {"left" | "right"} which @param {number} y @param {number} z @param {string} what @param {string} [fix] @param {{ dia: number, depth: number }} [kind] */
+  const sideHole = (which, y, z, what, fix, kind = SYS) => {
     const inner = which === "left" ? t : 0;
-    const h = /** @type {Hole} */ ({ axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [y, z], radius: (SYS.dia * MM) / 2, depth: SYS.depth * MM });
-    sideHoles[which].push(placeHole(`${which === "left" ? "Left" : "Right"} side`, sideSize, sidePrisms(inner), h, what, fix));
+    const part = `${which === "left" ? "Left" : "Right"} side`;
+    const h = /** @type {Hole} */ ({ axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [y, z], radius: (kind.dia * MM) / 2, depth: kind.depth * MM });
+    // A hinge plate and a runner both want the 37 mm line: two holes must keep wood between them.
+    const hit = sideHoles[which].findIndex((o) => Math.hypot(o.center[0] - y, o.center[1] - z) < o.radius + h.radius + WEB);
+    if (hit >= 0) throw new Error(`${part}: the ${what} runs into the ${sideWhat[which][hit]}. Change the hinge inset or the drawer sizes, or turn hardware holes off.`);
+    sideHoles[which].push(placeHole(part, sideSize, sidePrisms(inner), h, what, fix));
+    sideWhat[which].push(what);
   };
 
   // --- fronts --------------------------------------------------------------------------------
@@ -666,7 +705,7 @@ function build(s, metric) {
           !overlay ||
           (rails.every((rl) => fb.z0 + cz + PLATE_HALF <= rl.z - s.fit || fb.z0 + cz - PLATE_HALF >= rl.z + t + s.fit) &&
             [-1, 1].every((d) =>
-              holeClear(sideSize, sidePrisms(inner), { axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [CUP.plateSetback * MM, fb.z0 + cz + (d * CUP.plateSpacing * MM) / 2], radius: (SYS.dia * MM) / 2, depth: SYS.depth * MM }),
+              holeClear(sideSize, sidePrisms(inner), { axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [CUP.plateSetback * MM, fb.z0 + cz + (d * CUP.plateSpacing * MM) / 2], radius: (PLATE_HOLE.dia * MM) / 2, depth: PLATE_HOLE.depth * MM }),
             ));
         for (const want of zs) {
           // A plate that lands on a shelf slides along the door, the least it must, and stays
@@ -690,11 +729,18 @@ function build(s, metric) {
           holes.push(placeHole(name, size, [], { axis: 1, at: t, inward: -1, center: [cx, cz], radius: r, depth: CUP.depth * MM }, "hinge cup"));
           note(name, `Hinge cup, ${both(cz)} up, centre ${both(cupCenter)} from the hinge edge, back face${moved}`, `${CUP.dia} mm`, `${CUP.depth} mm`, "CNC");
           if (overlay) {
-            for (const dz of [-CUP.plateSpacing / 2, CUP.plateSpacing / 2]) sideHole(which, CUP.plateSetback * MM, fb.z0 + cz + dz * MM, "hinge plate hole");
-            note(which === "left" ? "Left side" : "Right side", `Hinge plate, 2 holes ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from front, centred ${both(fb.z0 + cz)} up`, `${SYS.dia} mm`, `${SYS.depth} mm`, "CNC");
+            for (const dz of [-CUP.plateSpacing / 2, CUP.plateSpacing / 2]) sideHole(which, CUP.plateSetback * MM, fb.z0 + cz + dz * MM, "hinge plate hole", undefined, PLATE_HOLE);
+            note(which === "left" ? "Left side" : "Right side", `Hinge plate, 2 holes ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from front, centred ${both(fb.z0 + cz)} up`, `${PLATE_HOLE.dia} mm`, `${PLATE_HOLE.depth} mm`, "CNC");
           }
         }
         if (!overlay) note(name, "Hinge mounting plates (inset)", "-", "-", "Not drilled: inset plate position depends on the hinge, see Blum's inset tables");
+        else if (leaf === leaves[0]) {
+          // Blum: overlay = 11 + boring distance - plate height (CLIP top 110, straight arm).
+          const want = t - g / 2;
+          const got = 11 * MM + s.cupDistance;
+          const k = (want - 11 * MM) / MM;
+          note("Doors", `Overlay: this door covers ${both(want)} of the side; a 0 mm plate with this boring distance gives ${fmtMm(got)} (Blum: 11 + boring distance). ${Math.abs(want - got) <= 0.5 * MM ? "Matched." : k >= CUP.minK && k <= CUP.maxK ? `Bore at ${Math.round(k * 10) / 10} mm to match, or take up ${fmtMm(Math.abs(want - got))} with the hinge's side screw.` : `Take up ${fmtMm(Math.abs(want - got))} with the hinge's side screw, or a ${want > got ? "thinner" : "thicker"} plate.`}`, "-", "-", "Hardware");
+        }
 
         // The pull, on the opening edge (away from the hinges).
         if (s.doorPull !== "none") {
@@ -822,7 +868,6 @@ function build(s, metric) {
       const dSize = /** @type {V3} */ ([ds, nl, sideH]);
       add("Drawer side", MATERIALS.box.name, dSize, [groove(ds)], [], { at: [x0, y0, z0], name: `Drawer ${n} left` });
       add("Drawer side", MATERIALS.box.name, dSize, [groove(0)], [], { at: [x0 + outside - ds, y0, z0], name: `Drawer ${n} right` });
-      if (s.hardware && i === 0) note("Drawer side", `Rear hook bore, rear end, ${BLUM.hookIn} mm in from outside, ${BLUM.hookUp} mm up`, `${BLUM.hookDia} mm`, `${BLUM.hookDepth} mm`, "Jig (edge bore)");
 
       /** @type {Prism[]} */
       const subFrame = [];
@@ -856,7 +901,20 @@ function build(s, metric) {
       }
       add("Drawer sub-front", MATERIALS.box.name, [inside, ds, boxH], [{ min: [0, ds - gd, gz[0]], max: [inside, ds, gz[1]] }, ...subFrame, ...subNotch], [], { at: [x0 + ds, y0, z0], name: `Drawer ${n} sub-front` });
       const backH = boxH - gz[1];
-      add("Drawer back", MATERIALS.box.name, [inside, ds, backH], backFrame, [], { at: [x0 + ds, y0 + nl - ds, z0 + gz[1]], name: `Drawer ${n} back` });
+      /** @type {Hole[]} */
+      const hooks = [];
+      if (s.hardware) {
+        // The runners' rear hooks: in the back's rear face, 7 mm from each end (the sides' inside
+        // faces), 24 mm above the bottom of the box. The back sits on the bottom, so the hole is
+        // just above the back's bottom edge: a thick bottom leaves no wood under it.
+        const hr = (BLUM.hookDia * MM) / 2;
+        const hz = BLUM.hookUp * MM - gz[1];
+        if (!(hz - hr >= 1 * MM)) throw new Error(`Drawer ${n}: Blum's rear hook hole is ${BLUM.hookUp} mm up, and the back sits on a ${both(bT)} bottom, so the hole would break out of the back's bottom edge. Use a bottom 6 mm (1/4 in) or thinner, or turn hardware holes off.`);
+        if (!(BLUM.hookDepth * MM <= ds - 1 * MM)) throw new Error(`Drawer ${n}: Blum's rear hook hole is ${BLUM.hookDepth} mm deep, too deep for a ${both(ds)} back.`);
+        for (const hx of [BLUM.hookIn * MM, inside - BLUM.hookIn * MM]) hooks.push({ axis: 1, at: ds, inward: -1, center: [hx, hz], radius: hr, depth: BLUM.hookDepth * MM });
+        if (i === 0) note("Drawer back", `Runner rear hook holes, rear face, ${BLUM.hookIn} mm in from each end (the sides' inside faces), ${BLUM.hookUp} mm above the bottom of the box`, `${BLUM.hookDia} mm`, `${BLUM.hookDepth} mm`, "CNC");
+      }
+      add("Drawer back", MATERIALS.box.name, [inside, ds, backH], backFrame, hooks, { at: [x0 + ds, y0 + nl - ds, z0 + gz[1]], name: `Drawer ${n} back` });
 
       const bw = inside + 2 * (gd - PANEL_GAP);
       const bl = nl - ds + gd - PANEL_GAP;
@@ -912,6 +970,12 @@ function build(s, metric) {
   // A groove narrower than the bit cannot be cut with it.
   const narrow = (s.back && grooved) || drawerBands.length ? bT + s.fit : Infinity;
   if (narrow < s.bit) note("Grooves", `Back and drawer-bottom grooves are ${both(narrow)} wide, narrower than the ${both(s.bit)} bit: cut their layers with a smaller bit (1/8 in or 3 mm)`, "-", "-", "Change bit");
+  // System holes and pull holes are smaller than a sheet-goods bit.
+  const small = rows.filter((r) => r[4] === "CNC" && /^\d+(\.\d+)? mm$/.test(r[2]) && parseFloat(r[2]) * MM < s.bit).map((r) => r[2]);
+  if (small.length) {
+    const sizes = [...new Set(small)].sort((a, b) => parseFloat(a) - parseFloat(b)).join(" and ");
+    note("Holes", `The ${sizes} holes are smaller than the ${both(s.bit)} bit: drill their DRILL_ layers with ${small.length > 1 && new Set(small).size > 1 ? `${sizes} drill bits` : `a ${sizes} drill bit`} (or bore them with a 1/8 in or 3 mm bit)`, "-", "-", "Change bit");
+  }
 
   return { parts, rows, runner, holes: drilled };
 }

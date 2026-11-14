@@ -96,13 +96,14 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   const rows = await page.locator(".cutlist table tbody tr").evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => ((td.querySelector(".name") ?? td).textContent ?? "").trim())));
   const byName = Object.fromEntries(rows.map((r) => [r[0], r.slice(1, 5)]));
   // Drawn at the measured 23/32 in (the list shows its nominal 3/4); the rails are 30 - 2 x 23/32
-  // long. The back sits in grooves 1/2 in from the rear: the top and bottom run to the rear
-  // edge, a shelf stops at the back (12 - 1/2 - 7/32 - 1/32 = 11 1/4).
+  // between the sides plus a tongue into each side's blind dado (1/4 in less 0.5 mm): 29 in.
+  // The back sits in grooves 1/2 in from the rear: the top and bottom run to the rear edge, a
+  // shelf stops at the back (12 - 1/2 - 7/32 - 1/32 = 11 1/4).
   expect(byName["Left side"]).toEqual(["1", "3/4", "12", "72"]);
   expect(byName["Right side"]).toEqual(["1", "3/4", "12", "72"]);
-  expect(byName["Top"]).toEqual(["1", "3/4", "12", "28 9/16"]);
-  expect(byName["Bottom"]).toEqual(["1", "3/4", "12", "28 9/16"]);
-  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 1/4", "28 9/16"]);
+  expect(byName["Top"]).toEqual(["1", "3/4", "12", "29"]);
+  expect(byName["Bottom"]).toEqual(["1", "3/4", "12", "29"]);
+  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 1/4", "29"]);
   expect(byName["Back"]).toEqual(["1", "1/4", "29 1/8", "67 1/8"]);
   expect(byName["Toe kick"]).toEqual(["1", "3/4", "4", "28 9/16"]);
   // One undo step takes the whole cabinet back.
@@ -254,6 +255,11 @@ test("model report: live counts that match the model, and an export as Markdown 
   const report = page.locator(`[data-panel="${REPORT}/report"]`);
   const counts = async () => Object.fromEntries(await report.locator('table[data-table="counts"] tbody tr').evaluateAll((trs) => trs.map((tr) => [tr.children[0].textContent, Number(tr.children[1].textContent)])));
   await expect.poll(counts).toMatchObject({ Solids: 0, Faces: 0 });
+  // Butt joints, so the faces below count by hand (blind dados are on by default).
+  const dados = page.locator(`[data-panel="${CABINET}/cabinet"] input[data-field="dados"]`);
+  await dados.click();
+  await expect(dados).not.toBeChecked();
+  await expect(page.locator(`[data-panel="${CABINET}/cabinet"] [data-note="status"]`)).not.toContainText("blind dados");
   await page.locator(`[data-panel="${CABINET}/cabinet"] [data-action="generate"]`).click();
   await expect(page.locator("#hint")).toContainText("Made a cabinet");
   // The report follows the edit; its counts are the model's.
@@ -267,7 +273,7 @@ test("model report: live counts that match the model, and an export as Markdown 
   // back (10 faces, 24 edges), one shelf, the back, the toe kick, and the cabinet.
   expect(truth).toEqual({ Solids: 7, Groups: 0, Components: 8, Instances: 8 });
   await expect.poll(counts).toMatchObject({ ...truth, Faces: 3 * 6 + 2 * 13 + 2 * 10, Edges: 3 * 12 + 2 * 30 + 2 * 24 });
-  await expect(report.locator('[data-note="size"]')).toContainText("Overall 24 wide x 24 deep x 34 1/2 high");
+  await expect(report.locator('[data-note="size"]')).toContainText("Overall 24 wide x 23 1/4 deep x 34 1/2 high");
   await expect(report.locator('[data-note="warnings"]')).toHaveText("No warnings.");
   // Units: millimetres, remembered by the plugin.
   await report.locator('[data-field="units"]').selectOption("mm");

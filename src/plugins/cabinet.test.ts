@@ -47,8 +47,32 @@ const floorOf = (part: Part, axis: number, v: number) =>
   part.mesh.faces.filter((f) => f[0].every((i) => Math.abs(part.mesh.positions[i][axis] - v) < 1e-6)).flatMap((f) => f[0].map((i) => part.mesh.positions[i]));
 
 describe("cabinet carcass", () => {
-  it("the default is a shelf cabinet of measured 3/4 ply on a notched toe kick, the back in grooves", () => {
-    const s = imperial({ width: 30 * IN, height: 72 * IN, depth: 12 * IN, shelves: 3 });
+  it("the defaults are what a CNC shop builds: measured 3/4 ply, blind dados, hardware drilled, fronts of door stock", () => {
+    for (const metric of [false, true]) {
+      const d = defaults(metric);
+      expect(d.dados).toBe(true);
+      expect(d.hardware).toBe(true);
+      expect(d.frontThickness).toBe(d.thickness);
+      expect(d.cupDistance).toBeCloseTo(5 * MM, 12);
+    }
+    // A metric base is 870 overall with its toe kick: a 720 carcass on a plinth.
+    expect(defaults(true).height).toBeCloseTo(870 * MM, 12);
+    expect(applyPreset(defaults(true), "base", true).height).toBeCloseTo(870 * MM, 12);
+    expect(applyPreset(defaults(true), "wall", true).height).toBeCloseTo(720 * MM, 12);
+    ok(defaults(false));
+    ok(defaults(true), true);
+  });
+
+  it("every starting point makes a cabinet with the defaults, in inches and in millimetres, on either runner", () => {
+    for (const metric of [false, true]) {
+      for (const p of PRESETS) {
+        for (const slides of ["tandem", "movento"] as const) ok({ ...applyPreset(defaults(metric), p.id, metric), slides }, metric);
+      }
+    }
+  });
+
+  it("a butt-jointed shelf cabinet of measured 3/4 ply on a notched toe kick, the back in grooves", () => {
+    const s = imperial({ width: 30 * IN, height: 72 * IN, depth: 12 * IN, shelves: 3, dados: false, hardware: false });
     expect(s.thickness).toBeCloseTo((23 / 32) * IN, 12);
     expect(s.name).toBe("Cabinet 1");
     expect(phrase(s, (m) => String(inches(m)), false)).toBe("30 x 72 x 12, 3 shelves, back, 4 toe kick");
@@ -79,7 +103,7 @@ describe("cabinet carcass", () => {
   });
 
   it("a back between the sides is the old butt joint", () => {
-    const p = ok(imperial({ width: 30 * IN, height: 72 * IN, depth: 12 * IN, backMount: "butt" }));
+    const p = ok(imperial({ width: 30 * IN, height: 72 * IN, depth: 12 * IN, backMount: "butt", dados: false }));
     const t = (23 / 32) * IN;
     expect(blank(named(p.parts, "Back")[0].blank)).toEqual(blank([30 * IN - 2 * t, (7 / 32) * IN, 68 * IN]));
     expect(blank(named(p.parts, "Top")[0].blank)).toEqual(blank([30 * IN - 2 * t, 12 * IN - (7 / 32) * IN, t]));
@@ -87,7 +111,7 @@ describe("cabinet carcass", () => {
   });
 
   it("no toe kick: plain sides, the bottom on the floor, nothing to set back", () => {
-    const s = imperial({ base: "none", back: false });
+    const s = imperial({ base: "none", back: false, dados: false });
     expect(phrase(s, (m) => String(inches(m)), false)).toContain("no toe kick");
     const p = ok(s);
     expect(p.parts.map((x) => x.name)).not.toContain("Toe kick");
@@ -134,7 +158,7 @@ describe("cabinet carcass", () => {
 });
 
 describe("fronts", () => {
-  it("overlay fronts tile the face with the gap asked for, none overlapping; drawer fronts are their own stock", () => {
+  it("overlay fronts tile the face with the gap asked for, all one height, none overlapping; drawer fronts are door stock on their own material", () => {
     const s = imperial({ layout: "drawers", drawers: 3, gap: (3 / 32) * IN });
     const p = ok(s);
     const fronts = named(p.parts, "Drawer front").flatMap((f) => f.copies.map((c) => ({ z0: c.at[2], z1: c.at[2] + f.blank[2], y: c.at[1], t: f.blank[1], material: f.material })));
@@ -143,9 +167,12 @@ describe("fronts", () => {
     expect(fronts[0].z0).toBeCloseTo(s.toeKick + (3 / 64) * IN, 9);
     expect(fronts[2].z1).toBeCloseTo(s.height - (3 / 64) * IN, 9);
     for (let i = 1; i < 3; i++) expect(fronts[i].z0 - fronts[i - 1].z1).toBeCloseTo((3 / 32) * IN, 9);
+    // A drawer cabinet's fronts are equal, as a shop lays them out.
+    const h = (s.height - s.toeKick - 3 * (3 / 32) * IN) / 3;
     for (const f of fronts) {
-      expect(f.t).toBeCloseTo((15 / 32) * IN, 12);
-      expect(f.y).toBeCloseTo(-(15 / 32) * IN, 12);
+      expect(f.z1 - f.z0).toBeCloseTo(h, 9);
+      expect(f.t).toBeCloseTo((23 / 32) * IN, 12);
+      expect(f.y).toBeCloseTo(-(23 / 32) * IN, 12);
       expect(f.material).toBe("Drawer front plywood");
     }
   });
@@ -160,7 +187,7 @@ describe("fronts", () => {
     expect(door.copies[0].at[1]).toBeCloseTo(-s.thickness, 12);
     const cups = rings(door, 1, s.thickness);
     expect(cups).toHaveLength(2);
-    for (const [x] of cups) expect(x).toBeCloseTo(22 * MM, 6);
+    for (const [x] of cups) expect(x).toBeCloseTo(22.5 * MM, 6);
     // Its plate on the left side, 37 mm back, two holes 32 mm apart per hinge.
     const left = named(p.parts, "Left side")[0];
     expect(rings(left, 0, s.thickness)).toHaveLength(4);
@@ -222,19 +249,60 @@ describe("fronts", () => {
     expect(n.p.rows.some((r) => /Finger notch/.test(r[1]))).toBe(true);
   });
 
+  it("drawers over a door: the drawers on top at the front height asked for, the door under them, flush", () => {
+    const s = imperial({ layout: "mixed", drawers: 1, shelves: 1, gap: 0.125 * IN });
+    const p = ok(s);
+    const door = named(p.parts, "Door")[0];
+    const front = named(p.parts, "Drawer front")[0];
+    const dz = door.copies[0].at[2];
+    const fz = front.copies[0].at[2];
+    expect(fz).toBeGreaterThan(dz);
+    expect(front.blank[2]).toBeCloseTo(6 * IN, 9);
+    expect(fz + front.blank[2]).toBeCloseTo(s.height - 0.0625 * IN, 9);
+    expect(dz).toBeCloseTo(s.toeKick + 0.0625 * IN, 9);
+    expect(fz - (dz + door.blank[2])).toBeCloseTo(0.125 * IN, 9);
+    // Same face plane: no step between the drawer front and the door.
+    expect(front.copies[0].at[1]).toBeCloseTo(door.copies[0].at[1], 12);
+    // The shelf is behind the door, not the drawer.
+    const shelf = named(p.parts, "Shelf")[0].copies[0].at[2];
+    expect(shelf).toBeLessThan(dz + door.blank[2]);
+    expect(plan(imperial({ layout: "mixed", drawers: 4, drawerFront: 8 * IN }), false).error).toMatch(/door under/);
+  });
+
+  it("two holes in a side never run into each other", () => {
+    // A hinge cup pulled right up under the drawer puts its plate on the runner's 37 mm line.
+    const s = imperial({ layout: "mixed", drawers: 1, shelves: 0, hardware: true, hingeInset: 25 * MM, drawerFront: 5 * IN });
+    const p = plan(s, false);
+    if (p.error) expect(p.error).toMatch(/runs into|lands on/);
+    else {
+      const right = named(p.parts, "Left side")[0];
+      const holes = rings(right, 0, s.thickness);
+      for (let i = 0; i < holes.length; i++) for (let j = i + 1; j < holes.length; j++) expect(Math.hypot(holes[i][0] - holes[j][0], holes[i][1] - holes[j][1])).toBeGreaterThan(5 * MM);
+    }
+  });
+
+  it("says when the holes are smaller than the bit", () => {
+    const p = ok(imperial({ layout: "doors", hardware: true }));
+    expect(p.rows.some((r) => r[4] === "Change bit" && /5 mm holes are smaller than/.test(r[1]))).toBe(true);
+    expect(ok(imperial({ layout: "doors", hardware: true, bit: 3 * MM })).rows.some((r) => /holes are smaller/.test(r[1]))).toBe(false);
+  });
+
   it("refuses hinge cups in door stock thinner than 16 mm", () => {
     expect(plan(imperial({ layout: "doors", hardware: true, thickness: 0.5 * IN, backMount: "butt" }), false).error).toMatch(/13 mm deep/);
   });
 
   it("a hinge plate slides off a shelf rather than land on it", () => {
-    const s = normalize({ ...defaults(true), layout: "mixed", drawers: 2, dados: true, hardware: true }, true);
-    const p = ok(s, true);
+    // A cup 1 in up the door puts its plate on the bottom's dado.
+    const s = imperial({ layout: "doors", dados: true, hardware: true, hingeInset: 1 * IN });
+    const p = ok(s);
     expect(p.rows.some((r) => /moved/.test(r[1]))).toBe(true);
   });
 });
 
 describe("Blum drawers", () => {
-  const mixed = imperial({ layout: "mixed", drawers: 2, width: 18 * IN, depth: 23 * IN, dados: true, hardware: true });
+  // Three equal fronts: the bottom drawer's opening is its pitch less the bottom's thickness.
+  const mixed = imperial({ layout: "drawers", drawers: 3, width: 18 * IN, depth: 23 * IN, dados: true, hardware: true });
+  const pitch = (34.5 * IN - 4 * IN) / 3;
   const ds = (15 / 32) * IN;
   const bT = (7 / 32) * IN;
 
@@ -245,8 +313,7 @@ describe("Blum drawers", () => {
     const side = named(p.parts, "Drawer side")[0];
     expect(side.blank[0]).toBeCloseTo(ds, 12);
     expect(side.blank[1]).toBeCloseTo(533 * MM, 12);
-    const interior = 34.5 * IN - 4 * IN - 2 * mixed.thickness;
-    const boxH = Math.floor((interior / 3 - 21 * MM) / (IN / 16) + 1e-6) * (IN / 16);
+    const boxH = Math.floor((pitch - mixed.thickness - 21 * MM) / (IN / 16) + 1e-6) * (IN / 16);
     expect(side.blank[2]).toBeCloseTo(boxH, 12);
     // The bottom groove starts 13 mm up, the bottom plus the fit wide.
     expect(on(side, 2, 13 * MM).length).toBeGreaterThan(0);
@@ -255,7 +322,7 @@ describe("Blum drawers", () => {
     const back = named(p.parts, "Drawer back")[0];
     expect(back.blank[0]).toBeCloseTo(opening - 42 * MM, 12);
     expect(back.blank[2]).toBeCloseTo(boxH - 13 * MM - bT - mixed.fit, 12);
-    expect(back.mesh.faces).toHaveLength(6);
+    expect(back.mesh.faces).toHaveLength(6 + 2 * 17);
     // The bottom runs from the sub-front's groove to the back of the box.
     const bottom = named(p.parts, "Drawer bottom")[0];
     const gd = Math.min(ds / 2, 0.25 * IN);
@@ -268,7 +335,7 @@ describe("Blum drawers", () => {
     const z = 4 * IN + mixed.thickness + 37 * MM;
     expect(holes.some(([, hz]) => Math.abs(hz - z) < 1e-6)).toBe(true);
     const text = p.rows.map((r) => r.join(" ")).join("\n");
-    expect(text).toContain("Rear hook bore");
+    expect(text).toContain("rear hook holes");
     expect(text).toContain("slides in from the back");
     expect(text).toMatch(/narrower than the .* bit/);
   });
@@ -277,13 +344,36 @@ describe("Blum drawers", () => {
     const s = { ...mixed, slides: "movento" as const };
     const p = ok(s);
     expect(p.runner?.part).toBe("763H5330S");
-    const interior = 34.5 * IN - 4 * IN - 2 * s.thickness;
-    const want = Math.floor((interior / 3 - 23 * MM) / (IN / 16) + 1e-6) * (IN / 16);
+    const want = Math.floor((pitch - s.thickness - 23 * MM) / (IN / 16) + 1e-6) * (IN / 16);
     expect(named(p.parts, "Drawer side")[0].blank[2]).toBeCloseTo(want, 12);
     expect(p.rows.some((r) => /at 34, 258, 514 mm from front, 38 mm above/.test(r[1]))).toBe(true);
     // 16 mm sides keep Blum's own numbers.
     const thick = ok({ ...s, drawerThickness: 16 * MM });
     expect(thick.rows.some((r) => /at 37, 261, 517 mm from front, 38 mm above/.test(r[1]))).toBe(true);
+  });
+
+  it("rear hook holes: in the drawer back's rear face, 7 mm from the sides' inside faces, 24 mm above the box bottom, 6 x 10 mm", () => {
+    const p = ok(mixed);
+    const back = named(p.parts, "Drawer back")[0];
+    const [inside, ds] = back.blank;
+    // Back coordinates: x along it, y its thickness (rear face y = ds), z up from its bottom edge.
+    const holes = rings(back, 1, ds);
+    const up = 24 * MM - (13 * MM + bT + mixed.fit);
+    expect(holes.map(([x]) => Math.round(x / MM * 1000) / 1000).sort((a, b) => a - b)).toEqual([7, Math.round((inside / MM - 7) * 1000) / 1000]);
+    for (const [, z] of holes) expect(z).toBeCloseTo(up, 9);
+    // 10 deep: the floor is 10 mm in from the rear face.
+    expect(rings(back, 1, ds - 10 * MM)).toHaveLength(0);
+    expect(on(back, 1, ds - 10 * MM).length).toBe(32);
+    expect(p.rows.find((r) => /rear hook/.test(r[1]))?.[4]).toBe("CNC");
+    // A bottom thick enough to put the hole in the joint is refused.
+    expect(plan({ ...mixed, backThickness: 0.5 * IN }, false).error).toMatch(/rear hook hole/);
+  });
+
+  it("hinge plate holes are 11.5 mm deep (Blum's pre-mounted system screws); runner screws 13", () => {
+    const p = ok(imperial({ layout: "mixed", drawers: 1, hardware: true }));
+    expect(p.rows.filter((r) => /Hinge plate/.test(r[1])).every((r) => r[3] === "11.5 mm")).toBe(true);
+    expect(p.rows.filter((r) => /runner screws at/.test(r[1])).every((r) => r[3] === "13 mm")).toBe(true);
+    expect(p.rows.some((r) => /T51\.1901.*2\.5 mm pilot holes.*75 degrees/.test(r[1]))).toBe(true);
   });
 
   it("picks the longest runner the depth allows, and refuses one that does not fit", () => {
@@ -336,7 +426,7 @@ describe("doors, nailers and the trash pull-out", () => {
     const right = ok(imperial({ layout: "doors", hardware: true, hingeSide: "right" }));
     const door = named(right.parts, "Door")[0];
     const fw = door.blank[0];
-    for (const [x] of rings(door, 1, door.blank[1]).filter(([x]) => x > fw / 2)) expect(x).toBeCloseTo(fw - 22 * MM, 6);
+    for (const [x] of rings(door, 1, door.blank[1]).filter(([x]) => x > fw / 2)) expect(x).toBeCloseTo(fw - 22.5 * MM, 6);
     for (const [x] of rings(door, 1, 0)) expect(x).toBeCloseTo(1.5 * IN, 6);
     expect(rings(named(right.parts, "Right side")[0], 0, 0)).toHaveLength(4);
     expect(rings(named(right.parts, "Left side")[0], 0, (23 / 32) * IN)).toEqual([]);

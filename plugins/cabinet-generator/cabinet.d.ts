@@ -26,6 +26,8 @@ export interface Sizes {
   layout: Layout;
   shelves: number;
   drawers: number;
+  /** Drawers over a door: each drawer front's height (metres). A drawer cabinet's fronts are all one height. */
+  drawerFront: number;
   base: Base;
   toeKick: number;
   toeSetback: number;

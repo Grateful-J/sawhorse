@@ -102,7 +102,7 @@ function details() {
     f.push(pick("nailers", "Rear nailers", s.nailers, [["none", "None"], ["top", "Top (hang it by)"], ["both", "Top and bottom"]]));
     if (s.nailers !== "none") f.push(len("nailerHeight", "Nailer height", s.nailerHeight));
     if (s.dados) f.push(len("dadoDepth", "Dado depth", s.dadoDepth), len("dadoStop", "Dados stop short of the front by", s.dadoStop));
-    f.push(len("fit", "Fit (groove over the stock)", s.fit), len("bit", "Bit diameter", s.bit));
+    f.push(len("fit", "Joint clearance (groove wider than the stock)", s.fit), len("bit", "Router bit diameter", s.bit));
   } else if (view === "stock") {
     f.push(len("thickness", hasDoors() ? "Cabinet and doors" : "Cabinet", s.thickness));
     if (hasDrawers()) f.push(len("frontThickness", "Drawer fronts", s.frontThickness), len("drawerThickness", "Drawer boxes", s.drawerThickness));
@@ -116,11 +116,11 @@ function details() {
       if (s.doors !== "two") f.push(pick("hingeSide", "One door hinges on the", s.hingeSide, [["left", "Left (pull on the right)"], ["right", "Right (pull on the left)"]]));
       if (!s.hardware) f.push({ type: "note", text: "Tick Drill hardware holes for hinge cups and a pull.", tone: "info" });
       else {
-        f.push(len("hingeInset", "Hinges in from the top and bottom", s.hingeInset), len("cupDistance", "Cup boring distance (3 to 7 mm)", s.cupDistance));
+        f.push(len("hingeInset", "Hinge cups in from the top and bottom", s.hingeInset), len("cupDistance", "Cup boring distance: cup edge to door edge (Blum 3 to 7 mm)", s.cupDistance));
         f.push(pick("doorPull", "Pull", s.doorPull, [["vertical", "Vertical, on the opening edge"], ["horizontal", "Horizontal, on the opening edge"], ["none", "None"]]));
         if (s.doorPull !== "none") {
-          f.push(pick("doorPullFrom", "Measured from", s.doorPullFrom, [["top", "The top (base cabinets)"], ["bottom", "The bottom (wall cabinets)"]]));
-          f.push(len("doorPullEnd", "Nearer hole from that end", s.doorPullEnd), len("doorPullEdge", "Holes from the opening edge", s.doorPullEdge), len("doorPullSpacing", "Spacing (centre to centre)", s.doorPullSpacing));
+          f.push(pick("doorPullFrom", "Pull measured from", s.doorPullFrom, [["top", "The top (base cabinets)"], ["bottom", "The bottom (wall cabinets)"]]));
+          f.push(len("doorPullEnd", s.doorPullFrom === "top" ? "First hole down from the top" : "First hole up from the bottom", s.doorPullEnd), len("doorPullEdge", "Holes in from the opening edge", s.doorPullEdge), len("doorPullSpacing", "Spacing (centre to centre)", s.doorPullSpacing));
         }
       }
     }
@@ -130,7 +130,7 @@ function details() {
       if (s.drawerPull === "notch") f.push(len("notchWidth", "Notch width", s.notchWidth), len("notchDepth", "Notch depth", s.notchDepth));
       else if (drawerHoles() && !s.hardware) f.push({ type: "note", text: "Tick Drill hardware holes for the pull holes.", tone: "info" });
       else if (drawerHoles()) {
-        if (s.drawerPull === "top") f.push(len("drawerPullFromTop", "Down from the top", s.drawerPullFromTop));
+        if (s.drawerPull === "top") f.push(len("drawerPullFromTop", "Holes down from the top", s.drawerPullFromTop));
         f.push(len("pullSpacing", "Spacing (centre to centre)", s.pullSpacing));
       }
     }
@@ -167,7 +167,8 @@ function body() {
     pick("layout", "Style", s.layout, [["doors", "Doors (shelves or none)"], ["drawers", "Drawers"], ["mixed", "Drawers over a door"], ["trash", "Trash pull-out"], ["shelves", "Open shelves"]]),
   ];
   if (s.layout !== "drawers" && !isTrash()) f.push({ type: "number", id: "shelves", label: "Fixed shelves (0 for none)", unit: "count", value: s.shelves, min: 0, max: 20 });
-  if (s.layout === "drawers" || s.layout === "mixed") f.push({ type: "number", id: "drawers", label: "Drawers", unit: "count", value: s.drawers, min: 0, max: 8 });
+  if (s.layout === "drawers" || s.layout === "mixed") f.push({ type: "number", id: "drawers", label: s.layout === "mixed" ? "Drawers over the door" : "Drawers (equal fronts)", unit: "count", value: s.drawers, min: 0, max: 8 });
+  if (s.layout === "mixed") f.push(len("drawerFront", "Drawer front height", s.drawerFront));
   if (isTrash()) f.push(pick("trashBins", "Bins", s.trashBins, [["deep", "Two, front to back"], ["side", "Two, side by side"], ["one", "One"]]));
   f.push(
     { type: "checkbox", id: "dados", label: "Hidden (blind) dado joints", value: s.dados },
@@ -222,6 +223,8 @@ const panel = await ui.registerPanel({
     if (!views().some(([v]) => v === view)) view = "none";
     void storage.app.set("sizes", sizes);
     if (before.runner !== sizes.runner && id === "slides") shown = "";
+    // Labels that name the choice ("First hole down from the top") are rebuilt with it.
+    if (id === "doorPullFrom" || id === "layout") shown = "";
     return refresh();
   },
   onAction: (id, values) => {
