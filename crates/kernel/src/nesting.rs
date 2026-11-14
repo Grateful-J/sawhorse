@@ -535,39 +535,6 @@ fn choose_stock(
 ) -> Vec<Choice> {
     let n = list.rows.len();
     let mut out: Vec<Option<Choice>> = vec![None; n];
-    // Said: a stock named by the part, or the material's default.
-    for (i, row) in list.rows.iter().enumerate() {
-        // A part dropped from the list takes no stock (lane 15); `nest_list` skips it.
-        if !row.included {
-            out[i] = Some(Err((UnplacedReason::NoStock, None)));
-            continue;
-        }
-        // Listed but counted nowhere (lane 15 fixes): reported with the reason, never stocked.
-        if let Some(u) = row.uncounted {
-            out[i] = Some(Err((u.into(), None)));
-            continue;
-        }
-        let t = row.size[0];
-        if row.stock_set
-            && let Some(m) = &row.material
-            && let Some((k, s)) = lib.find(m)
-        {
-            out[i] = Some(if thickness_fits(s, t) {
-                Ok(k)
-            } else {
-                Err((UnplacedReason::Thickness, Some(k)))
-            });
-            continue;
-        }
-        if let Some(m) = &row.material
-            && let Some(name) = lib.default_for(m)
-            && let Some((k, s)) = lib.find(name)
-            && s.kind == kind_of(row)
-            && thickness_fits(s, t)
-        {
-            out[i] = Some(Ok(k));
-        }
-    }
     // How well a part sits on a stock: fits, fits only across its grain, does not fit.
     let rank = |row: &CutRow, s: &StockDef, trim: f64| match fit(row, s, trim) {
         Ok(_) => 0,
@@ -594,25 +561,29 @@ fn choose_stock(
         let d = (s.thickness - t).abs();
         nominal.map_or(d, |n| d.min((n - t).abs()))
     };
-    for (i, row) in list.rows.iter().enumerate() {
-        if out[i].is_some() || !row.sheet {
-            continue;
-        }
-        let t = row.size[0];
-        let mine = row.material.as_deref().map(words).unwrap_or_default();
-        let affinity = |s: &StockDef| u8::from(!words(&s.name).iter().any(|w| mine.contains(w)));
-        // A chosen footprint replaces the automatic sheet, and only that. A part that names
-        // its own stock, or whose material has a default, already decided above. There is
-        // no silent fall-back to a larger sheet: a 4 × 4 shop does not cut from a 4 × 8
-        // unless it said what does not fit goes to the saw (`overflow`).
-        let pick = |fp: Option<SheetSize>, trim: f64| {
+    // The automatic sheet for a part among the sheets `of` allows, as it sits inside `trim`.
+    // `like` is the sheet the part or its material said, when the choice stands in for it:
+    // only a sheet of its thickness and grain will do (the same material in another size,
+    // never MDF for plywood), and its sheet words count as the material's.
+    let pick =
+        |row: &CutRow, of: &dyn Fn(&StockDef) -> bool, trim: f64, like: Option<&StockDef>| {
+            let t = row.size[0];
+            let mut mine = row.material.as_deref().map(words).unwrap_or_default();
+            if let Some(l) = like {
+                mine.extend(words(&l.name));
+            }
+            let affinity =
+                |s: &StockDef| u8::from(!words(&s.name).iter().any(|w| mine.contains(w)));
+            let alike = |s: &StockDef| {
+                like.is_none_or(|l| {
+                    s.grain == l.grain && (s.thickness - l.thickness).abs() <= STOCK_EPSILON
+                })
+            };
             lib.stocks
                 .iter()
                 .enumerate()
                 .filter(|(_, s)| {
-                    s.kind == StockKind::Sheet
-                        && thickness_fits(s, t)
-                        && fp.is_none_or(|fp| fp.matches(s))
+                    s.kind == StockKind::Sheet && thickness_fits(s, t) && of(s) && alike(s)
                 })
                 .min_by(|(a, sa), (b, sb)| {
                     rank(row, sa, trim)
@@ -623,19 +594,92 @@ fn choose_stock(
                 })
                 .map(|(k, _)| k)
         };
-        let mut best = pick(footprint, trim);
-        if footprint.is_some()
-            && let Some(o) = overflow
-            && best.is_none_or(|k| rank(row, &lib.stocks[k], trim) != 0)
+    // The saw's sheet for a part (`overflow`, with a router's footprint set): the best sheet
+    // of the saw's footprint that is not the router's, and how the part sits on it inside
+    // the saw's trim (0: it fits).
+    let saw_sheet = |row: &CutRow, like: Option<&StockDef>| -> Option<(usize, u8)> {
+        let (fp, o) = (footprint?, overflow?);
+        let saw_trim = effective_trim(o.trim, o.kerf);
+        let k = pick(
+            row,
+            &|s| o.sheet_size.matches(s) && !fp.matches(s),
+            saw_trim,
+            like,
+        )?;
+        Some((k, rank(row, &lib.stocks[k], saw_trim)))
+    };
+    // A sheet the part names, or its material's default, that is the router's sheet and
+    // cannot take the part: the saw's sheet of the same thickness and grain, when one takes
+    // the part. A sheet of any other footprint is what was said, and stays.
+    let or_saw = |row: &CutRow, k: usize| -> usize {
+        let s = &lib.stocks[k];
+        if row.sheet
+            && s.kind == StockKind::Sheet
+            && footprint.is_some_and(|fp| fp.matches(s))
+            && rank(row, s, trim) != 0
+            && let Some((saw, 0)) = saw_sheet(row, Some(s))
         {
-            // Too large (or the wrong way round) for the router's sheet, or no sheet of its
-            // thickness that size: the saw's sheet, when the part fits it.
-            let saw_trim = effective_trim(o.trim, o.kerf);
-            if let Some(k) = pick(Some(o.sheet_size), saw_trim)
-                && rank(row, &lib.stocks[k], saw_trim) == 0
-            {
-                best = Some(k);
-            }
+            saw
+        } else {
+            k
+        }
+    };
+    // Said: a stock named by the part, or the material's default.
+    for (i, row) in list.rows.iter().enumerate() {
+        // A part dropped from the list takes no stock (lane 15); `nest_list` skips it.
+        if !row.included {
+            out[i] = Some(Err((UnplacedReason::NoStock, None)));
+            continue;
+        }
+        // Listed but counted nowhere (lane 15 fixes): reported with the reason, never stocked.
+        if let Some(u) = row.uncounted {
+            out[i] = Some(Err((u.into(), None)));
+            continue;
+        }
+        let t = row.size[0];
+        if row.stock_set
+            && let Some(m) = &row.material
+            && let Some((k, s)) = lib.find(m)
+        {
+            out[i] = Some(if thickness_fits(s, t) {
+                Ok(or_saw(row, k))
+            } else {
+                Err((UnplacedReason::Thickness, Some(k)))
+            });
+            continue;
+        }
+        if let Some(m) = &row.material
+            && let Some(name) = lib.default_for(m)
+            && let Some((k, s)) = lib.find(name)
+            && s.kind == kind_of(row)
+            && thickness_fits(s, t)
+        {
+            out[i] = Some(Ok(or_saw(row, k)));
+        }
+    }
+    for (i, row) in list.rows.iter().enumerate() {
+        if out[i].is_some() || !row.sheet {
+            continue;
+        }
+        // A chosen footprint replaces the automatic sheet, and only that: a part that names
+        // its own stock, or whose material has a default, already decided above. There is
+        // no silent fall-back to a larger sheet: a 4 × 4 shop does not cut from a 4 × 8
+        // unless it said what does not fit goes to the saw (`overflow`).
+        let mut best = pick(
+            row,
+            &|s| footprint.is_none_or(|fp| fp.matches(s)),
+            trim,
+            None,
+        );
+        // Too large (or the wrong way round) for the router's sheet, or no sheet of its
+        // thickness that size: the saw's sheet, when the part fits it. With no router's
+        // sheet of its thickness, the saw's sheet is the stock meant even when the part
+        // does not fit it, so the part is reported too large for a sheet that exists.
+        if best.is_none_or(|k| rank(row, &lib.stocks[k], trim) != 0)
+            && let Some((k, sits)) = saw_sheet(row, None)
+            && (sits == 0 || best.is_none())
+        {
+            best = Some(k);
         }
         out[i] = Some(best.ok_or((UnplacedReason::NoStock, None)));
     }
