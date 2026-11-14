@@ -12,6 +12,11 @@ export type BackMount = "groove" | "butt";
 export type DrawerPull = "center" | "top" | "notch" | "none";
 export type DoorPull = "vertical" | "horizontal" | "none";
 export type DoorPullFrom = "top" | "bottom";
+export type Top = "full" | "stretchers";
+export type ShelfType = "fixed" | "adjustable";
+export type DrawerFronts = "equal" | "graduated";
+/** Blum Inc. (US, inch lengths) or Blum's European catalogue (metric lengths). */
+export type Catalog = "us" | "eu";
 export interface Sizes {
   /** The cabinet's name: its instance in the model, and its files. */
   name: string;
@@ -25,7 +30,15 @@ export interface Sizes {
   backThickness: number;
   layout: Layout;
   shelves: number;
+  /** Adjustable shelves sit on 5 mm pins on the System 32 grid; fixed ones in dados. */
+  shelfType: ShelfType;
   drawers: number;
+  /** A drawer cabinet's fronts: all one height, or a shorter top drawer (drawerFront) and the rest equal. */
+  drawerFronts: DrawerFronts;
+  /** A full top panel, or two stretchers (a base cabinet under a countertop). */
+  top: Top;
+  /** Each stretcher's width, front to back. */
+  stretcher: number;
   /** Drawers over a door: each drawer front's height (metres). A drawer cabinet's fronts are all one height. */
   drawerFront: number;
   base: Base;
@@ -43,6 +56,7 @@ export interface Sizes {
   fit: number;
   bit: number;
   slides: Slides;
+  catalog: Catalog;
   /** Drawer length in mm (229, 305, ...), or 0 for the longest that fits. */
   runner: number;
   hardware: boolean;
@@ -84,8 +98,8 @@ export interface RunnerLength {
   nl: number;
   part: string;
   minDepth: number;
-  a: number;
-  b: number;
+  /** System 32 screw holes from the cabinet front (mm). */
+  screws: number[];
 }
 export interface Runner {
   name: string;
@@ -93,11 +107,19 @@ export interface Runner {
   screwHeight: number;
   bottomClearance: number;
   heightDeduct: number;
+  /** How much shorter the box is than the runner (mm): 0 (US), 10 (Europe). */
+  boxShort: number;
+  minSide: number;
+  maxSide: number;
+  sides: string;
   rearNotch: number;
   thinShift: number;
   lock: string;
+  extra?: string;
 }
 export const RUNNERS: Record<Slides, Runner>;
+export const RUNNERS_EU: Record<Slides, Runner>;
+export function runnerLine(s: { slides: Slides; catalog: Catalog }): Runner;
 export const MATERIALS: Record<"carcass" | "back" | "box" | "doors" | "drawerFronts", { name: string; color: [number, number, number, number] }>;
 export interface Preset {
   id: string;
@@ -113,6 +135,7 @@ export interface Preset {
   doorPullEnd?: [number, number];
   nailers?: Nailers;
   drawerPull?: DrawerPull;
+  top?: Top;
 }
 export const PRESETS: Preset[];
 export function applyPreset(s: Sizes, id: string, metric: boolean): Sizes;
