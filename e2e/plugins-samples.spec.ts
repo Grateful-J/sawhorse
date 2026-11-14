@@ -35,8 +35,25 @@ async function enable(page: Page, id: string, name: string, permissions: string[
   await expect(row(page, id)).toHaveAttribute("data-status", "running", { timeout: 10_000 });
 }
 
-/** Type into a plugin panel's field and commit it (Enter). */
+/** The cabinet panel's group each field is in: it must be open to type into the field. */
+const SECTION_OF: Record<string, string> = { width: "secSize", height: "secSize", depth: "secSize", layout: "secLayout", shelves: "secLayout", shelfType: "secLayout", drawers: "secLayout", joinery: "secBuild" };
+
+/** Open a plugin panel's group (a section heading) if it is closed. */
+async function openSection(page: Page, panel: string, id: string) {
+  const head = page.locator(`[data-panel="${panel}"] [data-section="${id}"]`);
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+}
+
+/** Pick a value in a plugin panel's select, opening its group first. */
+async function choose(page: Page, panel: string, id: string, value: string) {
+  if (SECTION_OF[id]) await openSection(page, panel, SECTION_OF[id]);
+  await page.locator(`[data-panel="${panel}"] [data-field="${id}"]`).selectOption(value);
+}
+
+/** Type into a plugin panel's field and commit it (Enter), opening its group first. */
 async function field(page: Page, panel: string, id: string, value: string) {
+  if (SECTION_OF[id]) await openSection(page, panel, SECTION_OF[id]);
   const input = page.locator(`[data-panel="${panel}"] [data-field="${id}"]`);
   await input.fill(value);
   await input.press("Enter");
@@ -70,7 +87,7 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await field(page, panel, "height", "72");
   await field(page, panel, "depth", "12");
   await field(page, panel, "shelves", "3");
-  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds a cabinet: 30 x 72 x 12, 3 shelves, back, 4 toe kick");
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds Cabinet 1: 30 × 72 × 12, open, 3 adjustable shelves");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
   await expect(page.locator("#hint")).toContainText("Made a cabinet: Left side, Right side, Top, Bottom, Shelf x 3, Back, Toe kick");
 
@@ -95,15 +112,16 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await expect(page.locator(".cutlist table")).toBeVisible();
   const rows = await page.locator(".cutlist table tbody tr").evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => ((td.querySelector(".name") ?? td).textContent ?? "").trim())));
   const byName = Object.fromEntries(rows.map((r) => [r[0], r.slice(1, 5)]));
-  // Drawn at the measured 23/32 in (the list shows its nominal 3/4); the rails are 30 - 2 x 23/32
-  // between the sides plus a tongue into each side's blind dado (1/4 in less 0.5 mm): 29 in.
-  // The back sits in grooves 1/2 in from the rear: the top and bottom run to the rear edge, a
-  // shelf stops at the back (12 - 1/2 - 7/32 - 1/32 = 11 1/4).
+  // Drawn at the measured 23/32 in (the list shows its nominal 3/4); the top and bottom are
+  // 30 - 2 x 23/32 between the sides plus a tongue into each side's blind dado (1/4 in less
+  // 0.5 mm): 29 in. The back sits in grooves 1/2 in from the rear: the top and bottom run to
+  // the rear edge, a shelf stops at the back (12 - 1/2 - 7/32 - 1/32 = 11 1/4). The shelves
+  // are adjustable, loose on pins: 1/32 in short of each side (28 1/2).
   expect(byName["Left side"]).toEqual(["1", "3/4", "12", "72"]);
   expect(byName["Right side"]).toEqual(["1", "3/4", "12", "72"]);
   expect(byName["Top"]).toEqual(["1", "3/4", "12", "29"]);
   expect(byName["Bottom"]).toEqual(["1", "3/4", "12", "29"]);
-  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 1/4", "29"]);
+  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 1/4", "28 1/2"]);
   expect(byName["Back"]).toEqual(["1", "1/4", "29 1/8", "67 1/8"]);
   expect(byName["Toe kick"]).toEqual(["1", "3/4", "4", "28 9/16"]);
   // One undo step takes the whole cabinet back.
@@ -116,7 +134,7 @@ test("cabinet generator: a drawer cabinet and a door cabinet", async ({ page }) 
   await start(page);
   await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
   const panel = `${CABINET}/cabinet`;
-  await page.locator(`[data-panel="${panel}"] [data-field="layout"]`).selectOption("drawers");
+  await choose(page, panel, "layout", "drawers");
   await field(page, panel, "drawers", "2");
   await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("2 drawers");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
@@ -129,7 +147,7 @@ test("cabinet generator: a drawer cabinet and a door cabinet", async ({ page }) 
   await expect.poll(async () => (await solids(page)).length).toBe(0);
 
   await page.getByRole("tab", { name: "Plugins" }).click();
-  await page.locator(`[data-panel="${panel}"] [data-field="layout"]`).selectOption("doors");
+  await choose(page, panel, "layout", "doors");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
   await expect(page.locator("#hint")).toContainText("Made a cabinet");
   await expect(page.locator("#hint")).toContainText("Door");
@@ -255,11 +273,11 @@ test("model report: live counts that match the model, and an export as Markdown 
   const report = page.locator(`[data-panel="${REPORT}/report"]`);
   const counts = async () => Object.fromEntries(await report.locator('table[data-table="counts"] tbody tr').evaluateAll((trs) => trs.map((tr) => [tr.children[0].textContent, Number(tr.children[1].textContent)])));
   await expect.poll(counts).toMatchObject({ Solids: 0, Faces: 0 });
-  // Butt joints, so the faces below count by hand (blind dados are on by default).
-  const dados = page.locator(`[data-panel="${CABINET}/cabinet"] input[data-field="dados"]`);
-  await dados.click();
-  await expect(dados).not.toBeChecked();
-  await expect(page.locator(`[data-panel="${CABINET}/cabinet"] [data-note="status"]`)).not.toContainText("blind dados");
+  // Butt joints and a fixed shelf, so the faces below count by hand (blind dados and
+  // adjustable shelves on pins are the defaults).
+  await choose(page, `${CABINET}/cabinet`, "joinery", "butt");
+  await choose(page, `${CABINET}/cabinet`, "shelfType", "fixed");
+  await expect(page.locator(`[data-panel="${CABINET}/cabinet"] [data-section="secBuild"]`)).toContainText("Butt joints");
   await page.locator(`[data-panel="${CABINET}/cabinet"] [data-action="generate"]`).click();
   await expect(page.locator("#hint")).toContainText("Made a cabinet");
   // The report follows the edit; its counts are the model's.
