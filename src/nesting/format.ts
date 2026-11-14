@@ -137,6 +137,9 @@ export function cutText(c: NestCut, r: Units): string {
 export function reasonText(u: Unplaced): string {
   switch (u.reason) {
     case "no_stock":
+      if (u.sheet && u.asked && u.asked.length === 2) {
+        return `no ${len(u.asked[0], "sixteenth")} × ${len(u.asked[1], "sixteenth")} in sheet of this thickness; add one (Stock…), or choose Automatic`;
+      }
       return `no ${u.sheet ? "sheet" : "board"} in the stock library is ${u.sheet ? "this thickness" : "this thick"}; add one (Stock…)`;
     case "thickness":
       return `${u.stock} is not its thickness`;

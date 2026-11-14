@@ -1916,6 +1916,7 @@ fn resolve(f: &Fuzz, d: &Document) -> Op {
                 },
                 // #49: the joint loss from the same lengths (some past 1/2 in, refused).
                 joint_loss: NEST_LENGTHS[(*k as usize / 3 + *t as usize) % NEST_LENGTHS.len()],
+                sheet_size: None,
             },
         },
         Fuzz::ResetStock => Op::ResetStockLibrary,

@@ -16,7 +16,7 @@ use sawhorse_kernel::model::{DrawTarget, Op, OpOutcome};
 use sawhorse_kernel::nesting::{CutDir, NestOptions, Nesting, UnplacedReason, nest_list};
 use sawhorse_kernel::nodes::Item;
 use sawhorse_kernel::stock::{
-    NestAlgorithm, NestSettings, StockDef, StockGrain, StockKind, StockLibrary,
+    NestAlgorithm, NestSettings, SheetSize, StockDef, StockGrain, StockKind, StockLibrary,
 };
 use sawhorse_kernel::testing::{check_nesting, check_nesting_of};
 use sawhorse_kernel::transform::Xform;
@@ -853,6 +853,7 @@ fn settings() -> impl Strategy<Value = NestSettings> {
         trim,
         algorithm,
         joint_loss,
+        sheet_size: None,
     })
 }
 
@@ -896,6 +897,7 @@ fn oak(parts: &[(f64, f64, f64, usize)], joint_loss: f64) -> Nesting {
         trim: 0.0,
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint_loss * IN,
+        sheet_size: None,
     };
     let n = nest_list(&list, &lib, st);
     check_nesting_of(&list, &n).unwrap();
@@ -1128,6 +1130,7 @@ fn on_six_inch_boards(size: [f64; 3], joint: f64, kerf: f64) -> (CutList, Nestin
         trim: 0.0,
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint,
+        sheet_size: None,
     };
     let n = nest_list(&list, &lib, st);
     (list, n)
@@ -1302,6 +1305,136 @@ fn the_joint_loss_is_saved_and_hashed_only_when_set() {
     assert_eq!(d.hash(), before);
     ok(&mut d, Op::SetNestSettings { settings: set });
     assert_ne!(d.hash(), before);
+}
+
+/// A 4 × 4 bed is a choice, not a guess. Unset, the back still comes from the built-in
+/// 4 × 8. Set, 3/4 parts come from the 4 × 4 of that thickness, a part longer than 48 in
+/// is too large for it, and a 1/4 part with no 4 × 4 of its thickness is on no stock.
+/// Nothing falls back onto the 4 × 8 that is still in the library.
+#[test]
+fn a_sheet_footprint_is_the_sheet_you_asked_for() {
+    let four = SheetSize { width: 48.0 * IN, length: 48.0 * IN };
+    let (mut d, _) = bookshelf();
+    let before = nest(&d);
+    assert!(before.settings.sheet_size.is_none());
+    assert!(before.unplaced.iter().all(|u| u.asked.is_none()));
+    let back = before
+        .totals
+        .groups
+        .iter()
+        .find(|g| g.kind == StockKind::Sheet)
+        .unwrap();
+    assert_eq!(back.stock, "4 x 8 sheet, 1/4");
+    let json = serde_json::to_value(NestSettings::default()).unwrap();
+    assert!(json.get("sheetSize").is_none(), "{json}");
+
+    let add = |d: &mut Document, name: &str, nominal: &str, actual: f64| {
+        ok(
+            d,
+            Op::DefineStock {
+                stock: StockDef {
+                    name: name.into(),
+                    kind: StockKind::Sheet,
+                    length: 48.0 * IN,
+                    width: 48.0 * IN,
+                    thickness: actual * IN,
+                    nominal: Some(nominal.into()),
+                    grain: StockGrain::Length,
+                },
+                replace: None,
+            },
+        );
+    };
+    add(&mut d, "4 x 4 sheet, 3/4", "3/4", 23.0 / 32.0);
+    add(&mut d, "4 x 4 sheet, 1/4", "1/4", 7.0 / 32.0);
+    // Still automatic: the new sheets are last, so the 4 × 8 wins as before.
+    let still = nest(&d);
+    assert_eq!(
+        still
+            .totals
+            .groups
+            .iter()
+            .find(|g| g.kind == StockKind::Sheet)
+            .unwrap()
+            .stock,
+        "4 x 8 sheet, 1/4"
+    );
+
+    ok(
+        &mut d,
+        Op::SetNestSettings {
+            settings: NestSettings { sheet_size: Some(four), ..NestSettings::default() },
+        },
+    );
+    // The bookshelf's oak is lumber. Mark the carcass as sheet goods the way the plywood
+    // test does, except the sides are 71 1/4 in and cannot fit a 4 × 4.
+    let s = bookshelf_defs(&d);
+    for def in [s.side, s.shelf, s.top, s.toe] {
+        ok(
+            &mut d,
+            Op::SetStock {
+                part: PartRef::Definition(def),
+                stock: Some("3/4 birch ply".into()),
+                sheet: None,
+            },
+        );
+    }
+    ok(
+        &mut d,
+        Op::SetStock {
+            part: PartRef::Definition(s.back),
+            stock: Some("1/4 birch ply".into()),
+            sheet: None,
+        },
+    );
+    let n = nest(&d);
+    let on = |name: &str| {
+        n.pieces
+            .iter()
+            .filter(|p| p.placements.iter().any(|q| q.name == name))
+            .map(|p| p.stock.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        on("Shelf").iter().all(|s| *s == "4 x 4 sheet, 3/4"),
+        "{:?}",
+        on("Shelf")
+    );
+    assert!(on("Top").iter().all(|s| *s == "4 x 4 sheet, 3/4"));
+    assert!(on("Toe kick").iter().all(|s| *s == "4 x 4 sheet, 3/4"));
+    // 71 1/4 in parts do not fit a 4 × 4, and they are not moved onto the 4 × 8.
+    for name in ["Side", "Back panel"] {
+        let u = n.unplaced.iter().find(|u| u.name == name).unwrap();
+        assert_eq!(u.reason, UnplacedReason::TooLarge, "{name}");
+        assert!(u.stock.as_deref().unwrap().starts_with("4 x 4"), "{name} {:?}", u.stock);
+    }
+    assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
+
+    // Drop the 1/4 sheet. The back is not moved onto the 4 × 8.
+    ok(&mut d, Op::DeleteStock { name: "4 x 4 sheet, 1/4".into() });
+    let n = nest(&d);
+    let back = n.unplaced.iter().find(|u| u.name == "Back panel").unwrap();
+    assert_eq!(back.reason, UnplacedReason::NoStock);
+    assert!(back.stock.is_none());
+    let asked = back.asked.unwrap();
+    assert!((asked[0] - 48.0 * IN).abs() < 1e-9 && (asked[1] - 48.0 * IN).abs() < 1e-9);
+    assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
+}
+
+/// The bookshelf's part definitions, found by name after `bookshelf` built them.
+fn bookshelf_defs(d: &Document) -> Shelf {
+    let list = d.model().cut_list(&CutOptions::default());
+    let def = |name: &str| match list.rows.iter().find(|r| r.name == name).unwrap().target {
+        PartRef::Definition(id) => id,
+        other => panic!("{name}: {other:?}"),
+    };
+    Shelf {
+        side: def("Side"),
+        shelf: def("Shelf"),
+        top: def("Top"),
+        toe: def("Toe kick"),
+        back: def("Back panel"),
+    }
 }
 
 /// Oak rails on the built-in boards, no material defaults, kerf 1/8 in, no trim.

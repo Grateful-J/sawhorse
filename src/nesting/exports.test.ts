@@ -32,6 +32,7 @@ describe("nesting in shop words", () => {
     expect(reasonText(n.unplaced[0])).toBe("fits 4/4 x 12 x 96 only with its grain across; turn its grain or pick other stock");
     expect(reasonText({ ...n.unplaced[0], reason: "too_large" })).toContain("larger than 4/4 x 12 x 96");
     expect(reasonText({ ...n.unplaced[0], reason: "no_stock", sheet: true })).toContain("no sheet in the stock library is this thickness");
+    expect(reasonText({ ...n.unplaced[0], reason: "no_stock", sheet: true, asked: [48 * IN, 48 * IN] })).toBe("no 48 × 48 in sheet of this thickness; add one (Stock…), or choose Automatic");
     const s = nestSummary(n, "sixteenth");
     expect([s.sheets, s.boards]).toEqual(["1", "1"]);
     expect(s.sheetsLabel).toBe("sheet: 4 x 8 sheet, 1/4");

@@ -199,6 +199,7 @@ describe("Stock dialog", () => {
       onDelete: vi.fn(),
       onDefault: vi.fn(),
       onReset: vi.fn(),
+      onSheetSize: vi.fn(),
       onClose: vi.fn(),
       ...over,
     };
@@ -225,6 +226,15 @@ describe("Stock dialog", () => {
     fireEvent.change(screen.getByLabelText("Length"), { target: { value: "10'" } });
     fireEvent.click(screen.getByRole("button", { name: "Save stock" }));
     expect(p.onDefine).toHaveBeenLastCalledWith(expect.objectContaining({ name: "4/4 x 12 x 96", kind: "board", length: 120 * IN, nominal: "4/4" }), "4/4 x 12 x 96");
+    // Nest sheet goods on a footprint already in the library. A preset only fills the form.
+    fireEvent.change(screen.getByLabelText("Nest sheet goods on"), { target: { value: "0" } });
+    expect(p.onSheetSize).toHaveBeenLastCalledWith({ width: 48 * IN, length: 96 * IN });
+    const defines = (p.onDefine as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "4×4" }));
+    expect((screen.getByLabelText("Width") as HTMLInputElement).value).toMatch(/48/);
+    expect((screen.getByLabelText("Length") as HTMLInputElement).value).toMatch(/48/);
+    expect(p.onDefine).toHaveBeenCalledTimes(defines);
+    expect(p.onSheetSize).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Delete 4 x 8 sheet, 1/4" }));
     expect(p.onDelete).toHaveBeenCalledWith("4 x 8 sheet, 1/4");
     fireEvent.click(screen.getByRole("button", { name: "Built-in stock" }));

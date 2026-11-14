@@ -107,6 +107,34 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await expect(page.locator("#hint")).toContainText("Undone: Generate cabinet");
 });
 
+test("cabinet generator: a drawer cabinet and a door cabinet", async ({ page }) => {
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  await page.locator(`[data-panel="${panel}"] [data-field="layout"]`).selectOption("drawers");
+  await field(page, panel, "drawers", "2");
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("2 drawers");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Drawer front x 2");
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await expect(page.locator(".cutlist table")).toBeVisible();
+  const names = () => page.locator(".cutlist table tbody tr").evaluateAll((trs) => trs.map((tr) => ((tr.querySelector(".name") ?? tr.querySelector("td"))?.textContent ?? "").trim()));
+  expect(await names()).toEqual(expect.arrayContaining(["Drawer front", "Drawer side", "Drawer bottom"]));
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await solids(page)).length).toBe(0);
+
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await page.locator(`[data-panel="${panel}"] [data-field="layout"]`).selectOption("doors");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made a cabinet");
+  await expect(page.locator("#hint")).toContainText("Door");
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await expect(page.locator(".cutlist table")).toBeVisible();
+  const doorNames = await names();
+  expect(doorNames).toContain("Door");
+  expect(doorNames).not.toContain("Drawer front");
+});
+
 test("cabinet generator: Update replaces the selected cabinet in place", async ({ page }) => {
   await start(page);
   await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);

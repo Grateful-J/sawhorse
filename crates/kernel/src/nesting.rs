@@ -271,6 +271,10 @@ pub struct Unplaced {
     pub stock: Option<String>,
     pub sheet: bool,
     pub reason: UnplacedReason,
+    /// The sheet footprint that was required, width then length (metres), when a part found
+    /// no sheet of that size. Absent unless a footprint is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asked: Option<[f64; 2]>,
 }
 
 /// One stock and material: how many pieces of it.
@@ -522,6 +526,7 @@ fn choose_stock(
     trim: f64,
     joint: f64,
     kerf: f64,
+    footprint: Option<crate::stock::SheetSize>,
 ) -> Vec<Choice> {
     let n = list.rows.len();
     let mut out: Vec<Option<Choice>> = vec![None; n];
@@ -591,11 +596,18 @@ fn choose_stock(
         let t = row.size[0];
         let mine = row.material.as_deref().map(words).unwrap_or_default();
         let affinity = |s: &StockDef| u8::from(!words(&s.name).iter().any(|w| mine.contains(w)));
+        // A chosen footprint replaces the automatic sheet, and only that. A part that names
+        // its own stock, or whose material has a default, already decided above. There is
+        // no fall-back to a larger sheet: a 4 × 4 shop does not silently cut from a 4 × 8.
         let best = lib
             .stocks
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.kind == StockKind::Sheet && thickness_fits(s, t))
+            .filter(|(_, s)| {
+                s.kind == StockKind::Sheet
+                    && thickness_fits(s, t)
+                    && footprint.is_none_or(|fp| fp.matches(s))
+            })
             .min_by(|(a, sa), (b, sb)| {
                 rank(row, sa)
                     .cmp(&rank(row, sb))
@@ -1332,7 +1344,7 @@ fn trim_cuts(s: &StockDef, trim: f64, kerf: f64) -> Vec<Cut> {
 pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> Nesting {
     let kerf = settings.kerf;
     let trim = effective_trim(settings.trim, kerf);
-    let choice = choose_stock(list, lib, trim, settings.joint_loss, kerf);
+    let choice = choose_stock(list, lib, trim, settings.joint_loss, kerf, settings.sheet_size);
     let mut glue_ups: Vec<GlueUp> = Vec::new();
     let mut needs: Vec<Need> = Vec::new();
     let mut unplaced: Vec<Unplaced> = Vec::new();
@@ -1424,6 +1436,10 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                     stock: k.map(|k| lib.stocks[k].name.clone()),
                     sheet: row.sheet,
                     reason: *reason,
+                    asked: (row.sheet && *reason == UnplacedReason::NoStock && k.is_none())
+                        .then_some(settings.sheet_size)
+                        .flatten()
+                        .map(|fp| [fp.width, fp.length]),
                 }),
             }
         }

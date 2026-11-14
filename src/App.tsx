@@ -12,7 +12,8 @@ import { NestingSection } from "./components/NestingSection";
 import { StockDialog } from "./components/StockDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
-import { fineU, pieceTitle } from "./nesting/format";
+import { fineU, lenU, pieceTitle } from "./nesting/format";
+import { measureNest } from "./nesting/measure";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
@@ -2213,7 +2214,7 @@ export function App() {
   }, [nestOpen]);
   const setNestSettings = useCallback(
     (s: NestSettings) =>
-      void apply({ op: "set_nest_settings", settings: s }, () => `Nesting: kerf ${fineU(s.kerf, nestUnits)}, trim ${s.trim > 0 ? `${fineU(s.trim, nestUnits)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, nestUnits)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`),
+      void apply({ op: "set_nest_settings", settings: s }, () => `Nesting: kerf ${fineU(s.kerf, nestUnits)}, trim ${s.trim > 0 ? `${fineU(s.trim, nestUnits)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, nestUnits)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), nestUnits)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), nestUnits)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`),
     [apply, nestUnits],
   );
   const defineStock = useCallback(
@@ -2303,8 +2304,24 @@ export function App() {
       const n = nesting;
       if (!n) return;
       try {
-        const res = await saveFile(`${cutTitle} nesting${flavour === "r12" ? " R12" : ""}.dxf`, new TextEncoder().encode(nestingDxf(n, flavour)), DXF_TYPE);
-        if (res) setMessage({ text: `Saved ${res.name}: ${n.pieces.length} ${n.pieces.length === 1 ? "sheet or board" : "sheets and boards"}, a layer each, a polyline per part, in millimetres.`, error: false });
+        let features: Awaited<ReturnType<typeof measureNest>> | null = null;
+        const k = kernelRef.current;
+        if (k) {
+          try {
+            features = await measureNest(k, graphOf(live.current.scene?.state).objects, n);
+          } catch {
+            features = null;
+          }
+        }
+        const text = nestingDxf(n, flavour, features?.features);
+        const res = await saveFile(`${cutTitle} nesting${flavour === "r12" ? " R12" : ""}.dxf`, new TextEncoder().encode(text), DXF_TYPE);
+        if (res) {
+          const pockets = features ? [...features.features.values()].reduce((s, f) => s + f.pockets.length, 0) : 0;
+          const drills = features ? [...features.features.values()].reduce((s, f) => s + f.drills.length, 0) : 0;
+          const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"} on their own layers, measured from the parts.` : "";
+          const missed = features?.skipped.length ? ` Skipped measured cuts on ${features.skipped.join(", ")}: a loop fell outside the blank, so only its rectangle was written.` : "";
+          setMessage({ text: `Saved ${res.name}: ${n.pieces.length} ${n.pieces.length === 1 ? "sheet or board" : "sheets and boards"}, a layer each, a polyline per part, in millimetres.${measured}${missed}`, error: false });
+        }
       } catch (e) {
         setMessage({ text: `Could not save the DXF: ${e instanceof Error ? e.message : String(e)}`, error: true });
       }
@@ -2985,6 +3002,7 @@ export function App() {
           onDelete={deleteStock}
           onDefault={setMaterialStock}
           onReset={resetStock}
+          onSheetSize={(sheetSize) => setNestSettings({ ...nesting.library.settings, sheetSize })}
           onClose={() => setStockOpen(false)}
         />
       ) : null}

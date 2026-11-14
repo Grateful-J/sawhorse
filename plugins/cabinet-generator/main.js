@@ -1,90 +1,25 @@
 // @ts-check
-// Cabinet generator: a frameless (European-style) cabinet from its sizes.
+// Cabinet generator: a frameless cabinet from its sizes.
 //
-// Every part is a component of its own, named the way a cut list reads it: Side (the Left
-// side and the Right side are its two copies), Top, Bottom, Shelf (Shelf 1, Shelf 2 ...),
-// Back and Toe kick, all inside one "Cabinet" component. The whole cabinet is one batch,
-// so one Ctrl+Z takes it away. Generating again while the cabinet this plugin made is
-// selected replaces it in place; otherwise a new cabinet goes beside the model.
+// The default is today's shelf cabinet (butt joints, no hardware). Layouts add a door,
+// drawer boxes, or both. Blind dados and hinge, slide and pull holes are off until asked
+// for. Every part is a named component. The whole cabinet is one batch, so one Ctrl+Z
+// takes it away. Generating again while the cabinet this plugin made is selected replaces
+// it in place.
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
+import { importOp, isMetric, issue, phrase, plan, normalize } from "./cabinet.js";
 
 const IN = 0.0254;
 const MM = 0.001;
 
-/** @typedef {{ width: number, height: number, depth: number, thickness: number, shelves: number, back: boolean, toeKick: number }} Sizes */
+/** @typedef {import("./cabinet.js").Sizes} Sizes */
 
-/** Sensible first sizes in the document's units (a base cabinet). @returns {Sizes} */
-function defaults() {
-  const metric = ["mm", "cm", "m"].includes(units.system());
-  return metric
-    ? { width: 600 * MM, height: 720 * MM, depth: 560 * MM, thickness: 18 * MM, shelves: 1, back: true, toeKick: 100 * MM }
-    : { width: 24 * IN, height: 34.5 * IN, depth: 24 * IN, thickness: 0.75 * IN, shelves: 1, back: true, toeKick: 4 * IN };
-}
-
-/** The back panel is thin sheet stock, a quarter inch or 6 mm. */
-const backThickness = () => (["mm", "cm", "m"].includes(units.system()) ? 6 * MM : 0.25 * IN);
-/** How far the toe kick board sits back from the front. */
-const toeSetback = () => (["mm", "cm", "m"].includes(units.system()) ? 75 * MM : 3 * IN);
-
-/** @param {Sizes} s @returns {string | null} what is wrong, or null */
-function problem(s) {
-  const f = units.format;
-  if (!(s.thickness > 0)) return "The stock needs a thickness.";
-  if (!(s.width > 2 * s.thickness)) return `The width must be more than two thicknesses (${f(2 * s.thickness)}).`;
-  if (!(s.depth > s.thickness + (s.back ? backThickness() : 0))) return "The cabinet is not deep enough for its back.";
-  if (!(s.toeKick >= 0)) return "The toe kick cannot be negative.";
-  if (!Number.isInteger(s.shelves) || s.shelves < 0 || s.shelves > 20) return "Shelves: a whole number from 0 to 20.";
-  const inside = s.height - s.toeKick - 2 * s.thickness - s.shelves * s.thickness;
-  if (!(inside > 0)) return `It is not tall enough for a top, a bottom${s.shelves ? ` and ${s.shelves} ${s.shelves === 1 ? "shelf" : "shelves"}` : ""} over a ${f(s.toeKick)} toe kick.`;
-  return null;
-}
-
-/**
- * The parts, each with its size (in its own axes) and where its copies go.
- * x runs across the front, y from the front to the back, z up.
- * @param {Sizes} s
- */
-export function parts(s) {
-  const t = s.thickness;
-  const b = s.back ? backThickness() : 0;
-  const innerW = s.width - 2 * t;
-  const innerD = s.depth - b;
-  /** @type {import("sawhorse").PartSpec[]} */
-  const list = [
-    // The left side is the right side mirrored, as in the shop: its inside face is the same
-    // face of the part, so holes drilled into one side's inside go into both insides.
-    {
-      name: "Side",
-      boxes: [{ min: [0, 0, 0], size: [t, s.depth, s.height] }],
-      copies: [
-        { at: { linear: [[-1, 0, 0], [0, 1, 0], [0, 0, 1]], translation: [t, 0, 0] }, name: "Left side" },
-        { at: [s.width - t, 0, 0], name: "Right side" },
-      ],
-    },
-    { name: "Top", boxes: [{ min: [0, 0, 0], size: [innerW, innerD, t] }], copies: [{ at: [t, 0, s.height - t], name: "Top" }] },
-    { name: "Bottom", boxes: [{ min: [0, 0, 0], size: [innerW, innerD, t] }], copies: [{ at: [t, 0, s.toeKick], name: "Bottom" }] },
-  ];
-  if (s.shelves > 0) {
-    // Equal openings between the bottom, the shelves and the top.
-    const floor = s.toeKick + t;
-    const gap = (s.height - t - floor - s.shelves * t) / (s.shelves + 1);
-    list.push({
-      name: "Shelf",
-      boxes: [{ min: [0, 0, 0], size: [innerW, innerD, t] }],
-      copies: Array.from({ length: s.shelves }, (_, i) => ({ at: /** @type {import("sawhorse").Vec3} */ ([t, 0, floor + gap * (i + 1) + t * i]), name: `Shelf ${i + 1}` })),
-    });
-  }
-  if (s.back) list.push({ name: "Back", boxes: [{ min: [0, 0, 0], size: [innerW, b, s.height - s.toeKick] }], copies: [{ at: [t, s.depth - b, s.toeKick], name: "Back" }] });
-  if (s.toeKick > 0) list.push({ name: "Toe kick", boxes: [{ min: [0, 0, 0], size: [innerW, t, s.toeKick] }], copies: [{ at: [t, toeSetback(), 0], name: "Toe kick" }] });
-  return list;
-}
+const metric = () => isMetric(units.system());
 
 /** @type {Sizes} */
-let sizes = defaults();
-const saved = /** @type {Partial<Sizes> | null} */ (await storage.app.get("sizes"));
-if (saved && typeof saved === "object") sizes = { ...sizes, ...saved };
+let sizes = normalize(/** @type {Partial<Sizes> | null} */ (await storage.app.get("sizes")), metric());
 
 /** The cabinet this plugin made last in this document, if it is the selection. */
 async function selectedOwnCabinet() {
@@ -95,6 +30,10 @@ async function selectedOwnCabinet() {
   return (await model.nodes()).find((n) => n.id === mine) ?? null;
 }
 
+const drawersOff = () => sizes.layout === "shelves" || sizes.layout === "doors";
+const shelvesOff = () => sizes.layout === "drawers";
+const frontOff = () => sizes.layout === "shelves";
+
 const panel = await ui.registerPanel({
   id: "cabinet",
   title: "Cabinet",
@@ -103,42 +42,95 @@ const panel = await ui.registerPanel({
     { type: "number", id: "height", label: "Height", unit: "length", value: sizes.height, min: 0 },
     { type: "number", id: "depth", label: "Depth", unit: "length", value: sizes.depth, min: 0 },
     { type: "number", id: "thickness", label: "Stock", unit: "length", value: sizes.thickness, min: 0 },
-    { type: "number", id: "shelves", label: "Shelves", unit: "count", value: sizes.shelves, min: 0, max: 20 },
+    {
+      type: "select",
+      id: "layout",
+      label: "Layout",
+      value: sizes.layout,
+      options: [
+        { value: "shelves", label: "Shelves" },
+        { value: "doors", label: "Door and shelves" },
+        { value: "drawers", label: "Drawers" },
+        { value: "mixed", label: "Drawers and a door" },
+      ],
+    },
+    {
+      type: "select",
+      id: "front",
+      label: "Fronts",
+      value: sizes.front,
+      disabled: frontOff(),
+      options: [
+        { value: "overlay", label: "Overlay" },
+        { value: "inset", label: "Inset" },
+      ],
+    },
+    { type: "number", id: "shelves", label: "Shelves", unit: "count", value: sizes.shelves, min: 0, max: 20, disabled: shelvesOff() },
+    { type: "number", id: "drawers", label: "Drawers", unit: "count", value: sizes.drawers, min: 0, max: 8, disabled: drawersOff() },
     { type: "checkbox", id: "back", label: "Back panel", value: sizes.back },
     { type: "number", id: "toeKick", label: "Toe kick", unit: "length", value: sizes.toeKick, min: 0 },
+    { type: "checkbox", id: "dados", label: "Blind dados", value: sizes.dados },
+    { type: "checkbox", id: "hardware", label: "Hardware holes", value: sizes.hardware },
+    { type: "number", id: "hingeInset", label: "Hinge inset", unit: "length", value: sizes.hingeInset, min: 0, disabled: !sizes.hardware },
+    { type: "number", id: "slideClearance", label: "Slide clearance", unit: "length", value: sizes.slideClearance, min: 0, disabled: !sizes.hardware },
+    { type: "number", id: "slideSetback", label: "Slide setback", unit: "length", value: sizes.slideSetback, min: 0, disabled: !sizes.hardware },
+    {
+      type: "select",
+      id: "pull",
+      label: "Pull",
+      value: sizes.pull,
+      disabled: !sizes.hardware,
+      options: [
+        { value: "face", label: "Face" },
+        { value: "undermount", label: "Undermount" },
+      ],
+    },
+    { type: "number", id: "pullSpacing", label: "Pull spacing", unit: "length", value: sizes.pullSpacing, min: 0, disabled: !sizes.hardware },
+    { type: "table", id: "holes", columns: ["Part", "Where", "Diameter", "Depth"], rows: [], align: ["left", "left", "right", "right"] },
     { type: "button", id: "generate", label: "Generate cabinet", primary: true },
     { type: "note", id: "status", text: "" },
   ],
   onChange: (_id, values) => {
-    sizes = { ...sizes, .../** @type {Partial<Sizes>} */ (values) };
+    sizes = normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (values) }, metric());
     void storage.app.set("sizes", sizes);
     return explain();
   },
   onAction: (id, values) => {
     if (id !== "generate") return;
-    sizes = { ...sizes, .../** @type {Partial<Sizes>} */ (values) };
+    sizes = normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (values) }, metric());
     return generate();
   },
 });
 
 /** Keep the note and the button saying what Generate will do. */
 async function explain() {
-  const wrong = problem(sizes);
+  const wrong = issue(sizes, metric());
   const own = await selectedOwnCabinet();
-  const f = units.format;
-  const what = `${f(sizes.width)} x ${f(sizes.height)} x ${f(sizes.depth)}, ${sizes.shelves} ${sizes.shelves === 1 ? "shelf" : "shelves"}${sizes.back ? ", back" : ""}${sizes.toeKick > 0 ? `, ${f(sizes.toeKick)} toe kick` : ""}`;
+  const what = phrase(sizes, units.format, metric());
+  const planned = wrong ? null : plan(sizes, metric());
   await panel.update({
     fields: {
       generate: { label: own ? "Update selected cabinet" : "Generate cabinet", disabled: !!wrong },
-      status: wrong ? { text: wrong, tone: "warning" } : { text: own ? `Replaces the selected cabinet with ${what}.` : `Adds a cabinet: ${what}.`, tone: "info" },
+      shelves: { disabled: shelvesOff() },
+      drawers: { disabled: drawersOff() },
+      front: { disabled: frontOff() },
+      hingeInset: { disabled: !sizes.hardware },
+      slideClearance: { disabled: !sizes.hardware },
+      slideSetback: { disabled: !sizes.hardware },
+      pull: { disabled: !sizes.hardware },
+      pullSpacing: { disabled: !sizes.hardware },
+      holes: { rows: sizes.hardware && planned ? planned.rows : [] },
+      status: wrong
+        ? { text: wrong, tone: "warning" }
+        : { text: own ? `Replaces the selected cabinet with ${what}.` : `Adds a cabinet: ${what}.`, tone: "info" },
     },
   });
 }
 
 async function generate() {
-  const wrong = problem(sizes);
-  if (wrong) {
-    await ui.notify(wrong, { kind: "warning" });
+  const planned = plan(sizes, metric());
+  if (planned.error) {
+    await ui.notify(planned.error, { kind: "warning" });
     return;
   }
   const own = await selectedOwnCabinet();
@@ -148,20 +140,20 @@ async function generate() {
   /** @type {import("sawhorse").Vec3 | import("sawhorse").Transform} */
   let at = [0, 0, 0];
   if (own) {
-    // Same place as the one it replaces.
     at = own.transform;
     batch.delete({ node: own.id });
   } else {
     const b = await model.bounds();
-    if (b) at = [b.max[0] + (["mm", "cm", "m"].includes(units.system()) ? 50 * MM : 2 * IN), b.min[1], 0];
+    if (b) at = [b.max[0] + (metric() ? 50 * MM : 2 * IN), b.min[1], 0];
   }
-  const cabinet = batch.component({ name: label, instanceName: "Cabinet", parts: parts(sizes), at });
+  const cabinet = batch.op(importOp(planned.parts, at, label, "Cabinet"));
   try {
     const result = await batch.commit();
     const id = /** @type {number} */ (result.value(cabinet.node));
     await storage.document.set("cabinet", id);
     await model.select([{ kind: "instance", id }]);
-    await ui.notify(`${own ? "Updated the cabinet" : "Made a cabinet"}: ${parts(sizes).map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ")}. The cut list lists every part.`);
+    const made = planned.parts.map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ");
+    await ui.notify(`${own ? "Updated the cabinet" : "Made a cabinet"}: ${made}. The cut list lists every part.`);
   } catch (e) {
     await ui.notify(`Could not make the cabinet: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
   }

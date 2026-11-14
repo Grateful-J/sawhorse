@@ -120,6 +120,24 @@ pub enum NestAlgorithm {
     Maxrects,
 }
 
+/// A sheet's footprint (metres): width across the grain, length along it. Either order
+/// matches a library sheet, so a 4 × 4 is the same square either way.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SheetSize {
+    pub width: f64,
+    pub length: f64,
+}
+
+impl SheetSize {
+    /// The same rectangle, within [`STOCK_EPSILON`], width and length in either order.
+    pub fn matches(self, s: &StockDef) -> bool {
+        let eq = |a: f64, b: f64| (a - b).abs() <= STOCK_EPSILON;
+        (eq(s.width, self.width) && eq(s.length, self.length))
+            || (eq(s.width, self.length) && eq(s.length, self.width))
+    }
+}
+
 /// The saw and the layout.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -142,6 +160,12 @@ pub struct NestSettings {
         skip_serializing_if = "is_default_joint_loss"
     )]
     pub joint_loss: f64,
+    /// When set, sheet goods that do not name their own stock come from a library sheet of
+    /// this footprint. No silent fall-back to a larger sheet: a part that does not fit is
+    /// `too_large`, and a thickness with no sheet of this size is `no_stock`. Absent from
+    /// the file and the hash until it is set, so older documents keep both.
+    #[serde(default, rename = "sheetSize", skip_serializing_if = "Option::is_none")]
+    pub sheet_size: Option<SheetSize>,
 }
 
 fn default_kerf() -> f64 {
@@ -163,6 +187,7 @@ impl Default for NestSettings {
             trim: 0.0,
             algorithm: NestAlgorithm::Guillotine,
             joint_loss: DEFAULT_JOINT_LOSS,
+            sheet_size: None,
         }
     }
 }
@@ -182,6 +207,14 @@ impl NestSettings {
                 "the joint loss must be 0 to 1/2 in",
             ));
         }
+        if let Some(fp) = self.sheet_size {
+            let ok = |x: f64| x.is_finite() && (MIN_STOCK..=MAX_STOCK).contains(&x);
+            if !ok(fp.width) || !ok(fp.length) {
+                return Err(StockError::BadSettings(
+                    "the sheet size must be 1 mm to 10 m on each side",
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -196,6 +229,12 @@ impl NestSettings {
         if !is_default_joint_loss(&self.joint_loss) {
             h.tag("jointLoss");
             h.len(self.joint_loss);
+        }
+        // Only when set, so a document that never chose a sheet hashes as before.
+        if let Some(fp) = self.sheet_size {
+            h.tag("sheetSize");
+            h.len(fp.width);
+            h.len(fp.length);
         }
     }
 }

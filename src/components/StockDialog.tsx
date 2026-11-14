@@ -16,6 +16,8 @@ export interface StockDialogProps {
   onDelete: (name: string) => void;
   onDefault: (material: string, stock: string | null) => void;
   onReset: () => void;
+  /** Which sheet footprint sheet goods nest on. Null is automatic (the first sheet that fits). */
+  onSheetSize: (size: { width: number; length: number } | null) => void;
   onClose: () => void;
 }
 
@@ -35,7 +37,31 @@ interface Draft {
 }
 
 const IN = 0.0254;
+const EPS = 1e-6;
 const EMPTY: Draft = { name: "", kind: "sheet", width: "48 in", length: "96 in", thickness: "3/4 in", nominal: "", grain: "length" };
+const PRESETS: { label: string; width: number; length: number }[] = [
+  { label: "4×8", width: 48 * IN, length: 96 * IN },
+  { label: "4×4", width: 48 * IN, length: 48 * IN },
+  { label: "5×5", width: 60 * IN, length: 60 * IN },
+];
+
+function sameFoot(a: { width: number; length: number }, b: { width: number; length: number }): boolean {
+  const eq = (x: number, y: number) => Math.abs(x - y) <= EPS;
+  return (eq(a.width, b.width) && eq(a.length, b.length)) || (eq(a.width, b.length) && eq(a.length, b.width));
+}
+
+/** Distinct sheet footprints in the library, plus the one nesting uses if it is not there. */
+function footprints(lib: StockLibrary): { width: number; length: number }[] {
+  const out: { width: number; length: number }[] = [];
+  for (const s of lib.stocks) {
+    if (s.kind !== "sheet") continue;
+    const fp = { width: s.width, length: s.length };
+    if (!out.some((f) => sameFoot(f, fp))) out.push(fp);
+  }
+  const cur = lib.settings.sheetSize;
+  if (cur && cur.width > 0 && cur.length > 0 && !out.some((f) => sameFoot(f, cur))) out.push(cur);
+  return out;
+}
 
 /** The default stock of a material (names compare without case). */
 function defaultOf(lib: StockLibrary, material: string): string | null {
@@ -49,6 +75,13 @@ export function StockDialog(p: StockDialogProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const units: UnitSystem = p.units;
+  const sheets = footprints(lib);
+  const sheetPick = (() => {
+    const cur = lib.settings.sheetSize;
+    if (!cur) return "";
+    const i = sheets.findIndex((f) => sameFoot(f, cur));
+    return i < 0 ? "" : String(i);
+  })();
   const edit = (s: StockDef) => {
     setEditing(s.name);
     setErr(null);
@@ -129,6 +162,25 @@ export function StockDialog(p: StockDialogProps) {
         <b>Stock</b>
         <small> what parts are cut from</small>
       </header>
+      <h5>Nest sheet goods on</h5>
+      <label>
+        <span>Sheet</span>
+        <select
+          aria-label="Nest sheet goods on"
+          value={sheetPick}
+          onChange={(e) => {
+            const i = e.currentTarget.value;
+            p.onSheetSize(i === "" ? null : sheets[Number(i)] ?? null);
+          }}
+        >
+          <option value="">Automatic (the first sheet that fits)</option>
+          {sheets.map((f, i) => (
+            <option key={`${f.width},${f.length}`} value={String(i)}>
+              {len(Math.min(f.width, f.length), p.rounding)} × {len(Math.max(f.width, f.length), p.rounding)}
+            </option>
+          ))}
+        </select>
+      </label>
       {p.materials.length ? (
         <>
           <h5>Each material's stock</h5>
@@ -180,6 +232,24 @@ export function StockDialog(p: StockDialogProps) {
         </table>
       </div>
       <h5>{editing ? `Edit ${editing}` : "Add stock"}</h5>
+      <div className="btnrow">
+        {PRESETS.map((pr) => (
+          <button
+            key={pr.label}
+            type="button"
+            className="btn"
+            onClick={() => {
+              setEditing(null);
+              setErr(null);
+              const width = lenU(pr.width, p.rounding);
+              const length = lenU(pr.length, p.rounding);
+              setDraft({ ...EMPTY, kind: "sheet", name: draft.name, width, length, exact: { width: [width, pr.width], length: [length, pr.length] } });
+            }}
+          >
+            {pr.label}
+          </button>
+        ))}
+      </div>
       <div className="stock-form">
         {field("name", "Name", { placeholder: "3/4 Baltic birch 5 x 5", size: 18 })}
         <label>

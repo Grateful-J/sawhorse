@@ -9,6 +9,7 @@
 // every laser and CAM program reads; or R12 (`$ACADVER` AC1009, POLYLINE / VERTEX / SEQEND)
 // for strict R12-only readers.
 import type { Nesting, StockPiece } from "../kernel/types";
+import type { BlankFeatures } from "./machine";
 
 export const DXF_TYPE = { description: "DXF", mime: "image/vnd.dxf", extensions: [".dxf"] };
 
@@ -47,11 +48,16 @@ class Dxf {
   }
 }
 
-/** The whole nesting as one DXF. */
-export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline"): string {
+/** The whole nesting as one DXF. Without `features` the file is the rectangles only.
+ * A measured profile replaces that part's rectangle. Pockets and drills are extra layers,
+ * and only when a part actually has them. */
+export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>): string {
   const r12 = flavour === "r12";
   const d = new Dxf();
-  const layers = ["STOCK", "LABELS", ...n.pieces.map(pieceLayer)];
+  const feat = (tag: string) => features?.get(tag);
+  const anyPocket = !!features && n.pieces.some((p) => p.placements.some((q) => (feat(q.tag)?.pockets.length ?? 0) > 0));
+  const anyDrill = !!features && n.pieces.some((p) => p.placements.some((q) => (feat(q.tag)?.drills.length ?? 0) > 0));
+  const layers = ["STOCK", "LABELS", ...n.pieces.map(pieceLayer), ...(anyPocket ? ["POCKETS"] : []), ...(anyDrill ? ["DRILL"] : [])];
   d.pair(0, "SECTION");
   d.pair(2, "HEADER");
   if (r12) {
@@ -154,9 +160,32 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline"): stri
     text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), `${p.index}. ${p.stock}${p.material ? ` - ${p.material}` : ""} (${p.seq} of ${p.count})`);
     const layer = pieceLayer(p);
     for (const q of p.placements) {
-      poly(layer, rect(ox + q.x * MM, fy(q.y + q.dy), q.dx * MM, q.dy * MM));
+      // Blank (u, v) to file millimetres. v runs with the sheet's y, which the file flips.
+      const f = feat(q.tag);
+      const place = (u: number, v: number): [number, number] => [ox + (q.x + u) * MM, fy(q.y + v)];
+      if (f?.profile && f.profile.length >= 3) poly(layer, f.profile.map(([u, v]) => place(u, v)));
+      else poly(layer, rect(ox + q.x * MM, fy(q.y + q.dy), q.dx * MM, q.dy * MM));
       const h = Math.max(1, Math.min(25, (q.dy * MM) / 4, (q.dx * MM) / (q.tag.length * 1.2 + 1)));
       text("LABELS", ox + (q.x + q.dx / 2) * MM, fy(q.y + q.dy / 2) - h / 2, h, q.tag);
+      const labelAt = (loop: [number, number][]) => {
+        let u = 0;
+        let v = 0;
+        for (const pnt of loop) {
+          u += pnt[0];
+          v += pnt[1];
+        }
+        return place(u / loop.length, v / loop.length);
+      };
+      for (const pocket of f?.pockets ?? []) {
+        poly("POCKETS", pocket.loop.map(([u, v]) => place(u, v)));
+        const [x, y] = labelAt(pocket.loop);
+        text("POCKETS", x, y, Math.min(h, 8), `depth ${dxfNum(pocket.depth * MM)}`);
+      }
+      for (const drill of f?.drills ?? []) {
+        poly("DRILL", drill.loop.map(([u, v]) => place(u, v)));
+        const [x, y] = labelAt(drill.loop);
+        text("DRILL", x, y, Math.min(h, 8), `dia ${dxfNum(drill.diameter * MM)} depth ${dxfNum(drill.depth * MM)}`);
+      }
     }
   });
   d.pair(0, "ENDSEC");

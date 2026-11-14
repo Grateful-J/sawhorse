@@ -1163,6 +1163,8 @@ export interface NestSettings {
   algorithm: NestAlgorithm;
   /** #49: the width each glue joint costs (metres); absent at the default, 1/8 in. */
   jointLoss?: number;
+  /** Sheet footprint for parts that do not name their own stock. Absent: the first sheet that fits. */
+  sheetSize?: { width: number; length: number } | null;
 }
 
 export interface StockLibrary {
@@ -1261,6 +1263,8 @@ export interface Unplaced {
   stock: string | null;
   sheet: boolean;
   reason: UnplacedReason;
+  /** The sheet footprint that was asked for, when none of that size has this thickness. */
+  asked?: [number, number] | null;
 }
 
 export interface NestGroup {
