@@ -6,9 +6,9 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
 
 1. Open the Plugins pane (the puzzle-piece tab at the end of the side panel) and click **Enable…** beside Cabinet generator. The dialog lists what it asks for: read the model, change the model, add a panel and a command, keep settings.
 2. The **Cabinet** section appears at the top of the pane, short like a cabinet shop's order form:
-   - **Start from** fills in a cabinet: Base (a door and a shelf), Drawer base (three drawers), Sink base, a drawer over a door, Trash pull-out (two bins), Wall (12 in deep, no toe kick, nailers top and bottom, door pulls measured from the bottom), Tall pantry (84 in, too long for a 4 x 4 bed), or Open shelves. It sets the style, the usual sizes and the name, and keeps your stock, joints and hardware.
+   - **Start from** fills in a cabinet: Base (a door and a shelf), Drawer base (three equal drawers), Sink base, a 6 in drawer over a door, Trash pull-out (two bins), Wall (12 in deep, no toe kick, nailers top and bottom, door pulls measured from the bottom), Tall pantry (84 in, too long for a 4 x 4 bed), or Open shelves. It sets the style, the usual sizes and the name, and keeps your stock, joints and hardware. Base cabinets are 23 1/4 in deep (24 in with the door, the frameless standard, and a side and a top share a 4 x 4 sheet); in millimetres they are 870 tall with the toe kick (a 720 carcass on a plinth) and 560 deep.
    - **Name**, width, height and depth, the **style** (doors, drawers, drawers over a door, trash pull-out, open shelves) and how many shelves (0 for none), drawers or bins.
-   - Two switches: **Hidden (blind) dado joints** and **Drill hardware holes**.
+   - Two switches, both on to start: **Hidden (blind) dado joints** and **Drill hardware holes**.
    - **Generate cabinet**, with what it will add and one line on what it comes to: how many parts, from which stock thicknesses (exactly: 23/32 in, not 3/4), how many holes, and the runner's part number.
 3. **Details** opens one group at a time; a field shows only when it applies:
    - **Construction:** base, back, joints and bit.
@@ -25,7 +25,7 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
 | Field | Starts at | Used for | Material |
 |---|---|---|---|
 | Cabinet and doors | 23/32 in ("3/4" ply) | sides, top, bottom, shelves, toe kick, doors | Cabinet plywood, Door plywood |
-| Drawer fronts | 15/32 in ("1/2" ply) | drawer fronts | Drawer front plywood |
+| Drawer fronts | 23/32 in, the doors' stock, so a drawer over a door is flush with it | drawer fronts | Drawer front plywood |
 | Drawer boxes | 15/32 in | drawer sides, sub-fronts, backs | Drawer box plywood |
 | Back and drawer bottoms | 7/32 in ("1/4" ply) | the back, drawer bottoms | Back plywood |
 
@@ -59,17 +59,19 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 | Box bottom above the opening | 14 mm | 16 mm |
 | Bottom recess | 13 mm | 13 mm |
 | Runner screws above the opening | 37 mm | 38 mm |
-| Runner screws from the front | 37, A, B (Blum's table) | 37, A, B, or 3 mm less each with 1/2 in or thinner sides |
+| Runner screws from the front | 37, A, B (Blum's table) | 37, A, B, or 3 mm less each with a 1/2 in or thinner box (Blum's note for sub-fronts without T59.K010M) |
 
 **Runner length** is the longest the inside depth allows, or the one you pick. Box sides are 12 to 16 mm.
 
+**Drawer heights.** A drawer cabinet's fronts are all one height (an overlay front covers the top or the bottom, so the top and bottom boxes are a thickness shorter). Drawers over a door are each **Drawer front height** tall (6 in, 150 mm to start), stacked from the top, with the door under them and the shelves behind it.
+
 **Drawer box construction.**
 - The bottom slides in from the back, in grooves 13 mm up in the sides and the sub-front.
-- The box back sits on the bottom, so the runner passes under it: there is no runner notch to cut.
+- The box back sits on the bottom, so the runner passes under it: there is no runner notch to cut (Blum's "no notching" option). The bottom must be 6 mm (1/4 in) or thinner, or the rear hook hole breaks out of the back's bottom edge.
 - The bottom is 1/32 in short of the grooves' bottoms on each edge, and runs to the back of the box, where it is screwed up into the back.
 
 **Hardware.** Tick **Drill hardware holes** to drill what a flat-bed router can.
-- **Hinges:** a Blum CLIP top cup, 35 mm and 13 mm deep, in each door's back face. Its centre is 17.5 mm plus the **boring distance** (3 to 7 mm, 4.5 to start) from the hinge edge. Hinges sit **in from the door's top and bottom** by the distance you set; doors over 900 mm tall get three, then four and five. Each mounting plate gets two 5 mm holes 32 mm apart, 37 mm back. A plate that would sit on a shelf slides along the door, and the table says by how much.
+- **Hinges:** a Blum CLIP top cup, 35 mm and 13 mm deep, in each door's back face. Its centre is 17.5 mm plus the **boring distance** (3 to 7 mm, 5 to start) from the hinge edge. The table says what overlay that gives on a 0 mm plate (Blum: 11 + boring distance, 16 mm at 5) against what the door covers (the side less half the gap), and the boring distance that matches. Hinges sit **in from the door's top and bottom** by the distance you set; doors over 900 mm tall get three, then four and five. Each mounting plate gets two 5 mm holes 11.5 mm deep, 32 mm apart, 37 mm back, for plates with pre-mounted system screws (173L8100, 175L8100; the 173L6100 family takes wood screws instead). A plate that would sit on a shelf slides along the door, and the table says by how much.
 - **Door pull:** two through holes on the opening edge.
   - Vertical or horizontal.
   - Measured from the top (base cabinets) or the bottom (wall cabinets).
@@ -80,10 +82,11 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
   - **no pull:** a finger notch in the front's top edge, its width and depth yours to set. The sub-front behind it is cut 25 mm lower, so fingers reach behind the front. The notch needs no hardware ticked.
 - **Pull hole diameter** is 5 mm to start.
 - **Runner screws:** 5 mm x 13 mm holes in both sides, for Blum system screws.
+- **Rear hook holes:** 6 mm x 10 mm in the rear face of each drawer back, 7 mm from each end (the sides' inside faces) and 24 mm above the bottom of the box (Blum: 11 above the 13 mm notch line).
+- **Locking devices** (T51.1901 for TANDEM, T51.7601 for MOVENTO) each need two 2.5 mm pilot holes 10 mm deep at 75 degrees, drilled by hand with the T65.1600.01 template.
+- 5 and 6 mm holes are smaller than a 1/4 in bit: the table says to drill their layers with drill bits of their size.
 
-The table lists every cut and how it is made. Two kinds are listed but not drilled:
-- The rear hook bore (6 x 10 mm in the end of each drawer side) is an edge bore, for a jig.
-- With inset fronts, the hinge plates and runner screws are left to Blum's inset tables.
+The table lists every cut and how it is made. With inset fronts, the hinge plates and runner screws are listed but not drilled: they are left to Blum's inset tables.
 
 **Changing it.** Select the cabinet (a click on it selects the whole component) and the button reads **Update selected cabinet**: it replaces that cabinet in place with the new sizes, again as one undo step. With anything else selected, it adds a new cabinet beside the model. The whole cabinet is one undo step ("Generate cabinet").
 

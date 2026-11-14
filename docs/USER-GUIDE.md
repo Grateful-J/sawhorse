@@ -451,14 +451,14 @@ Plugins add tools, panels and commands. Each runs in its own sandbox, apart from
 **The samples** come with Sawhorse, off until you enable them:
 
 - **Cabinet generator**: a frameless cabinet for a CNC router. The panel starts short:
-  - **Start from** a cabinet (Base, Drawer base, Sink base, a drawer over a door, Trash pull-out, Wall, Tall pantry, Open shelves).
+  - **Start from** a cabinet (Base, Drawer base, Sink base, a drawer over a door, Trash pull-out, Wall, Tall pantry, Open shelves). Base cabinets are 23 1/4 in deep, 24 in with the door (in millimetres, 870 tall with the toe kick and 560 deep).
   - Its name, sizes and style.
-  - **Hidden (blind) dado joints** and **Drill hardware holes**.
+  - **Hidden (blind) dado joints** and **Drill hardware holes**, both on to start.
   - **Generate**, with one line on what it comes to: parts, the exact stock thicknesses, holes, and the runner's part number.
 
   **Details** opens one group at a time, showing only what applies:
-  - **Cabinet:** a name (it names the cabinet and its CNC files, and counts up: Base 1, Base 2), the sizes, and the style (Doors and shelves, Drawers, Drawers over a door, or Open shelves).
-  - **Stock, measured:** the cabinet and doors (23/32 in, what "3/4" ply is), drawer fronts and drawer boxes (15/32 in, "1/2" ply), and the back and drawer bottoms (7/32 in). Every joint is cut to these numbers. Each kind of part is on its own plywood material (Cabinet, Door, Drawer front, Drawer box and Back plywood), so the Cut list nests it as sheet goods; for a 4 x 4 bed, Stock... > **Use 4 x 4 plywood** sets that up in one click.
+  - **Cabinet:** a name (it names the cabinet and its CNC files, and counts up: Base 1, Base 2), the sizes, and the style (Doors and shelves, Drawers, Drawers over a door, or Open shelves). A drawer cabinet's fronts are all one height; drawers over a door are each the **Drawer front height** (6 in to start), stacked from the top, with the door under them.
+  - **Stock, measured:** the cabinet and doors (23/32 in, what "3/4" ply is), drawer fronts (23/32 in, the doors' stock, so the fronts are flush), drawer boxes (15/32 in, "1/2" ply), and the back and drawer bottoms (7/32 in). Every joint is cut to these numbers. Each kind of part is on its own plywood material (Cabinet, Door, Drawer front, Drawer box and Back plywood), so the Cut list nests it as sheet goods; for a 4 x 4 bed, Stock... > **Use 4 x 4 plywood** sets that up in one click.
   - **Base and back:** a toe kick with the sides notched for it, or none, for cabinets set on a base you build. The back sits in grooves in the sides, top and bottom, 1/2 in in from the rear edge, or between the sides as before.
   - **Fronts:** overlay or inset, with the gap between them yours to set. Doors: automatic (a pair over 24 in), one or two; one door hinges on the side you pick, its pull on the other edge. Doors with no shelves: set Fixed shelves to 0.
   - **Rear nailers:** none, top, or top and bottom (the Wall cabinet starts with both), behind the back at the rear edge, to screw the cabinet to the wall through.
@@ -466,15 +466,15 @@ Plugins add tools, panels and commands. Each runs in its own sandbox, apart from
   - **Joinery and bit:** blind dados, their depth, how far short of the front they stop, the fit over the stock, and your bit's diameter. The rails' front corners are notched the stop plus one bit deep, so the router's round groove ends never meet them.
   - **Drawer runners:** **Blum TANDEM 563H** or **MOVENTO 763H**, sized from Blum's tables: the inside of the box 42 mm narrower than the opening, the bottom 13 mm up and sliding in from the back under the box's back, the box 21 mm (MOVENTO 23 mm) shorter than its opening, and the longest runner the depth allows (or the one you pick).
   - **Hardware:** with **Drill hardware holes** ticked, the router drills:
-    - 35 mm hinge cups 13 mm deep in the back of each door, 17.5 mm plus the boring distance (4.5 mm) from its edge and the hinge inset from its top and bottom;
-    - their mounting plates' holes on the side, 37 mm back (a plate that would sit on a shelf moves, and the table says by how much);
-    - the runner screw holes from Blum's table;
+    - 35 mm hinge cups 13 mm deep in the back of each door, 17.5 mm plus the boring distance (5 mm) from its edge and the hinge inset from its top and bottom (the table says what overlay that gives and what boring distance matches your door);
+    - their mounting plates' holes on the side, 5 x 11.5 mm, 37 mm back (a plate that would sit on a shelf moves, and the table says by how much);
+    - the runner screw holes from Blum's table, and the runners' rear hook holes in the back of each drawer box (6 x 10 mm);
     - door pulls, vertical or horizontal on the opening edge, measured from the top or the bottom;
     - drawer pulls, centred or down from the top.
 
     A drawer can have a finger notch in its top edge instead of a pull, with the sub-front behind it cut lower.
 
-  The table lists every cut, and those a router cannot make (the hook bore in a drawer side's end, for a jig) or that depend on the hinge (inset fronts' plates and runners). A groove narrower than your bit (the back and bottom grooves) is listed, to cut with a smaller bit. With that cabinet selected the button reads **Update selected cabinet** and replaces it in place.
+  The table lists every cut, what is done by hand (the locking devices' pilot holes, with Blum's template), and what depends on the hinge (inset fronts' plates and runners). A groove or hole narrower than your bit (the back and bottom grooves, the 5 and 6 mm holes) is listed, to cut with a smaller bit or a drill bit of its size. With that cabinet selected the button reads **Update selected cabinet** and replaces it in place.
 - **Shelf pin holes**: pick **Pins** in the rail, hover a face and a column of holes shows; click to drill it. Type `count, pitch, diameter` (8, 32mm, 5mm to start). Esc clears the preview; one Ctrl+Z takes a column back. To drill a cabinet side, open the cabinet and the side first (double-click, or the Outliner's Edit inside). The cabinet generator's left and right sides are separate parts (each is cut from its own face), so drill each one.
 - **Model report**: a live report of the model (counts of solids, groups, components, instances, faces and edges, the overall size, the volume, board feet by material, warnings) with **Export report** to Markdown and CSV.
 
