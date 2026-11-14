@@ -114,7 +114,7 @@ export function cncFileName(title: string, n: Nesting, index: number, features: 
 }
 
 export interface NestProblem {
-  kind: "unplaced" | "glued" | "material";
+  kind: "unplaced" | "glued" | "material" | "spacing";
   tag: string;
   name: string;
   text: string;
@@ -142,4 +142,25 @@ export function nestProblems(n: Nesting, units: Units, reason: (u: Nesting["unpl
     }
   }
   return out;
+}
+
+/** The bit a CNC export assumes when it checks the spacing: 1/4 in, the usual for sheet goods. */
+export const CNC_BIT = 0.25 * 0.0254;
+
+/**
+ * Parts too close together for a router bit. An outside profile runs half the bit outside each
+ * part, so two parts closer than the bit (plus 1/16 in of wood between the two cuts) have cuts
+ * that meet, and CAM programs (Carbide Create, VCarve) merge outside cuts that meet: they cut
+ * around the group and skip the edges between its parts.
+ */
+export function spacingProblem(n: Nesting, units: Units, bit = CNC_BIT): NestProblem | null {
+  const gap = n.settings.kerf;
+  if (gap >= bit + 0.0625 * 0.0254 - 1e-9) return null;
+  if (!n.pieces.some((p) => p.placements.length > 1)) return null;
+  return {
+    kind: "spacing",
+    tag: "",
+    name: "Every sheet",
+    text: `parts are ${fineU(gap, units)} apart (Kerf), too close for a ${fineU(bit, units)} bit: the outside cuts of neighbouring parts meet, and the CAM program cuts around the group, not between its parts. Space them for the router (3/8 in), or set Kerf to more than your bit.`,
+  };
 }

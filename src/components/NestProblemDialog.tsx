@@ -9,6 +9,8 @@ export interface NestProblemRequest {
   problems: NestProblem[];
   onSave: () => void;
   onStock: () => void;
+  /** A one-click fix, offered first (e.g. space the parts for the router). */
+  fix?: { label: string; run: () => void };
 }
 
 export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; onClose: () => void }) {
@@ -24,29 +26,42 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>
-          {n} part{n === 1 ? "" : "s"} will not be cut as drawn
-        </b>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "These cuts will not come out as drawn" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (
           <li key={`${p.tag}-${i}`}>
-            <span className="tag">{p.tag}</span> {p.name}: {p.text}
+            {p.tag ? <span className="tag">{p.tag}</span> : null} {p.name}: {p.text}
           </li>
         ))}
       </ul>
       <div className="btnrow">
-        <button
-          type="button"
-          className="btn primary"
-          autoFocus
-          onClick={() => {
-            onClose();
-            req.onStock();
-          }}
-        >
-          Open Stock...
-        </button>
+        {req.fix ? (
+          <button
+            type="button"
+            className="btn primary"
+            autoFocus
+            onClick={() => {
+              onClose();
+              req.fix?.run();
+            }}
+          >
+            {req.fix.label}
+          </button>
+        ) : null}
+        {req.problems.some((p) => p.kind !== "spacing") ? (
+          <button
+            type="button"
+            className={req.fix ? "btn" : "btn primary"}
+            autoFocus={!req.fix}
+            onClick={() => {
+              onClose();
+              req.onStock();
+            }}
+          >
+            Open Stock...
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn"

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { NestProblemDialog } from "./NestProblemDialog";
 
@@ -22,3 +22,22 @@ describe("nest problem dialog", () => {
     expect(onStock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("nest problem dialog with a fix", () => {
+  it("offers the fix first, and no Open Stock... for spacing alone", () => {
+    const run = vi.fn();
+    const onSave = vi.fn();
+    const { container } = render(
+      <NestProblemDialog
+        req={{ what: "the CNC files", problems: [{ kind: "spacing", tag: "", name: "Every sheet", text: "parts are 1/8 in apart" }], onSave, onStock: () => {}, fix: { label: "Space the parts for the router", run } }}
+        onClose={() => {}}
+      />,
+    );
+    const mine = within(container);
+    expect(mine.queryByRole("button", { name: "Open Stock..." })).toBeNull();
+    fireEvent.click(mine.getByRole("button", { name: "Space the parts for the router" }));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});
+

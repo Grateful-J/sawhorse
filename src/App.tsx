@@ -8,13 +8,13 @@ import { Viewport, type KernelState, type ViewportPointer } from "./components/V
 import { SidePanel, type PaneId } from "./components/SidePanel";
 import { CutListReport } from "./components/CutListReport";
 import { rowKey } from "./components/CutListPane";
-import { NestingSection } from "./components/NestingSection";
+import { cncSettings, NestingSection } from "./components/NestingSection";
 import { StockDialog } from "./components/StockDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
-import { cncFileName, cncNotes, nestProblems, thicknessMismatches } from "./nesting/cnc";
+import { cncFileName, cncNotes, nestProblems, spacingProblem, thicknessMismatches } from "./nesting/cnc";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
 import { sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
@@ -2287,14 +2287,19 @@ export function App() {
   // not saved for cutting without asking.
   const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
   const guardNest = useCallback(
-    (what: string, save: () => void) => {
+    (what: string, save: () => void, cnc = false) => {
       const n = nesting;
       if (!n) return;
       const problems = nestProblems(n, nestUnits, reasonText);
+      // For the router: parts too close for the bit cut as one blob in the CAM program.
+      const spacing = cnc ? spacingProblem(n, nestUnits) : null;
+      if (spacing) problems.unshift(spacing);
       if (!problems.length) return save();
-      setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true) });
+      const metric = units === "mm" || units === "cm" || units === "m";
+      const fix = spacing ? { label: "Space the parts for the router", run: () => setNestSettings({ ...n.library.settings, ...cncSettings(metric) }) } : undefined;
+      setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true), fix });
     },
-    [nesting, nestUnits],
+    [nesting, nestUnits, units, setNestSettings],
   );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
@@ -3172,7 +3177,7 @@ export function App() {
               onSelect={selectPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
               onDxf={(f) => guardNest("the DXF", () => void saveNestDxf(f))}
-              onCnc={() => guardNest("the CNC files", () => void saveNestCnc())}
+              onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), true)}
               onPdf={() => guardNest("the PDF", () => void saveNestPdf())}
               lit={nestLit}
             />

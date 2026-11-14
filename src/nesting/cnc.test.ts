@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cncSettings } from "../components/NestingSection";
-import { cncFileName, cncNotes, nestProblems, safeName, sheetOps, thicknessMismatches } from "./cnc";
+import { cncFileName, cncNotes, nestProblems, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
 import type { BlankFeatures } from "./machine";
 import { smallNesting } from "./fixture";
 
@@ -98,3 +98,20 @@ describe("nest problems", () => {
     expect(nestProblems(n, "sixteenth", () => "")).toEqual([]);
   });
 });
+
+describe("spacing for the router", () => {
+  it("parts 1/8 in apart are too close for a 1/4 in bit; the CNC router spacing is not", () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, kerf: IN / 8 };
+    const p = spacingProblem(n, "sixteenth");
+    expect(p?.kind).toBe("spacing");
+    expect(p?.text).toContain("1/8 in apart");
+    n.settings = { ...n.settings, ...cncSettings(false) };
+    expect(spacingProblem(n, "sixteenth")).toBeNull();
+    // A sheet with one part each has nothing to merge.
+    n.settings = { ...n.settings, kerf: IN / 8 };
+    for (const piece of n.pieces) piece.placements = piece.placements.slice(0, 1);
+    expect(spacingProblem(n, "sixteenth")).toBeNull();
+  });
+});
+
