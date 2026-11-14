@@ -32,3 +32,21 @@ describe("plugin panel length fields", () => {
     expect(onChange.mock.calls[0][1]).toBeCloseTo(0.75 * IN, 12);
   });
 });
+
+describe("plugin panel sections", () => {
+  it("show the label, the summary while closed, and report the opposite of their state when clicked", () => {
+    const onChange = vi.fn();
+    const closed: PanelField[] = [{ type: "section", id: "size", label: "1 · Size", summary: "24 × 34 1/2", value: false }];
+    const { rerender } = render(<PluginPanel panelKey="p" fields={closed} units="frac-in" onChange={onChange} onAction={() => {}} />);
+    const head = screen.getByRole("button", { name: /1 · Size/ });
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(head.textContent).toContain("24 × 34 1/2");
+    fireEvent.click(head);
+    expect(onChange).toHaveBeenCalledWith("size", true);
+    rerender(<PluginPanel panelKey="p" fields={[{ ...closed[0], value: true } as PanelField]} units="frac-in" onChange={onChange} onAction={() => {}} />);
+    expect(screen.getByRole("button", { name: /1 · Size/ }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /1 · Size/ }));
+    expect(onChange).toHaveBeenLastCalledWith("size", false);
+  });
+});
+

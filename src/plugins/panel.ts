@@ -1,5 +1,5 @@
 // Plugin panels are declarative: a plugin sends a list of fields (text, number with units,
-// select, checkbox, button, table, note, image) and the app draws them with its own
+// select, checkbox, section, button, table, note, image) and the app draws them with its own
 // components (src/components/PluginPanel.tsx). Nothing a plugin sends becomes markup: every
 // field is checked here and only known properties of known types are kept.
 
@@ -14,6 +14,9 @@ export type PanelField =
   | { type: "number"; id: string; label: string; value: number | null; unit: "length" | "none" | "count" | "angle"; min?: number; max?: number; step?: number; disabled?: boolean }
   | { type: "select"; id: string; label: string; value: string; options: { value: string; label: string }[]; disabled?: boolean }
   | { type: "checkbox"; id: string; label: string; value: boolean; disabled?: boolean }
+  /** A heading that opens and closes (value: open), with one line on what is in it. The plugin
+   * shows the fields under an open section itself; a click reports the new value. */
+  | { type: "section"; id: string; label: string; summary?: string; value: boolean; disabled?: boolean }
   | { type: "button"; id: string; label: string; primary?: boolean; disabled?: boolean }
   | { type: "table"; id?: string; columns: string[]; rows: string[][]; align?: ("left" | "right")[] }
   | { type: "note"; id?: string; text: string; tone: "info" | "warning" | "error" }
@@ -31,6 +34,10 @@ export const PANEL_BUDGET = { cells: 5000, chars: 256 * 1024, images: 4, imageBy
 // SVG is refused (lane 16): its size is not in a header and it can describe any bitmap size.
 const IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/;
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
+
+/** The fields that hold a value the plugin hears about. */
+export type InputField = Extract<PanelField, { type: "text" | "number" | "select" | "checkbox" | "section" }>;
+export const isInput = (f: PanelField): f is InputField => f.type === "text" || f.type === "number" || f.type === "select" || f.type === "checkbox" || f.type === "section";
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -95,6 +102,8 @@ export function checkField(raw: unknown, where: string): PanelField {
     }
     case "checkbox":
       return drop({ type: "checkbox", id: fieldId(raw.id, where, true)!, label: str(raw.label, `${where}.label`, 100), value: !!raw.value, disabled });
+    case "section":
+      return drop({ type: "section", id: fieldId(raw.id, where, true)!, label: str(raw.label, `${where}.label`, 64), summary: raw.summary === undefined ? undefined : str(raw.summary, `${where}.summary`, 200, false), value: !!raw.value, disabled });
     case "button":
       return drop({ type: "button", id: fieldId(raw.id, where, true)!, label: str(raw.label, `${where}.label`, 64), primary: bool(raw.primary), disabled });
     case "table": {
@@ -129,7 +138,7 @@ export function checkField(raw: unknown, where: string): PanelField {
       return drop({ type: "image", id: fieldId(raw.id, where, false), src, alt: str(raw.alt, `${where}.alt`, 200), width: num(raw.width, `${where}.width`) });
     }
     default:
-      throw new TypeError(`${where}.type must be one of text, number, select, checkbox, button, table, note, image (got ${JSON.stringify(raw.type)})`);
+      throw new TypeError(`${where}.type must be one of text, number, select, checkbox, section, button, table, note, image (got ${JSON.stringify(raw.type)})`);
   }
 }
 
@@ -181,7 +190,7 @@ export function checkBody(raw: unknown): PanelField[] {
 /** The values a panel reports: every input field by id. */
 export function valuesOf(fields: PanelField[]): Record<string, FieldValue> {
   const out: Record<string, FieldValue> = {};
-  for (const f of fields) if (f.type === "text" || f.type === "number" || f.type === "select" || f.type === "checkbox") out[f.id] = f.value;
+  for (const f of fields) if (isInput(f)) out[f.id] = f.value;
   return out;
 }
 
@@ -200,7 +209,7 @@ export function patchFields(fields: PanelField[], patch: { fields?: unknown; val
     const values = patch.values;
     // Own keys only (lane 16): a field named "constructor" is not in `values` because
     // Object.prototype has a constructor.
-    next = next.map((f) => (f.id && Object.prototype.hasOwnProperty.call(values, f.id) && (f.type === "text" || f.type === "number" || f.type === "select" || f.type === "checkbox") ? checkField({ ...f, value: values[f.id] }, f.id) : f));
+    next = next.map((f) => (f.id && Object.prototype.hasOwnProperty.call(values, f.id) && isInput(f) ? checkField({ ...f, value: values[f.id] }, f.id) : f));
   }
   if (next !== fields) checkBudget(next);
   return next;

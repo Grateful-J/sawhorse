@@ -170,6 +170,27 @@ function PluginPanelView({ panelKey, fields, units, onChange, onAction }: Plugin
           </label>,
         );
         return;
+      case "section":
+        out.push(
+          <button
+            type="button"
+            key={k}
+            className={`pf-section${f.value ? " open" : ""}`}
+            data-section={f.id}
+            aria-expanded={f.value}
+            disabled={f.disabled}
+            onClick={() => onChange(f.id, !f.value)}
+          >
+            <span className="pf-section-head">
+              <span className="pf-section-label">{f.label}</span>
+              <span className="pf-chevron" aria-hidden="true">
+                {f.value ? "\u25BE" : "\u25B8"}
+              </span>
+            </span>
+            {f.summary ? <span className="pf-section-summary">{f.summary}</span> : null}
+          </button>,
+        );
+        return;
       case "checkbox":
         out.push(
           <label className="pf-check" key={k}>

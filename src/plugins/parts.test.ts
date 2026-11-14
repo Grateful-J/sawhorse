@@ -55,6 +55,20 @@ describe("panel fields", () => {
     expect(valuesOf(next).w).toBe(0.5);
   });
 
+  it("a section is a heading that opens and closes, with a one-line summary; its value is whether it is open", () => {
+    const body = checkBody([
+      { type: "section", id: "size", label: "1 · Size", summary: "24 × 34 1/2 × 23 1/4", value: 1, onclick: "x" },
+      { type: "section", id: "more", label: "2 · More" },
+    ]);
+    expect(body[0]).toEqual({ type: "section", id: "size", label: "1 · Size", summary: "24 × 34 1/2 × 23 1/4", value: true });
+    expect(body[1]).toEqual({ type: "section", id: "more", label: "2 · More", value: false });
+    expect(valuesOf(body)).toEqual({ size: true, more: false });
+    const next = patchFields(body, { fields: { size: { summary: "30 × 30 × 12" } }, values: { more: true } });
+    expect(next[0]).toMatchObject({ summary: "30 × 30 × 12", value: true });
+    expect(valuesOf(next).more).toBe(true);
+    expect(() => checkBody([{ type: "section", label: "No id" }])).toThrow("starting with a letter");
+  });
+
   it.each([
     [[{ type: "script", src: "x" }], "type must be one of"],
     [[{ type: "image", src: "https://tracker.example.com/pixel.png", alt: "" }], "data: URL"],

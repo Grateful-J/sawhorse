@@ -340,6 +340,10 @@ declare module "sawhorse" {
     | { type: "number"; id: string; label: string; value?: number; unit?: "length" | "none" | "count" | "angle"; min?: number; max?: number; step?: number; disabled?: boolean }
     | { type: "select"; id: string; label: string; value?: string; options: { value: string; label: string }[]; disabled?: boolean }
     | { type: "checkbox"; id: string; label: string; value?: boolean; disabled?: boolean }
+    /** A heading that opens and closes (value: open), with an optional one-line summary of what
+     * is in it ("3/4 in carcass · 1/4 in back"). A click reports the new value; the plugin shows
+     * the fields under an open section itself (setBody). */
+    | { type: "section"; id: string; label: string; summary?: string; value?: boolean; disabled?: boolean }
     | { type: "button"; id: string; label: string; primary?: boolean; disabled?: boolean }
     | { type: "table"; id?: string; columns: string[]; rows: (string | number)[][]; align?: ("left" | "right")[] }
     | { type: "note"; id?: string; text: string; tone?: "info" | "warning" | "error" }

@@ -297,6 +297,7 @@ const panel = await ui.registerPanel({
     { type: "text", id: "name", label: "Name", value: "Base" },
     { type: "select", id: "wood", label: "Wood", value: "oak", options: [{ value: "oak", label: "Oak" }, { value: "ash", label: "Ash" }] },
     { type: "checkbox", id: "back", label: "Back panel", value: true },
+    { type: "section", id: "size", label: "1 · Size", summary: "24 × 34 1/2 × 23 1/4", value: false }, // a heading that opens and closes
     { type: "table", id: "parts", columns: ["Part", "Qty"], rows: [["Side", 2]], align: ["left", "right"] },
     { type: "note", id: "status", text: "Ready.", tone: "info" }, // "warning", "error"
     { type: "image", id: "pic", src: "data:image/png;base64,...", alt: "Diagram", width: 120 },
@@ -309,7 +310,9 @@ await panel.update({ fields: { status: { text: "Done.", tone: "info" }, generate
 await panel.setBody([...]); // replace everything
 ```
 
-`values` holds every input field by id. A typed length that cannot be read ("3 1/2 ft-ish") shows its error under the field and is not sent (the field keeps the focus to be fixed; Esc puts the old value back). Enter that commits a number or text field hands the keyboard back to the model, so the person's next tool key ("r", "p") picks a tool; a checkbox or a button keeps only Space and Enter. Images are base64 `data:` URLs of png, jpeg, gif or webp (SVG is refused: its size is not in its header), at most 256 KB each and 2048 x 2048 pixels (read from the image's header before the browser decodes it). One panel holds at most 100 fields, 5,000 table cells, 256 K characters of text and 4 images (512 KB in all); a body or an update over that is refused with `"invalid"`. Registering the same panel, command or tool again with nothing changed redraws nothing.
+A **section** is a heading that opens and closes, with an optional one-line `summary` of what is in it, shown while it is closed. Its value is whether it is open, and a click reports the other value through `onChange`; the plugin shows the fields under an open section itself (`setBody`), so a long panel can show one group at a time. Keep each summary current with `panel.update({ fields: { size: { summary: "..." } } })`. The cabinet generator's panel is built this way.
+
+`values` holds every input field by id (a section's is whether it is open). A typed length that cannot be read ("3 1/2 ft-ish") shows its error under the field and is not sent (the field keeps the focus to be fixed; Esc puts the old value back). Enter that commits a number or text field hands the keyboard back to the model, so the person's next tool key ("r", "p") picks a tool; a checkbox or a button keeps only Space and Enter. Images are base64 `data:` URLs of png, jpeg, gif or webp (SVG is refused: its size is not in its header), at most 256 KB each and 2048 x 2048 pixels (read from the image's header before the browser decodes it). One panel holds at most 100 fields, 5,000 table cells, 256 K characters of text and 4 images (512 KB in all); a body or an update over that is refused with `"invalid"`. Registering the same panel, command or tool again with nothing changed redraws nothing.
 
 ### Tools
 
