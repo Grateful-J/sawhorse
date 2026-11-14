@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { defaults, importOp, normalize, phrase, plan, RUNNERS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, backInsetOf, defaults, importOp, normalize, phrase, plan, PRESETS, RUNNERS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -327,3 +327,76 @@ describe("old settings and the import", () => {
     expect(importOp(p.parts, undefined, "a", "b")).not.toHaveProperty("materials");
   });
 });
+
+describe("doors, nailers and the trash pull-out", () => {
+  it("doors with no shelves, one door or two, hinged on the side asked for, the pull on the other", () => {
+    const none = imperial({ layout: "doors", shelves: 0 });
+    expect(phrase(none, (m) => String(inches(m)), false)).toContain("doors, no shelves");
+    expect(named(ok(none).parts, "Shelf")).toEqual([]);
+    const right = ok(imperial({ layout: "doors", hardware: true, hingeSide: "right" }));
+    const door = named(right.parts, "Door")[0];
+    const fw = door.blank[0];
+    for (const [x] of rings(door, 1, door.blank[1]).filter(([x]) => x > fw / 2)) expect(x).toBeCloseTo(fw - 22 * MM, 6);
+    for (const [x] of rings(door, 1, 0)) expect(x).toBeCloseTo(1.5 * IN, 6);
+    expect(rings(named(right.parts, "Right side")[0], 0, 0)).toHaveLength(4);
+    expect(rings(named(right.parts, "Left side")[0], 0, (23 / 32) * IN)).toEqual([]);
+    // Hinged left (the default), the plates are in the left side's inner face.
+    expect(rings(named(ok(imperial({ layout: "doors", hardware: true })).parts, "Left side")[0], 0, (23 / 32) * IN)).toHaveLength(4);
+    expect(named(ok(imperial({ layout: "doors", width: 36 * IN, doors: "one" })).parts, "Door")).toHaveLength(1);
+    const two = ok(imperial({ layout: "doors", width: 18 * IN, doors: "two" }));
+    expect(named(two.parts, "Left door")).toHaveLength(1);
+    expect(named(two.parts, "Right door")).toHaveLength(1);
+  });
+
+  it("rear nailers sit behind the back at the rear edge, in dados with blind dados on", () => {
+    const s = imperial({ layout: "doors", width: 30 * IN, height: 30 * IN, depth: 12 * IN, base: "none", nailers: "both", nailerHeight: 3 * IN, dados: true });
+    const p = ok(s);
+    const t = s.thickness;
+    const top = named(p.parts, "Top nailer")[0];
+    const bottom = named(p.parts, "Bottom nailer")[0];
+    expect(top.copies[0].at[1]).toBeCloseTo(12 * IN - t, 12);
+    expect(top.copies[0].at[2]).toBeCloseTo(30 * IN - t - 3 * IN, 12);
+    expect(bottom.copies[0].at[2]).toBeCloseTo(t, 12);
+    expect(top.blank[0]).toBeCloseTo(30 * IN - 2 * t + 2 * (s.dadoDepth - 0.5 * MM), 12);
+    // The back moves in to clear them.
+    expect(backInsetOf(s)).toBeCloseTo(t + s.fit, 12);
+    expect(named(p.parts, "Back")[0].copies[0].at[1]).toBeCloseTo(12 * IN - t - s.fit - s.backThickness, 12);
+    expect(plan({ ...s, backMount: "butt" }, false).error).toMatch(/nailers sit behind the back/);
+    // No back: the shelves stop at the nailers.
+    const open = ok({ ...s, back: false });
+    expect(named(open.parts, "Shelf")[0].blank[1]).toBeCloseTo(12 * IN - t - GAP, 12);
+  });
+
+  it("a trash pull-out: one tall front, a low tray, tall uprights and a frame cut for the bins", () => {
+    const s = imperial({ layout: "trash", width: 18 * IN, trashBins: "deep", binWidth: 11 * IN, binLength: 9 * IN, binHeight: 17 * IN, trayHeight: 6 * IN });
+    const p = ok(s);
+    expect(named(p.parts, "Drawer front")).toHaveLength(1);
+    expect(named(p.parts, "Drawer front")[0].blank[2]).toBeCloseTo(34.5 * IN - 4 * IN - IN / 8, 9);
+    for (const side of named(p.parts, "Drawer side")) expect(side.blank[2]).toBeCloseTo(6 * IN, 12);
+    const sub = named(p.parts, "Drawer sub-front")[0];
+    expect(sub.blank[2]).toBeGreaterThan(20 * IN);
+    const frame = named(p.parts, "Bin frame")[0];
+    const [fw, fl, ft] = frame.blank;
+    expect(audit(frame.mesh).volume).toBeCloseTo(fw * fl * ft - 2 * 11 * IN * 9 * IN * ft, 12);
+    expect(p.rows.some((r) => /2 bin cutouts/.test(r[1]))).toBe(true);
+    // Two side by side do not fit an 18 in cabinet at 11 in each.
+    expect(plan({ ...s, trashBins: "side" }, false).error).toMatch(/bins do not fit/);
+    // Bins taller than the pull-out are refused.
+    expect(plan({ ...s, binHeight: 40 * IN }, false).error).toMatch(/do not fit/);
+    expect(phrase(s, (m) => String(inches(m)), false)).toContain("trash pull-out, two bins front to back");
+  });
+
+  it("every starting point builds, and the wall cabinet hangs on nailers", () => {
+    for (const preset of PRESETS) {
+      const s = applyPreset(imperial({ dados: true, hardware: true }), preset.id, false);
+      const p = plan(s, false);
+      expect(p.error, preset.id).toBeNull();
+    }
+    const wall = applyPreset(imperial(), "wall", false);
+    expect(wall.nailers).toBe("both");
+    expect(wall.doorPullFrom).toBe("bottom");
+    expect(applyPreset(imperial(), "trash", false).drawerPull).toBe("top");
+    expect(applyPreset({ ...imperial(), name: "Base 4" }, "sink", false).name).toBe("Sink base 4");
+  });
+});
+

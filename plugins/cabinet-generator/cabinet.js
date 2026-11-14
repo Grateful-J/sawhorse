@@ -22,7 +22,11 @@ import { partMesh } from "./mesh.js";
 const IN = 0.0254;
 const MM = 0.001;
 
-/** @typedef {"shelves" | "doors" | "drawers" | "mixed"} Layout */
+/** @typedef {"shelves" | "doors" | "drawers" | "mixed" | "trash"} Layout */
+/** @typedef {"auto" | "one" | "two"} DoorCount */
+/** @typedef {"left" | "right"} HingeSide */
+/** @typedef {"none" | "top" | "both"} Nailers */
+/** @typedef {"one" | "side" | "deep"} TrashBins */
 /** @typedef {"overlay" | "inset"} Front */
 /** @typedef {"toekick" | "none"} Base */
 /** @typedef {"tandem" | "movento"} Slides */
@@ -45,6 +49,8 @@ const MM = 0.001;
  *   drawerPull: DrawerPull, drawerPullFromTop: number, pullSpacing: number, notchWidth: number, notchDepth: number,
  *   doorPull: DoorPull, doorPullFrom: DoorPullFrom, doorPullEnd: number, doorPullEdge: number, doorPullSpacing: number,
  *   pullHole: number,
+ *   doors: DoorCount, hingeSide: HingeSide, nailers: Nailers, nailerHeight: number,
+ *   trashBins: TrashBins, binWidth: number, binLength: number, binHeight: number, trayHeight: number,
  * }} Sizes
  */
 /** @typedef {import("./mesh.js").Prism} Prism */
@@ -151,7 +157,8 @@ export const MATERIALS = {
  * Starting points, as on a cabinet shop's order form: each sets the style and the usual sizes,
  * and leaves the stock, joinery and hardware as they were. Inches, then millimetres.
  * @typedef {{ id: string, label: string, name: string, layout: Layout, shelves: number, drawers: number, base: Base,
- *   in: [number, number, number], mm: [number, number, number], doorPullFrom?: DoorPullFrom, doorPullEnd?: [number, number] }} Preset
+ *   in: [number, number, number], mm: [number, number, number], doorPullFrom?: DoorPullFrom, doorPullEnd?: [number, number],
+ *   nailers?: Nailers, drawerPull?: DrawerPull }} Preset
  * @type {Preset[]}
  */
 export const PRESETS = [
@@ -159,8 +166,9 @@ export const PRESETS = [
   { id: "drawers", label: "Drawer base: three drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 24], mm: [450, 720, 560] },
   { id: "sink", label: "Sink base: doors, no shelf", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 24], mm: [900, 720, 560], doorPullFrom: "top" },
   { id: "mixed", label: "Base: a drawer over a door", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 24], mm: [600, 720, 560], doorPullFrom: "top" },
-  { id: "wall", label: "Wall cabinet: doors, 12 in deep", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12], mm: [600, 720, 300], doorPullFrom: "bottom", doorPullEnd: [2.5, 64] },
-  { id: "tall", label: "Tall pantry: 84 in (needs a sheet over 4 ft)", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 24], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760] },
+  { id: "trash", label: "Trash pull-out: two bins", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 24], mm: [450, 720, 560], drawerPull: "top" },
+  { id: "wall", label: "Wall cabinet: doors, 12 in deep, nailers", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12], mm: [600, 720, 300], doorPullFrom: "bottom", doorPullEnd: [2.5, 64], nailers: "both" },
+  { id: "tall", label: "Tall pantry: 84 in (needs a sheet over 4 ft)", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 24], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
   { id: "open", label: "Open shelves, no doors", name: "Shelves", layout: "shelves", shelves: 2, drawers: 0, base: "toekick", in: [30, 34.5, 12], mm: [600, 720, 300] },
 ];
 
@@ -179,6 +187,8 @@ export function applyPreset(s, id, metric) {
   if (p.doorPullFrom) out.doorPullFrom = p.doorPullFrom;
   if (p.doorPullEnd) out.doorPullEnd = metric ? p.doorPullEnd[1] * MM : p.doorPullEnd[0] * IN;
   if (p.drawers) out.drawers = p.drawers;
+  if (p.nailers) out.nailers = p.nailers;
+  if (p.drawerPull) out.drawerPull = p.drawerPull;
   return out;
 }
 
@@ -240,6 +250,8 @@ export function defaults(metric) {
         drawerPull: "center", drawerPullFromTop: 38 * MM, pullSpacing: 96 * MM, notchWidth: 100 * MM, notchDepth: 25 * MM,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 64 * MM, doorPullEdge: 38 * MM, doorPullSpacing: 96 * MM,
         pullHole: 5 * MM,
+        doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 75 * MM,
+        trashBins: "deep", binWidth: 280 * MM, binLength: 230 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
       }
     : {
         name: "Cabinet 1",
@@ -257,6 +269,9 @@ export function defaults(metric) {
         drawerPull: "center", drawerPullFromTop: 1.5 * IN, pullSpacing: 3 * IN, notchWidth: 4 * IN, notchDepth: 1 * IN,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 2.5 * IN, doorPullEdge: 1.5 * IN, doorPullSpacing: 3 * IN,
         pullHole: 5 * MM,
+        doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 3 * IN,
+        // Bin cutouts are placeholders: measure your bins just under the lip.
+        trashBins: "deep", binWidth: 11 * IN, binLength: 9 * IN, binHeight: 17 * IN, trayHeight: 6 * IN,
       };
 }
 
@@ -286,7 +301,7 @@ export function normalize(saved, metric) {
     frontThickness: num("frontThickness"),
     drawerThickness: num("drawerThickness"),
     backThickness: num("backThickness"),
-    layout: pick("layout", /** @type {const} */ (["shelves", "doors", "drawers", "mixed"])),
+    layout: pick("layout", /** @type {const} */ (["shelves", "doors", "drawers", "mixed", "trash"])),
     shelves: Math.round(num("shelves")),
     drawers: Math.round(num("drawers")),
     base,
@@ -319,7 +334,22 @@ export function normalize(saved, metric) {
     doorPullEdge: num("doorPullEdge"),
     doorPullSpacing: num("doorPullSpacing"),
     pullHole: num("pullHole"),
+    doors: pick("doors", /** @type {const} */ (["auto", "one", "two"])),
+    hingeSide: pick("hingeSide", /** @type {const} */ (["left", "right"])),
+    nailers: pick("nailers", /** @type {const} */ (["none", "top", "both"])),
+    nailerHeight: num("nailerHeight"),
+    trashBins: pick("trashBins", /** @type {const} */ (["one", "side", "deep"])),
+    binWidth: num("binWidth"),
+    binLength: num("binLength"),
+    binHeight: num("binHeight"),
+    trayHeight: num("trayHeight"),
   };
+}
+
+/** The back's inset from the rear edge: at least a nailer's thickness when there are nailers
+ * (they sit behind it). @param {Sizes} s */
+export function backInsetOf(s) {
+  return s.nailers !== "none" ? Math.max(s.backInset, s.thickness + s.fit) : s.backInset;
 }
 
 /** Round down to a sixteenth (inches) or a millimetre. @param {number} m @param {boolean} metric */
@@ -343,10 +373,12 @@ export function phrase(s, format, metric) {
   const n = s.shelves;
   const shelves = `${n} ${n === 1 ? "shelf" : "shelves"}`;
   const drawers = `${s.drawers} ${s.drawers === 1 ? "drawer" : "drawers"}`;
-  const layout = s.layout === "shelves" ? shelves : s.layout === "doors" ? `door and ${shelves}` : s.layout === "drawers" ? drawers : `${drawers} and a door`;
+  const bins = s.trashBins === "one" ? "one bin" : s.trashBins === "side" ? "two bins side by side" : "two bins front to back";
+  const layout = s.layout === "shelves" ? shelves : s.layout === "doors" ? `doors, ${n ? shelves : "no shelves"}` : s.layout === "drawers" ? drawers : s.layout === "trash" ? `trash pull-out, ${bins}` : `${drawers} and a door`;
   const extra = `${s.dados ? ", blind dados" : ""}${s.hardware ? ", hardware holes" : ""}`;
-  const runner = s.layout === "drawers" || s.layout === "mixed" ? `, ${RUNNERS[s.slides].name}` : "";
-  return `${format(s.width)} x ${format(s.height)} x ${format(s.depth)}, ${layout}${back}${toe}${extra}${runner}`;
+  const runner = s.layout === "drawers" || s.layout === "mixed" || s.layout === "trash" ? `, ${RUNNERS[s.slides].name}` : "";
+  const nailers = s.nailers === "top" ? ", top nailer" : s.nailers === "both" ? ", top and bottom nailers" : "";
+  return `${format(s.width)} x ${format(s.height)} x ${format(s.depth)}, ${layout}${back}${nailers}${toe}${extra}${runner}`;
 }
 
 /** @param {Sizes} s @param {boolean} metric @returns {string | null} */
@@ -388,9 +420,18 @@ function validate(s) {
   if (!(s.gap >= 0) || s.gap > 0.5 * IN) return "The gap between fronts must be 0 to 1/2 in.";
   if (!(s.fit >= 0) || s.fit > 1 * MM) return "The fit must be 0 to 1 mm (0.04 in) over the stock.";
   if (!(s.bit > 0) || s.bit > 0.5 * IN) return "The bit diameter must be more than 0 and at most 1/2 in.";
+  if (s.nailers !== "none") {
+    if (s.back && s.backMount !== "groove") return "Rear nailers sit behind the back: choose Back fits: in grooves, or no back.";
+    if (!(s.nailerHeight > 0) || !(s.nailerHeight < (s.height - 2 * t) / 3)) return "The nailer must be more than 0 tall, and under a third of the inside height.";
+  }
+  if (s.layout === "trash") {
+    for (const [v, what] of /** @type {[number, string][]} */ ([[s.binWidth, "bin cutout width"], [s.binLength, "bin cutout length"], [s.binHeight, "bin height"], [s.trayHeight, "tray height"]])) {
+      if (!(v > 0)) return `The ${what} must be more than 0.`;
+    }
+  }
   if (s.back && s.backMount === "groove") {
     if (!(s.backGrooveDepth > 0) || s.backGrooveDepth > t / 2 + 1e-9) return `The back groove must be more than 0 and at most half the stock (${both(t / 2)}) deep.`;
-    if (!(s.backInset >= 0) || !(s.backInset < s.depth / 3)) return "The back's inset from the rear edge must be 0 or more, and under a third of the depth.";
+    if (!(s.backInset >= 0) || !(backInsetOf(s) < s.depth / 3)) return "The back's inset from the rear edge must be 0 or more, and under a third of the depth.";
     if (s.dados && Math.abs(s.backGrooveDepth - s.dadoDepth) < 0.05 * MM) return "Make the back groove a different depth from the dados (deeper, say), so each gets its own layer and bit in the DXF.";
   }
   if (s.dados) {
@@ -421,14 +462,17 @@ function openings(s) {
   const kick = s.base === "toekick" ? s.toeKick : 0;
   const innerW = s.width - 2 * t;
   // Inside depth: to the front of the back.
-  const innerD = !s.back ? s.depth : s.backMount === "groove" ? s.depth - s.backInset - s.backThickness : s.depth - s.backThickness;
+  const innerD = !s.back ? s.depth : s.backMount === "groove" ? s.depth - backInsetOf(s) - s.backThickness : s.depth - s.backThickness;
   const floor = kick + t;
   const ceiling = s.height - t;
   const interior = ceiling - floor;
   if (!(interior > 0)) return "It is not tall enough for a top and a bottom over the toe kick.";
   /** @type {{ z0: number, z1: number, kind: "drawer" | "door" }[]} */
   const bands = [];
-  if (s.layout === "shelves" || s.layout === "doors") {
+  if (s.layout === "trash") {
+    // One drawer, the full height, carrying the bins.
+    bands.push({ z0: floor, z1: ceiling, kind: "drawer" });
+  } else if (s.layout === "shelves" || s.layout === "doors") {
     if (!(interior > s.shelves * t)) return "It is not tall enough for its shelves.";
     if (s.layout === "doors") bands.push({ z0: floor, z1: ceiling, kind: "door" });
   } else {
@@ -532,6 +576,10 @@ function build(s, metric) {
   shelfZs.forEach((z, i) => rails.push({ z, name: `Shelf ${i + 1}` }));
   const tongue = s.dados ? s.dadoDepth - RELIEF : 0;
   const notchLen = stop + s.bit;
+  /** Rear nailers (hanging rails): under the top, and over the bottom, at the rear edge. */
+  const nailers = /** @type {{ name: string, z0: number, z1: number }[]} */ ([]);
+  if (s.nailers !== "none") nailers.push({ name: "Top nailer", z0: s.height - t - s.nailerHeight, z1: s.height - t });
+  if (s.nailers === "both") nailers.push({ name: "Bottom nailer", z0: kick + t, z1: kick + t + s.nailerHeight });
   /** The back's groove across the depth (y), the back plus the fit. */
   const backY = /** @type {[number, number]} */ ([yb0 - s.fit / 2, yb0 + bT + s.fit / 2]);
 
@@ -549,6 +597,10 @@ function build(s, metric) {
     if (grooved) {
       const [x0, x1] = xs(bgd);
       out.push({ min: [x0, backY[0], zb0 - s.fit / 2], max: [x1, backY[1], zb1 + s.fit / 2] });
+    }
+    if (s.dados) {
+      const [x0, x1] = xs(s.dadoDepth);
+      for (const nl of nailers) out.push({ min: [x0, s.depth - t - s.fit / 2, nl.z0 - s.fit / 2], max: [x1, s.depth, nl.z1 + s.fit / 2] });
     }
     if (s.base === "toekick") out.push({ min: [0, 0, 0], max: [t, s.toeSetback, kick] });
     return out;
@@ -586,8 +638,8 @@ function build(s, metric) {
   if (doorBand) {
     const fb = frontBox(bands.indexOf(doorBand), t);
     const across = fb.x1 - fb.x0;
-    const pair = across > MAX_DOOR;
-    const leaves = pair ? [{ hinge: "left", x0: fb.x0, x1: fb.x0 + (across - g) / 2 }, { hinge: "right", x0: fb.x1 - (across - g) / 2, x1: fb.x1 }] : [{ hinge: "left", x0: fb.x0, x1: fb.x1 }];
+    const pair = s.doors === "two" || (s.doors === "auto" && across > MAX_DOOR);
+    const leaves = pair ? [{ hinge: "left", x0: fb.x0, x1: fb.x0 + (across - g) / 2 }, { hinge: "right", x0: fb.x1 - (across - g) / 2, x1: fb.x1 }] : [{ hinge: s.hingeSide, x0: fb.x0, x1: fb.x1 }];
     const fh = fb.z1 - fb.z0;
     const count = fh <= 900 * MM ? 2 : fh <= 1600 * MM ? 3 : fh <= 2000 * MM ? 4 : 5;
     const r = (CUP.dia * MM) / 2;
@@ -683,7 +735,8 @@ function build(s, metric) {
     const inside = innerW - BLUM.insideDeduct * MM;
     if (!(inside >= BLUM.minInside * MM)) throw new Error(`The drawers are too narrow: Blum locking devices need an inside drawer width of at least ${BLUM.minInside} mm (6-11/16 in).`);
     const outside = inside + 2 * ds;
-    const avail = (innerD - (overlay ? 0 : tf)) / MM;
+    // With no back, the drawers stop in front of the nailers.
+    const avail = (innerD - (overlay ? 0 : tf) - (!s.back && nailers.length ? t : 0)) / MM;
     if (s.runner) {
       runner = R.lengths.find((x) => x.nl === s.runner) ?? null;
       if (!runner) throw new Error(`${R.name} has no ${s.runner} mm runner.`);
@@ -761,14 +814,49 @@ function build(s, metric) {
       // slides in under the back, in grooves in the sides and the sub-front.
       /** @param {number} inner */
       const groove = (inner) => /** @type {Prism} */ ({ min: [inner === 0 ? 0 : ds - gd, 0, gz[0]], max: [inner === 0 ? gd : ds, nl, gz[1]] });
-      const dSize = /** @type {V3} */ ([ds, nl, boxH]);
+      // A trash pull-out: low sides (a tray), the sub-front and back full height as uprights,
+      // and a frame between them, at the bins' lip, with a cutout for each bin.
+      const trash = s.layout === "trash";
+      const sideH = trash ? Math.min(boxH, s.trayHeight) : boxH;
+      if (trash && !(sideH >= 60 * MM)) throw new Error("The trash tray's sides must be at least 60 mm (2 3/8 in) tall for the runners' hooks.");
+      const dSize = /** @type {V3} */ ([ds, nl, sideH]);
       add("Drawer side", MATERIALS.box.name, dSize, [groove(ds)], [], { at: [x0, y0, z0], name: `Drawer ${n} left` });
       add("Drawer side", MATERIALS.box.name, dSize, [groove(0)], [], { at: [x0 + outside - ds, y0, z0], name: `Drawer ${n} right` });
       if (s.hardware && i === 0) note("Drawer side", `Rear hook bore, rear end, ${BLUM.hookIn} mm in from outside, ${BLUM.hookUp} mm up`, `${BLUM.hookDia} mm`, `${BLUM.hookDepth} mm`, "Jig (edge bore)");
 
-      add("Drawer sub-front", MATERIALS.box.name, [inside, ds, boxH], [{ min: [0, ds - gd, gz[0]], max: [inside, ds, gz[1]] }, ...subNotch], [], { at: [x0 + ds, y0, z0], name: `Drawer ${n} sub-front` });
+      /** @type {Prism[]} */
+      const subFrame = [];
+      /** @type {Prism[]} */
+      const backFrame = [];
+      if (trash) {
+        const fz1 = gz[1] + s.binHeight;
+        const fz0 = fz1 - ds;
+        if (!(fz1 + s.fit / 2 + 10 * MM <= boxH)) throw new Error(`Bins ${both(s.binHeight)} tall do not fit: the pull-out is ${both(boxH - gz[1] - 10 * MM)} tall inside. Make the cabinet taller or the bins shorter.`);
+        subFrame.push({ min: [0, ds - gd, fz0 - s.fit / 2], max: [inside, ds, fz1 + s.fit / 2] });
+        backFrame.push({ min: [0, 0, fz0 - s.fit / 2 - gz[1]], max: [inside, gd, fz1 + s.fit / 2 - gz[1]] });
+        const fl = nl - 2 * ds + 2 * (gd - PANEL_GAP);
+        const W = s.binWidth;
+        const L = s.binLength;
+        const webMin = 0.75 * IN;
+        /** @type {[number, number][]} */
+        const centres =
+          s.trashBins === "one"
+            ? [[inside / 2, fl / 2]]
+            : s.trashBins === "side"
+              ? [[(inside - 2 * W) / 3 + W / 2, fl / 2], [inside - (inside - 2 * W) / 3 - W / 2, fl / 2]]
+              : [[inside / 2, (fl - 2 * L) / 3 + L / 2], [inside / 2, fl - (fl - 2 * L) / 3 - L / 2]];
+        const webX = s.trashBins === "side" ? (inside - 2 * W) / 3 : (inside - W) / 2;
+        const webY = s.trashBins === "deep" ? (fl - 2 * L) / 3 : (fl - L) / 2;
+        if (!(webX >= webMin && webY >= webMin)) {
+          throw new Error(`The bins do not fit: the frame is ${both(inside)} across and ${both(fl)} front to back, and needs 3/4 in of wood around each ${both(W)} x ${both(L)} cutout. Change the bins or the cabinet.`);
+        }
+        const cutouts = centres.map(([cx, cy]) => /** @type {Prism} */ ({ min: [cx - W / 2, cy - L / 2, 0], max: [cx + W / 2, cy + L / 2, ds] }));
+        add("Bin frame", MATERIALS.box.name, [inside, fl, ds], cutouts, [], { at: [x0 + ds, y0 + ds - gd + PANEL_GAP, z0 + fz0], name: `Drawer ${n} bin frame` });
+        note("Bin frame", `${centres.length} bin cutout${centres.length === 1 ? "" : "s"} ${both(W)} x ${both(L)}, the frame in dados ${both(s.binHeight)} above the tray's bottom`, "-", "through", "CNC (inside profile)");
+      }
+      add("Drawer sub-front", MATERIALS.box.name, [inside, ds, boxH], [{ min: [0, ds - gd, gz[0]], max: [inside, ds, gz[1]] }, ...subFrame, ...subNotch], [], { at: [x0 + ds, y0, z0], name: `Drawer ${n} sub-front` });
       const backH = boxH - gz[1];
-      add("Drawer back", MATERIALS.box.name, [inside, ds, backH], [], [], { at: [x0 + ds, y0 + nl - ds, z0 + gz[1]], name: `Drawer ${n} back` });
+      add("Drawer back", MATERIALS.box.name, [inside, ds, backH], backFrame, [], { at: [x0 + ds, y0 + nl - ds, z0 + gz[1]], name: `Drawer ${n} back` });
 
       const bw = inside + 2 * (gd - PANEL_GAP);
       const bl = nl - ds + gd - PANEL_GAP;
@@ -787,7 +875,8 @@ function build(s, metric) {
    */
   const addRail = (z, name, copyName, kind) => {
     const len = innerW + 2 * tongue;
-    const depth = grooved ? (kind === "shelf" ? yb0 - PANEL_GAP : s.depth) : innerD;
+    // Shelves stop at the back; with no back but nailers, at the nailers' face.
+    const depth = grooved ? (kind === "shelf" ? yb0 - PANEL_GAP : s.depth) : kind === "shelf" && !s.back && nailers.length ? s.depth - t - PANEL_GAP : innerD;
     /** @type {Prism[]} */
     const prisms = [];
     if (s.dados) {
@@ -806,10 +895,14 @@ function build(s, metric) {
     note("Rails", `Tongues ${both(tongue)} long, front corners notched ${both(notchLen)} deep (stop + bit)`, "-", "through", "CNC (profile)");
   }
 
+  for (const nl of nailers) {
+    add(nl.name, MATERIALS.carcass.name, [innerW + 2 * tongue, t, nl.z1 - nl.z0], [], [], { at: [t - tongue, s.depth - t, nl.z0], name: nl.name });
+  }
+  if (nailers.length) note(nailers.length === 1 ? "Top nailer" : "Nailers", `${both(s.nailerHeight)} tall at the rear edge, behind the back${s.dados ? ", in dados in the sides" : ""}: screw the cabinet to the wall through ${nailers.length === 1 ? "it" : "them"}`, "-", "-", "CNC (profile)");
   if (s.back) {
     if (grooved) {
       add("Back", MATERIALS.back.name, [innerW + 2 * (bgd - PANEL_GAP), bT, zb1 - zb0 - 2 * PANEL_GAP], [], [], { at: [t - bgd + PANEL_GAP, yb0, zb0 + PANEL_GAP], name: "Back" });
-      note("Sides, top, bottom", `Back groove ${both(bT + s.fit)} wide, ${both(s.backInset)} in from the rear edge`, "-", both(bgd), "CNC (pocket)");
+      note("Sides, top, bottom", `Back groove ${both(bT + s.fit)} wide, ${both(backInsetOf(s))} in from the rear edge`, "-", both(bgd), "CNC (pocket)");
     } else {
       add("Back", MATERIALS.back.name, [innerW, bT, s.height - kick], [], [], { at: [t, s.depth - bT, kick], name: "Back" });
     }
@@ -828,7 +921,7 @@ function shelfHeights(s, floor, ceiling, bands) {
   const door = bands.find((x) => x.kind === "door");
   const z0 = s.layout === "mixed" && door ? door.z0 : floor;
   const z1 = s.layout === "mixed" && door ? door.z1 : ceiling;
-  const count = s.layout === "drawers" ? 0 : s.shelves;
+  const count = s.layout === "drawers" || s.layout === "trash" ? 0 : s.shelves;
   if (!count) return [];
   const t = s.thickness;
   const gap = (z1 - z0 - count * t) / (count + 1);

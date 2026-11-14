@@ -1,6 +1,10 @@
 import type { Mesh, V3 } from "./mesh.js";
 
-export type Layout = "shelves" | "doors" | "drawers" | "mixed";
+export type Layout = "shelves" | "doors" | "drawers" | "mixed" | "trash";
+export type DoorCount = "auto" | "one" | "two";
+export type HingeSide = "left" | "right";
+export type Nailers = "none" | "top" | "both";
+export type TrashBins = "one" | "side" | "deep";
 export type Front = "overlay" | "inset";
 export type Base = "toekick" | "none";
 export type Slides = "tandem" | "movento";
@@ -54,6 +58,18 @@ export interface Sizes {
   doorPullEdge: number;
   doorPullSpacing: number;
   pullHole: number;
+  doors: DoorCount;
+  /** The hinge side of a single door; a pair hinges on both. */
+  hingeSide: HingeSide;
+  nailers: Nailers;
+  nailerHeight: number;
+  trashBins: TrashBins;
+  /** A bin's cutout across the cabinet, and front to back. */
+  binWidth: number;
+  binLength: number;
+  /** The bin's lip above the tray's bottom: where the frame sits. */
+  binHeight: number;
+  trayHeight: number;
 }
 export interface Part {
   name: string;
@@ -93,11 +109,14 @@ export interface Preset {
   mm: [number, number, number];
   doorPullFrom?: DoorPullFrom;
   doorPullEnd?: [number, number];
+  nailers?: Nailers;
+  drawerPull?: DrawerPull;
 }
 export const PRESETS: Preset[];
 export function applyPreset(s: Sizes, id: string, metric: boolean): Sizes;
 export function exactThickness(m: number, metric: boolean): string;
 export function summary(s: Sizes, planned: { parts: Part[]; rows: string[][]; runner: RunnerLength | null; holes: number }, metric: boolean): string;
+export function backInsetOf(s: Sizes): number;
 export function isMetric(system: string): boolean;
 export function defaults(metric: boolean): Sizes;
 export function normalize(saved: (Partial<Sizes> & Record<string, unknown>) | null | undefined, metric: boolean): Sizes;

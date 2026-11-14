@@ -41,7 +41,9 @@ async function selectedOwnCabinet() {
   return (await model.nodes()).find((n) => n.id === mine) ?? null;
 }
 
-const hasDrawers = () => sizes.layout === "drawers" || sizes.layout === "mixed";
+/** A drawer box of any kind (drawers, or the trash pull-out). */
+const hasDrawers = () => sizes.layout === "drawers" || sizes.layout === "mixed" || sizes.layout === "trash";
+const isTrash = () => sizes.layout === "trash";
 const hasDoors = () => sizes.layout === "doors" || sizes.layout === "mixed";
 const hasFronts = () => sizes.layout !== "shelves";
 const drawerHoles = () => sizes.drawerPull === "center" || sizes.drawerPull === "top";
@@ -78,6 +80,7 @@ function views() {
     ["stock", "Stock thicknesses"],
   ];
   if (hasFronts()) out.push(["fronts", "Fronts, pulls and hinges"]);
+  if (isTrash()) out.push(["trash", "Trash bins"]);
   if (hasDrawers()) out.push(["drawers", "Drawer runners"]);
   out.push(["cuts", "Every cut and hole"]);
   return out;
@@ -96,6 +99,8 @@ function details() {
       f.push(pick("backMount", "Back fits", s.backMount, [["groove", "In grooves (sides, top, bottom)"], ["butt", "Between the sides, at the back"]]));
       if (s.backMount === "groove") f.push(len("backInset", "Back in from the rear edge", s.backInset), len("backGrooveDepth", "Back groove depth", s.backGrooveDepth));
     }
+    f.push(pick("nailers", "Rear nailers", s.nailers, [["none", "None"], ["top", "Top (hang it by)"], ["both", "Top and bottom"]]));
+    if (s.nailers !== "none") f.push(len("nailerHeight", "Nailer height", s.nailerHeight));
     if (s.dados) f.push(len("dadoDepth", "Dado depth", s.dadoDepth), len("dadoStop", "Dados stop short of the front by", s.dadoStop));
     f.push(len("fit", "Fit (groove over the stock)", s.fit), len("bit", "Bit diameter", s.bit));
   } else if (view === "stock") {
@@ -107,6 +112,8 @@ function details() {
     f.push(pick("front", "Fronts", s.front, [["overlay", "Full overlay"], ["inset", "Inset"]]), len("gap", "Gap between fronts", s.gap));
     if (hasDoors()) {
       f.push(heading("Doors"));
+      f.push(pick("doors", "Doors", s.doors, [["auto", "Automatic (a pair over 24 in)"], ["one", "One"], ["two", "Two"]]));
+      if (s.doors !== "two") f.push(pick("hingeSide", "One door hinges on the", s.hingeSide, [["left", "Left (pull on the right)"], ["right", "Right (pull on the left)"]]));
       if (!s.hardware) f.push({ type: "note", text: "Tick Drill hardware holes for hinge cups and a pull.", tone: "info" });
       else {
         f.push(len("hingeInset", "Hinges in from the top and bottom", s.hingeInset), len("cupDistance", "Cup boring distance (3 to 7 mm)", s.cupDistance));
@@ -128,6 +135,10 @@ function details() {
       }
     }
     if (s.hardware && ((hasDoors() && s.doorPull !== "none") || (hasDrawers() && drawerHoles()))) f.push(len("pullHole", "Pull hole diameter", s.pullHole));
+  } else if (view === "trash") {
+    f.push(len("binWidth", "Bin cutout, across", s.binWidth), len("binLength", "Bin cutout, front to back", s.binLength));
+    f.push(len("binHeight", "Bin lip above the tray bottom", s.binHeight), len("trayHeight", "Tray sides", s.trayHeight));
+    f.push({ type: "note", text: "Measure your bins: the cutout just under the lip, the lip's height when the bin stands on the tray.", tone: "info" });
   } else if (view === "drawers") {
     f.push(pick("slides", "Runners", s.slides, [["tandem", RUNNERS.tandem.name], ["movento", RUNNERS.movento.name]]));
     f.push({ type: "select", id: "runner", label: "Runner length", value: String(s.runner), options: runnerOptions() });
@@ -153,10 +164,11 @@ function body() {
     len("width", "Width", s.width),
     len("height", "Height", s.height),
     len("depth", "Depth", s.depth),
-    pick("layout", "Style", s.layout, [["doors", "Doors and shelves"], ["drawers", "Drawers"], ["mixed", "Drawers over a door"], ["shelves", "Open shelves"]]),
+    pick("layout", "Style", s.layout, [["doors", "Doors (shelves or none)"], ["drawers", "Drawers"], ["mixed", "Drawers over a door"], ["trash", "Trash pull-out"], ["shelves", "Open shelves"]]),
   ];
-  if (s.layout !== "drawers") f.push({ type: "number", id: "shelves", label: "Fixed shelves", unit: "count", value: s.shelves, min: 0, max: 20 });
-  if (hasDrawers()) f.push({ type: "number", id: "drawers", label: "Drawers", unit: "count", value: s.drawers, min: 0, max: 8 });
+  if (s.layout !== "drawers" && !isTrash()) f.push({ type: "number", id: "shelves", label: "Fixed shelves (0 for none)", unit: "count", value: s.shelves, min: 0, max: 20 });
+  if (s.layout === "drawers" || s.layout === "mixed") f.push({ type: "number", id: "drawers", label: "Drawers", unit: "count", value: s.drawers, min: 0, max: 8 });
+  if (isTrash()) f.push(pick("trashBins", "Bins", s.trashBins, [["deep", "Two, front to back"], ["side", "Two, side by side"], ["one", "One"]]));
   f.push(
     { type: "checkbox", id: "dados", label: "Hidden (blind) dado joints", value: s.dados },
     { type: "checkbox", id: "hardware", label: "Drill hardware holes", value: s.hardware },
