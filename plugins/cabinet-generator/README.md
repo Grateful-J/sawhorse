@@ -42,6 +42,10 @@ A ladder: a **front rail** set back for the toes (the toe setback, 3 in or 75 mm
 | Sleepers at most | 16 in (400 mm) on centre | One at each end of a ladder, one centred under each joint between cabinets (under both sides), and more between. |
 | Longest piece | 47 in (1190 mm) | A 4 x 4 sheet less the CNC preset's trim. A longer row is split into **ladders**, each under whole cabinets where it can (a cabinet longer than a piece is split evenly), set side by side and screwed together through their end sleepers. |
 
+**Seeing it first.** Before it is made the panel draws the frame from above, dimensioned: each ladder lettered with its length, the depth rail to rail, each sleeper's centre from its ladder's left end (a table lists every one, for laying it out). **Show it in the model** turns on the plugin's **Base frame** tool: the frame drawn where it will go, each cabinet dashed where it will stand on it (its toe kick off), each ladder labelled; it follows the settings as you change them, and a click makes it. With a frame selected, the tool shows it as its settings now make it.
+
+**Long rails.** Stock **Plywood strips, long rails on the track saw** keeps a ladder in one piece up to 95 in (2420 mm), what a 4 x 8 takes inside the track saw's trim, with butted sleepers: turn on Nesting's **Track saw what won't fit** and the rails go to a 4 x 8 on the saw while the sleepers stay on the CNC. With dados on, a rail too long for the bed has its dados listed as hand work.
+
 The frame follows the shallowest cabinet when depths differ, backs in line. Level it on the floor with shims under the sleepers, screw it down, then set the cabinets on it and screw down through their bottoms; the cut list's last rows say so. The parts are **Base front rail**, **Base back rail** and **Base sleeper** in the Cut list too, so Nesting and **CNC files** cut them with the cabinets: a 78 in row's frame fits one 4 x 4 sheet.
 
 ## The details
@@ -136,7 +140,7 @@ The last sizes are kept for next time (the plugin's own store), and which cabine
 
 ## How it is built
 
-`main.js` is the two panels. `cabinet.js` plans the parts and holds the Blum tables. `row.js` finds rows, places cabinets against each other and plans the base frame. `mesh.js` builds a closed mesh for a box with grooves, notches, and blind or through holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
+`main.js` is the two panels and the Base frame tool. `cabinet.js` plans the parts and holds the Blum tables. `row.js` finds rows, places cabinets against each other, plans the base frame and lays out its drawing. `keep.js` keeps each cabinet's settings in the document as what differs from `baseline.js` (the defaults frozen as they were at 1.7.0), within the 64 KB a plugin's document store holds: entries for cabinets no longer in the model go oldest first, and anything read from a document is checked before it is used. `mesh.js` builds a closed mesh for a box with grooves, notches, and blind or through holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
 
 ## Licence
 
