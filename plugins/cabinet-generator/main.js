@@ -72,34 +72,69 @@ async function rememberOrWarn(id, s, frame) {
   }
 }
 
+/** A store record read from the document, or an empty one. @param {unknown} v */
+const record = (v) => /** @type {Record<string, any>} */ (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+
+/**
+ * Everything a sync reads, read once and together (the calls go out at once): the groups and
+ * instances, the selection (each item as the node it starts from), the open context, and what
+ * is kept in the document. A sync used to ask for the whole node list three times and the
+ * store five times for each click.
+ * @typedef {{ nodes: import("sawhorse").Node[], byId: Map<number, import("sawhorse").Node>, starts: (number | null)[], context: number | null, cabinets: Record<string, Kept>, bases: Record<string, any>, last: number | null, legacy: number | null }} Snapshot
+ * @returns {Promise<Snapshot>}
+ */
+async function snapshot() {
+  const [nodes, sel, doc, cabs, bs, last, legacy] = await Promise.all([
+    model.nodes(),
+    model.selection(),
+    model.document(),
+    storage.document.get(CABINETS),
+    storage.document.get(BASES),
+    storage.document.get(LAST),
+    storage.document.get("cabinet"),
+  ]);
+  // A solid or a face selected starts from the group or instance it is in.
+  const starts = await Promise.all(
+    sel.map(async (it) => {
+      if (it.kind === "instance" || it.kind === "group") return it.id;
+      if (it.kind === "solid") return (await model.solid(it.id))?.parent ?? null;
+      if (it.kind === "face") return (await model.solid(it.solid))?.parent ?? null;
+      return null;
+    }),
+  );
+  return {
+    nodes,
+    byId: new Map(nodes.map((n) => [n.id, n])),
+    starts,
+    context: doc.context,
+    cabinets: record(cabs),
+    bases: record(bs),
+    last: typeof last === "number" ? last : null,
+    legacy: typeof legacy === "number" ? legacy : null,
+  };
+}
+
 /** The cabinet of ours the selection is in (or, with nothing selected, the one open for
- * editing), with its settings; null when the selection is anything else. */
-async function focused() {
-  const all = await cabinets();
+ * editing), with its settings; null when the selection is anything else.
+ * @param {Snapshot} [snap] */
+async function focused(snap) {
+  const { cabinets: all, legacy, byId, starts, context } = snap ?? (await snapshot());
   // A document from before settings were kept per cabinet names its one cabinet.
-  const legacy = /** @type {number | null} */ (await storage.document.get("cabinet"));
   const ours = (/** @type {number} */ id) => all[`n${id}`] !== undefined || id === legacy;
-  const nodes = await model.nodes();
-  const byId = new Map(nodes.map((n) => [n.id, n]));
   /** @param {number | null | undefined} id */
   const climb = (id) => {
     for (let n = id == null ? undefined : byId.get(id); n; n = n.parent == null ? undefined : byId.get(n.parent)) if (n.kind === "instance" && ours(n.id)) return n;
     return null;
   };
-  const sel = await model.selection();
   /** @type {import("sawhorse").Node | null} */
   let hit = null;
-  for (const it of sel) {
-    let start = /** @type {number | null} */ (null);
-    if (it.kind === "instance" || it.kind === "group") start = it.id;
-    else if (it.kind === "solid") start = (await model.solid(it.id))?.parent ?? null;
-    else if (it.kind === "face") start = (await model.solid(it.solid))?.parent ?? null;
+  for (const start of starts) {
     const n = climb(start);
     // Anything else in the selection, or two cabinets: not one cabinet to edit.
     if (!n || (hit && hit.id !== n.id)) return null;
     hit = n;
   }
-  if (!sel.length) hit = climb((await model.document()).context);
+  if (!starts.length) hit = climb(context);
   // A cabinet made before frames were kept was one assembly: its parts sit at its origin.
   return hit ? { node: hit, sizes: unpack(all[`n${hit.id}`], metric()), frame: validFrame(all[`n${hit.id}`]?.frame) ?? IDENTITY } : null;
 }
@@ -115,11 +150,9 @@ function worldOf(byId, id) {
 /** A cabinet of ours where it stands: its box and its own axes in the model (`world`), its
  * node, settings, kept frame, and its parent's frame in the model.
  * @typedef {import("./row.js").Cab & { node: import("sawhorse").Node, sizes: Sizes, frame: Frame, parent: Frame }} Placed */
-/** Every cabinet of ours in the model, and the nodes by id. */
-async function placed() {
-  const all = await cabinets();
-  const nodes = await model.nodes();
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+/** Every cabinet of ours in the model, and the nodes by id. @param {Snapshot} [snap] */
+async function placed(snap) {
+  const { cabinets: all, byId } = snap ?? (await snapshot());
   /** @type {Placed[]} */
   const list = [];
   for (const [key, kept] of Object.entries(all)) {
@@ -147,6 +180,17 @@ let filler = /** @type {number} */ ((await storage.app.get("filler")) ?? (metric
 /** The cabinet a new one goes against (the one edited, else the last made or edited), named. @type {{ id: number, name: string } | null} */
 let anchor = null;
 const LAST = "last";
+
+/** The last update sent to each panel, as JSON: one saying nothing new is not sent (most syncs
+ * change nothing a panel shows). Forgotten when the panel's body is replaced. */
+const lastSent = new Map();
+/** @param {import("sawhorse").Panel} p @param {Record<string, Record<string, unknown>>} fields */
+async function send(p, fields) {
+  const key = JSON.stringify(fields);
+  if (lastSent.get(p.id) === key) return;
+  lastSent.set(p.id, key);
+  await p.update({ fields });
+}
 
 /** A drawer box of any kind (drawers, or the trash pull-out). */
 const hasDrawers = () => sizes.layout === "drawers" || sizes.layout === "mixed" || sizes.layout === "trash";
@@ -392,6 +436,7 @@ async function refresh() {
   const ids = idsOf(b);
   if (ids !== shown) {
     shown = ids;
+    lastSent.delete("cabinet");
     await panel.setBody(b);
   }
   await explain();
@@ -463,7 +508,7 @@ async function explain() {
   // Each group's heading says what is in it now.
   for (const sec of SECTIONS) if (sec.applies()) fields[sec.id] = { summary: sec.summary() };
   if (view === "secCuts") fields.holes = { rows: planned ? planned.rows : [] };
-  await panel.update({ fields });
+  await send(panel, fields);
 }
 
 /** The sync running now, and whether another was asked for while it ran. */
@@ -477,6 +522,11 @@ let syncAgain = false;
  * One asked for while one runs makes one more run after it, with the model as it is then.
  */
 function sync() {
+  // A cabinet or frame being made: it syncs when it is done, and once more after that.
+  if (holds) {
+    syncAgain = true;
+    return Promise.resolve();
+  }
   if (syncing) {
     syncAgain = true;
     return syncing;
@@ -494,14 +544,37 @@ function sync() {
   return syncing;
 }
 
+/** Changes to the model under way (a cabinet or frame made, cabinets lined up). */
+let holds = 0;
+/**
+ * Make a change with no sync in the middle of it: a sync that read the model between the
+ * batch and the settings kept for it saw a cabinet with no settings, took it for someone
+ * else's, and put the new-cabinet draft in the panel, which the update then kept (a cabinet
+ * edited live came out named and sized as the next new one). Waits for a sync running now;
+ * syncs asked for meanwhile run once, after.
+ * @template T @param {() => Promise<T>} fn @returns {Promise<T>}
+ */
+async function exclusive(fn) {
+  holds++;
+  try {
+    while (syncing) await syncing;
+    return await fn();
+  } finally {
+    holds--;
+    if (!holds && syncAgain) void sync();
+  }
+}
+
 /** Edit the cabinet the selection is in, or go back to a new one; then the rows panel. */
 async function syncOnce() {
-  const f = await focused();
+  const snap = await snapshot();
+  const f = await focused(snap);
   const id = f ? f.node.id : null;
-  // The cabinet a new one goes against: this one, else the last one made or edited.
-  if (id !== null && id !== editing) await storage.document.set(LAST, id);
+  // The cabinet a new one goes against: this one, else the last one made or edited (kept in
+  // the document only when one is made or rebuilt: a click writes nothing).
+  if (id !== null) lastId = id;
   const was = anchor;
-  anchor = await anchorCabinet(id);
+  anchor = anchorCabinet(id, snap);
   // The Place labels name it: redraw only when that changes. A rebuilt cabinet has a new id
   // and the same name; redrawing then would throw away what is being typed in the panel.
   if (!!was !== !!anchor || was?.name !== anchor?.name) shown = "";
@@ -512,17 +585,21 @@ async function syncOnce() {
     shown = "";
     await refresh();
   } else await refresh();
-  await rowsSync();
+  await rowsSync(snap);
 }
 
-/** The cabinet a new one goes against, if it is still in the model. @param {number | null} editingId */
-async function anchorCabinet(editingId) {
-  const id = editingId ?? /** @type {number | null} */ (await storage.document.get(LAST));
-  if (id == null) return null;
-  const all = await cabinets();
-  if (!all[`n${id}`]) return null;
-  const n = (await model.nodes()).find((x) => x.id === id);
-  return n ? { id, name: n.name ?? unpack(all[`n${id}`], metric())?.name ?? "the last cabinet" } : null;
+/** The cabinet selected or worked on last in this session (the document keeps the last made). */
+let lastId = /** @type {number | null} */ (null);
+
+/** The cabinet a new one goes against, if it is still in the model.
+ * @param {number | null} editingId @param {Snapshot} snap */
+function anchorCabinet(editingId, snap) {
+  for (const id of [editingId, lastId, snap.last]) {
+    if (id == null || !snap.cabinets[`n${id}`]) continue;
+    const n = snap.byId.get(id);
+    if (n) return { id, name: n.name ?? unpack(snap.cabinets[`n${id}`], metric())?.name ?? "the last cabinet" };
+  }
+  return null;
 }
 
 /** Each material a batch adds, once: those the model lacks (so a stock chosen for one is kept). */
@@ -594,7 +671,12 @@ function liveUpdate() {
  * clicked) is rebuilt from inside instead: new parts in, old parts out, the same cabinet.
  * @param {"new" | "update"} mode
  */
-async function generate(mode = "new") {
+function generate(mode = /** @type {"new" | "update"} */ ("new")) {
+  return exclusive(() => generateNow(mode));
+}
+
+/** @param {"new" | "update"} mode */
+async function generateNow(mode) {
   const planned = plan(sizes, metric());
   if (planned.error) {
     await ui.notify(planned.error, { kind: "warning" });
@@ -668,11 +750,13 @@ async function generate(mode = "new") {
     if (own) {
       editing = id;
       // Rebuilt, it has a new id: new cabinets still go against it.
+      lastId = id;
       await storage.document.set(LAST, id);
     } else {
       // The next new cabinet gets the next number ("Base 1", then "Base 2"), and goes against this one.
       draft = { ...made, name: nextName(name) };
       void storage.app.set("sizes", draft);
+      lastId = id;
       await storage.document.set(LAST, id);
       // Around a corner, the row goes on down the new wall: right of a right turn, left of a left one.
       if (turned) {
@@ -683,14 +767,14 @@ async function generate(mode = "new") {
     // Selected and the panels up to date before it says so: a click on empty space after the
     // message is never undone by the selection landing after it.
     if (cabinet) await model.select([{ kind: "instance", id }]);
-    await sync();
+    await syncOnce();
     if (!own) {
       const list = planned.parts.map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ");
       await ui.notify(`Made ${name}: ${list}. It is selected, so changes now apply to it; click empty space for a new cabinet.`);
     }
   } catch (e) {
     await ui.notify(`Could not ${own ? "update" : "make"} the cabinet: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
-    await sync();
+    await syncOnce();
   }
 }
 
@@ -718,11 +802,11 @@ async function rememberBase(id, kept) {
 }
 
 /** A base frame of ours where it stands. @typedef {{ id: number, node: import("sawhorse").Node, sizes: BaseSizes, world: Frame, kept: KeptBase }} PlacedBase */
-/** @param {Map<number, import("sawhorse").Node>} byId */
-async function placedBases(byId) {
+/** @param {Map<number, import("sawhorse").Node>} byId @param {Snapshot} [snap] */
+async function placedBases(byId, snap) {
   /** @type {PlacedBase[]} */
   const out = [];
-  for (const [key, kept] of Object.entries(await bases())) {
+  for (const [key, kept] of Object.entries(snap ? snap.bases : await bases())) {
     const node = byId.get(Number(key.slice(1)));
     if (!node || node.kind !== "instance" || !kept || typeof kept !== "object") continue;
     // Read with suspicion: a frame, a length and a depth, or it is not one of ours.
@@ -765,9 +849,9 @@ let rowsReady = false;
 let previewing = null;
 
 /** What the selection is, for the rows panel. @returns {Promise<RowView>} */
-async function rowFocus() {
-  const { list, byId } = await placed();
-  const frames = await placedBases(byId);
+async function rowFocus(/** @type {Snapshot} */ snap) {
+  const { list, byId } = await placed(snap);
+  const frames = await placedBases(byId, snap);
   const ours = (/** @type {number} */ id) => list.some((c) => c.id === id) || frames.some((b) => b.id === id);
   /** @param {number | null | undefined} id */
   const climb = (id) => {
@@ -775,18 +859,13 @@ async function rowFocus() {
     return null;
   };
   const ids = new Set();
-  const sel = await model.selection();
-  for (const it of sel) {
-    let start = /** @type {number | null} */ (null);
-    if (it.kind === "instance" || it.kind === "group") start = it.id;
-    else if (it.kind === "solid") start = (await model.solid(it.id))?.parent ?? null;
-    else if (it.kind === "face") start = (await model.solid(it.solid))?.parent ?? null;
+  for (const start of snap.starts) {
     const id = climb(start);
     if (id == null) return { kind: "none" };
     ids.add(id);
   }
-  if (!sel.length) {
-    const id = climb((await model.document()).context);
+  if (!snap.starts.length) {
+    const id = climb(snap.context);
     if (id != null) ids.add(id);
   }
   const base = frames.find((b) => ids.has(b.id));
@@ -915,7 +994,7 @@ async function explainRows() {
     }
     plannedNow = p && !p.error ? p : null;
   }
-  await rowsPanel.update({ fields });
+  await send(rowsPanel, fields);
 }
 
 /** A 1 x 1 white PNG: the picture's place before there is a frame to draw. */
@@ -988,6 +1067,7 @@ async function rowsRefresh() {
   const ids = idsOf(b);
   if (ids !== rowsShown) {
     rowsShown = ids;
+    lastSent.delete("rows");
     await rowsPanel.setBody(b);
   }
   await explainRows();
@@ -995,10 +1075,10 @@ async function rowsRefresh() {
 }
 
 /** The selection moved or the model changed: show the row or the base frame it is in. */
-async function rowsSync() {
+async function rowsSync(/** @type {Snapshot} */ snap) {
   if (!rowsReady) return;
   const was = rowView;
-  rowView = await rowFocus();
+  rowView = await rowFocus(snap);
   const wasBase = was.kind === "base" ? was.base.id : null;
   const isBase = rowView.kind === "base" ? rowView.base.id : null;
   if (wasBase !== isBase) {
@@ -1125,7 +1205,11 @@ await ui.registerTool({
 });
 
 /** Butt the selected cabinets into one row: one undo step. @param {Placed[]} selected */
-async function lineUpCabinets(selected) {
+function lineUpCabinets(/** @type {Placed[]} */ selected) {
+  return exclusive(() => lineUpNow(selected));
+}
+/** @param {Placed[]} selected */
+async function lineUpNow(selected) {
   const moved = lineUp(selected);
   if (!moved.size) {
     await ui.notify("They stand in one row already.");
@@ -1142,7 +1226,7 @@ async function lineUpCabinets(selected) {
   } catch (e) {
     await ui.notify(`Could not line them up: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
   }
-  await sync();
+  await syncOnce();
 }
 
 /**
@@ -1151,7 +1235,11 @@ async function lineUpCabinets(selected) {
  * the frame's top; the frame's parts go under them, wrapped into its component.
  * @param {Placed[]} row @param {BaseSizes} b @param {PlacedBase | null} old
  */
-async function buildBase(row, b, old) {
+function buildBase(row, b, old) {
+  return exclusive(() => buildBaseNow(row, b, old));
+}
+/** @param {Placed[]} row @param {BaseSizes} b @param {PlacedBase | null} old */
+async function buildBaseNow(row, b, old) {
   if (!row.length) return;
   const p = planBase(row, b);
   if (p.error) {
@@ -1207,6 +1295,7 @@ async function buildBase(row, b, old) {
       const id = /** @type {number} */ (result.value(r.ref.node));
       await rememberOrWarn(id, r.s, r.frame);
       if (last === r.c.id) await storage.document.set(LAST, id);
+      if (lastId === r.c.id) lastId = id;
     }
     const id = /** @type {number} */ (result.value(ref.node));
     try {
@@ -1215,11 +1304,11 @@ async function buildBase(row, b, old) {
       await ui.notify(`${name} is made, but its settings could not be kept in the document (${e instanceof Error ? e.message : String(e)}): it will not be edited as a base frame.`, { kind: "warning" });
     }
     await model.select([{ kind: "instance", id }]);
-    await sync();
+    await syncOnce();
     if (!old) await ui.notify(`Made ${name} under ${row.length} ${row.length === 1 ? "cabinet" : "cabinets"}: ${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers. It is selected: its cut list is in Rows and base frames, and changes apply to it.`);
   } catch (e) {
     await ui.notify(`Could not ${old ? "update" : "make"} the base frame: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
-    await sync();
+    await syncOnce();
   }
 }
 
