@@ -595,3 +595,61 @@ test("a plugin claiming an enabled sample's id does not run on the sample's gran
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(row(page, REPORT)).toHaveAttribute("data-status", "disabled");
 });
+
+// The plugin's document store holds 64 KB. Each change to a cabinet rebuilds it as a new
+// instance, and its settings were kept whole (1.5 KB) for every instance it had been: after
+// about 40 changes the store refused, and the cabinet just made was no longer one the panel
+// could edit ("Could not update the cabinet"). Kept compact and pruned, a cabinet takes any
+// number of changes; a row on its base frame saves, opens again, and is still a row on a frame.
+test("cabinet generator: 45 changes in a row keep the cabinet editable; a row on its base frame saves and opens as one", async ({ page }) => {
+  test.setTimeout(180_000);
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  const rows = `${CABINET}/rows`;
+  const status = page.locator(`[data-panel="${panel}"] [data-note="status"]`);
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
+  for (let k = 0; k < 45; k++) {
+    const w = String(20 + (k % 10));
+    await field(page, panel, "width", w);
+    await expect.poll(async () => Math.round((Math.max(...(await solids(page)).map((x) => x.max[0])) - Math.min(...(await solids(page)).map((x) => x.min[0]))) * 1e4) / 1e4).toBe(Number(w));
+    // Let the rebuild's selection and panel updates land before typing again (a fill that a
+    // redraw splits between its select-all and its typing appends instead of replacing).
+    await expect(page.locator(`[data-panel="${panel}"] [data-field="width"]`)).toHaveValue(w);
+    await page.waitForTimeout(250);
+  }
+  await expect(status).toContainText("Editing Cabinet 1");
+  await expect(page.locator("#hint")).not.toContainText("could not be kept");
+  // A second cabinet beside it, the row on a base frame.
+  await page.keyboard.press("Escape");
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+  await expect(status).toContainText("Adds Cabinet 2");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 2");
+  await page.locator(`[data-panel="${rows}"] [data-action="makeBase"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Base frame 1 under 2 cabinets");
+  await saveAndReopen(page);
+  // Opened again: the frame is ours (its settings, live), and the cabinets a row on it.
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await page.locator('.outline li[data-kind="instance"]', { hasText: "Base frame 1" }).first().locator(".label").first().click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="row"]`)).toContainText("Row of 2: Cabinet 1, Cabinet 2");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("Changes apply as you make them");
+  await expect(page.locator(`[data-panel="${rows}"] [data-action="refit"]`)).toBeDisabled();
+  // Cabinet 2 made wider: the frame says the row has changed, and Fit to the row again fits it.
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await page.locator('.outline li[data-kind="instance"]', { hasText: "Cabinet 2" }).first().locator(".label").first().click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(status).toContainText("Editing Cabinet 2");
+  await field(page, panel, "width", "30");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="row"]`)).toContainText(/Row of 2: .* · 54 long, .* · on Base frame 1/);
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await page.locator('.outline li[data-kind="instance"]', { hasText: "Base frame 1" }).first().locator(".label").first().click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("The row has changed");
+  await page.locator(`[data-panel="${rows}"] [data-action="refit"]`).click();
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("Changes apply as you make them");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="row"]`)).toContainText(/ 54 long/);
+});

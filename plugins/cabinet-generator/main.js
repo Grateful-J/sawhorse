@@ -17,6 +17,7 @@
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
 import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { BUDGET, pack, prune, unpack, validFrame } from "./keep.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, ladderPicture, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
 
 const IN = 0.0254;
@@ -38,22 +39,37 @@ let view = /** @type {string} */ ((await storage.app.get("view")) ?? "");
 
 /** @typedef {import("./row.js").Frame} Frame */
 
-/** Each cabinet's settings and frame (where its own origin is, in its component's
- * coordinates), by instance id ("n12"), in the document. Old ids stay, so an undone update
- * finds its cabinet again; the 200 newest are kept.
- * @typedef {{ sizes: Partial<Sizes>, frame: Frame }} Kept */
+/** Each cabinet's settings (what differs from the baseline, keep.js) and frame (where its own
+ * origin is, in its component's coordinates), by instance id ("n12"), in the document. Old
+ * ids stay while there is room, so an undone update finds its cabinet again.
+ * @typedef {import("./keep.js").Kept} Kept */
 const CABINETS = "cabinets";
 async function cabinets() {
-  return /** @type {Record<string, Kept>} */ ((await storage.document.get(CABINETS)) ?? {});
+  const all = await storage.document.get(CABINETS);
+  return /** @type {Record<string, Kept>} */ (all && typeof all === "object" && !Array.isArray(all) ? all : {});
 }
-/** @param {number} id @param {Sizes} s @param {Frame} frame */
+/** The keys ("n12") of every group and instance in the model: entries for them are kept. */
+async function liveKeys() {
+  return new Set((await model.nodes()).map((n) => `n${n.id}`));
+}
+/** Keep a cabinet's settings and frame. Rejects when the document's store is full even after
+ * the entries for cabinets no longer in the model went: the caller says so, as a warning.
+ * @param {number} id @param {Sizes} s @param {Frame} frame */
 async function remember(id, s, frame) {
   const all = await cabinets();
   delete all[`n${id}`];
-  all[`n${id}`] = { sizes: s, frame };
-  const keys = Object.keys(all);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete all[k];
-  await storage.document.set(CABINETS, all);
+  all[`n${id}`] = { ...pack(s, metric()), frame };
+  await storage.document.set(CABINETS, prune(all, await liveKeys(), BUDGET.cabinets));
+}
+/** Keep it, and say so if it cannot be kept (the cabinet is made either way). @param {number} id @param {Sizes} s @param {Frame} frame */
+async function rememberOrWarn(id, s, frame) {
+  try {
+    await remember(id, s, frame);
+    return true;
+  } catch (e) {
+    await ui.notify(`${s.name} is made, but its settings could not be kept in the document (${e instanceof Error ? e.message : String(e)}): it will not be edited as a cabinet. Delete cabinets you no longer need, or save and reopen.`, { kind: "warning" });
+    return false;
+  }
 }
 
 /** The cabinet of ours the selection is in (or, with nothing selected, the one open for
@@ -85,7 +101,7 @@ async function focused() {
   }
   if (!sel.length) hit = climb((await model.document()).context);
   // A cabinet made before frames were kept was one assembly: its parts sit at its origin.
-  return hit ? { node: hit, sizes: all[`n${hit.id}`]?.sizes ?? null, frame: all[`n${hit.id}`]?.frame ?? IDENTITY } : null;
+  return hit ? { node: hit, sizes: unpack(all[`n${hit.id}`], metric()), frame: validFrame(all[`n${hit.id}`]?.frame) ?? IDENTITY } : null;
 }
 
 /** A node's frame in the model: its parents' transforms, outermost first, then its own.
@@ -108,9 +124,10 @@ async function placed() {
   const list = [];
   for (const [key, kept] of Object.entries(all)) {
     const node = byId.get(Number(key.slice(1)));
-    if (!node || node.kind !== "instance" || !kept.sizes) continue;
-    const s = normalize(kept.sizes, metric());
-    const frame = kept.frame ?? IDENTITY;
+    const s = unpack(kept, metric());
+    if (!node || node.kind !== "instance" || !s) continue;
+    // A frame that cannot be read (a damaged or hand-made document): its parts sit at its origin.
+    const frame = validFrame(kept.frame) ?? IDENTITY;
     const parent = worldOf(byId, node.parent);
     const world = compose(compose(parent, /** @type {Frame} */ (node.transform)), frame);
     list.push({ id: node.id, name: node.name ?? s.name, width: s.width, depth: s.depth, height: s.height, world, node, sizes: s, frame, parent });
@@ -449,18 +466,48 @@ async function explain() {
   await panel.update({ fields });
 }
 
-/** The selection moved: edit the cabinet it is in, or go back to a new one. */
-async function sync() {
+/** The sync running now, and whether another was asked for while it ran. */
+let syncing = /** @type {Promise<void> | null} */ (null);
+let syncAgain = false;
+/**
+ * The selection moved or the model changed: bring both panels up to date. One at a time: the
+ * events come in bursts (a rebuild is a selection change and a document change), and two
+ * syncs reading the model at once could finish out of order, the older one last, leaving the
+ * panel saying what was true before (a row changed under its base frame, shown unchanged).
+ * One asked for while one runs makes one more run after it, with the model as it is then.
+ */
+function sync() {
+  if (syncing) {
+    syncAgain = true;
+    return syncing;
+  }
+  syncing = (async () => {
+    try {
+      do {
+        syncAgain = false;
+        await syncOnce();
+      } while (syncAgain);
+    } finally {
+      syncing = null;
+    }
+  })();
+  return syncing;
+}
+
+/** Edit the cabinet the selection is in, or go back to a new one; then the rows panel. */
+async function syncOnce() {
   const f = await focused();
   const id = f ? f.node.id : null;
   // The cabinet a new one goes against: this one, else the last one made or edited.
   if (id !== null && id !== editing) await storage.document.set(LAST, id);
   const was = anchor;
   anchor = await anchorCabinet(id);
-  if (was?.id !== anchor?.id || was?.name !== anchor?.name) shown = "";
+  // The Place labels name it: redraw only when that changes. A rebuilt cabinet has a new id
+  // and the same name; redrawing then would throw away what is being typed in the panel.
+  if (!!was !== !!anchor || was?.name !== anchor?.name) shown = "";
   if (id !== editing) {
     editing = id;
-    sizes = f ? normalize(f.sizes ?? sizes, metric()) : draft;
+    sizes = f ? (f.sizes ?? sizes) : draft;
     if (!SECTIONS.some((x) => x.id === view && x.applies())) view = "";
     shown = "";
     await refresh();
@@ -475,7 +522,7 @@ async function anchorCabinet(editingId) {
   const all = await cabinets();
   if (!all[`n${id}`]) return null;
   const n = (await model.nodes()).find((x) => x.id === id);
-  return n ? { id, name: n.name ?? normalize(all[`n${id}`].sizes, metric()).name } : null;
+  return n ? { id, name: n.name ?? unpack(all[`n${id}`], metric())?.name ?? "the last cabinet" } : null;
 }
 
 /** Each material a batch adds, once: those the model lacks (so a stock chosen for one is kept). */
@@ -568,7 +615,7 @@ async function generate(mode = "new") {
   let turned = null;
   if (own && f0) {
     frame = inside ? f0.frame : compose(/** @type {Frame} */ (own.transform), f0.frame);
-    const old = f0.sizes ? normalize(f0.sizes, metric()) : null;
+    const old = f0.sizes;
     if (old) {
       // A deeper or shallower box keeps its back where it was: on the wall.
       if (Math.abs(old.depth - made.depth) > 1e-9) frame = compose(frame, translation([0, old.depth - made.depth, 0]));
@@ -617,7 +664,7 @@ async function generate(mode = "new") {
     const result = await batch.commit();
     const id = cabinet ? /** @type {number} */ (result.value(cabinet.node)) : /** @type {number} */ (own?.id);
     // A new component's own coordinates are the model's: its origin is where the parts went.
-    await remember(id, made, frame);
+    await rememberOrWarn(id, made, frame);
     if (own) {
       editing = id;
       // Rebuilt, it has a new id: new cabinets still go against it.
@@ -632,14 +679,19 @@ async function generate(mode = "new") {
         place = turned;
         void storage.app.set("place", place);
       }
+    }
+    // Selected and the panels up to date before it says so: a click on empty space after the
+    // message is never undone by the selection landing after it.
+    if (cabinet) await model.select([{ kind: "instance", id }]);
+    await sync();
+    if (!own) {
       const list = planned.parts.map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ");
       await ui.notify(`Made ${name}: ${list}. It is selected, so changes now apply to it; click empty space for a new cabinet.`);
     }
-    if (cabinet) await model.select([{ kind: "instance", id }]);
   } catch (e) {
     await ui.notify(`Could not ${own ? "update" : "make"} the cabinet: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+    await sync();
   }
-  await sync();
 }
 
 // --- rows and base frames -------------------------------------------------------------------
@@ -654,16 +706,15 @@ async function generate(mode = "new") {
  * @typedef {{ sizes: Partial<BaseSizes>, frame: Frame, length: number, depth: number, fit: string }} KeptBase */
 const BASES = "bases";
 async function bases() {
-  return /** @type {Record<string, KeptBase>} */ ((await storage.document.get(BASES)) ?? {});
+  const all = await storage.document.get(BASES);
+  return /** @type {Record<string, KeptBase>} */ (all && typeof all === "object" && !Array.isArray(all) ? all : {});
 }
 /** @param {number} id @param {KeptBase} kept */
 async function rememberBase(id, kept) {
   const all = await bases();
   delete all[`n${id}`];
   all[`n${id}`] = kept;
-  const keys = Object.keys(all);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete all[k];
-  await storage.document.set(BASES, all);
+  await storage.document.set(BASES, prune(all, await liveKeys(), BUDGET.bases));
 }
 
 /** A base frame of ours where it stands. @typedef {{ id: number, node: import("sawhorse").Node, sizes: BaseSizes, world: Frame, kept: KeptBase }} PlacedBase */
@@ -673,9 +724,12 @@ async function placedBases(byId) {
   const out = [];
   for (const [key, kept] of Object.entries(await bases())) {
     const node = byId.get(Number(key.slice(1)));
-    if (!node || node.kind !== "instance") continue;
-    const world = compose(compose(worldOf(byId, node.parent), /** @type {Frame} */ (node.transform)), kept.frame);
-    out.push({ id: node.id, node, sizes: normalizeBase(kept.sizes, metric()), world, kept });
+    if (!node || node.kind !== "instance" || !kept || typeof kept !== "object") continue;
+    // Read with suspicion: a frame, a length and a depth, or it is not one of ours.
+    const frame = validFrame(kept.frame);
+    if (!frame || !(kept.length > 0 && Number.isFinite(kept.length)) || !(kept.depth > 0 && Number.isFinite(kept.depth))) continue;
+    const world = compose(compose(worldOf(byId, node.parent), /** @type {Frame} */ (node.transform)), frame);
+    out.push({ id: node.id, node, sizes: normalizeBase(kept.sizes, metric()), world, kept: { ...kept, frame, fit: typeof kept.fit === "string" ? kept.fit : "" } });
   }
   return out;
 }
@@ -1151,17 +1205,22 @@ async function buildBase(row, b, old) {
     const last = await storage.document.get(LAST);
     for (const r of rebuilt) {
       const id = /** @type {number} */ (result.value(r.ref.node));
-      await remember(id, r.s, r.frame);
+      await rememberOrWarn(id, r.s, r.frame);
       if (last === r.c.id) await storage.document.set(LAST, id);
     }
     const id = /** @type {number} */ (result.value(ref.node));
-    await rememberBase(id, { sizes: b, frame, length: p.length, depth: p.depth, fit: fingerprint(row) });
-    if (!old) await ui.notify(`Made ${name} under ${row.length} ${row.length === 1 ? "cabinet" : "cabinets"}: ${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers. It is selected: its cut list is in Rows and base frames, and changes apply to it.`);
+    try {
+      await rememberBase(id, { sizes: b, frame, length: p.length, depth: p.depth, fit: fingerprint(row) });
+    } catch (e) {
+      await ui.notify(`${name} is made, but its settings could not be kept in the document (${e instanceof Error ? e.message : String(e)}): it will not be edited as a base frame.`, { kind: "warning" });
+    }
     await model.select([{ kind: "instance", id }]);
+    await sync();
+    if (!old) await ui.notify(`Made ${name} under ${row.length} ${row.length === 1 ? "cabinet" : "cabinets"}: ${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers. It is selected: its cut list is in Rows and base frames, and changes apply to it.`);
   } catch (e) {
     await ui.notify(`Could not ${old ? "update" : "make"} the base frame: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+    await sync();
   }
-  await sync();
 }
 
 await ui.registerCommand({ id: "generate", run: () => generate("new") });

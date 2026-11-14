@@ -1,0 +1,1 @@
+export const BASELINE: { readonly in: Readonly<Record<string, unknown>> & { width: number; thickness: number }; readonly mm: Readonly<Record<string, unknown>> & { depth: number; backThickness: number } };
