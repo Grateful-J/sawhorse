@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { cncSettings } from "../components/NestingSection";
-import { cncFileName, cncNotes, cutProblems, nestProblems, openPockets, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
+import { cncFileName, cncNotes, cutProblems, nestProblems, openPockets, routerSheetProblems, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
 import DxfParser from "dxf-parser";
-import { nestingDxf, overcutLoop, pocketOvercut, reachesEdge } from "./dxf";
+import { nestingDxf, overcutLoop, pieceLabel, pocketOvercut, reachesEdge } from "./dxf";
+import { diffU, exactU, fineSteps, fineStep, fineU, pieceTitle } from "./format";
 import type { BlankFeatures } from "./machine";
 import { smallNesting } from "./fixture";
 
@@ -56,7 +57,8 @@ describe("CNC export notes", () => {
     const piece = n.pieces[0];
     const owner = (q: { name: string }) => (q.name === "Shelf" ? "Sink base" : null);
     const plain = cncFileName("Kitchen", n, 0, undefined, owner);
-    expect(plain).toMatch(/^Kitchen sheet 01 of 0\d - Sink base Shelf - /);
+    // The fixture's first piece is a board, and is called one.
+    expect(plain).toBe("Kitchen 01 board 1 of 1 - Sink base Shelf - 4-4 x 12 x 96 (Oak) - profile CNC.dxf");
     expect(plain).toMatch(/ - profile CNC\.dxf$/);
     expect(plain).toContain(safeName(piece.stock));
     // Cuts measured on its parts say what the router does.
@@ -66,6 +68,65 @@ describe("CNC export notes", () => {
     expect(cncFileName("Kitchen", n, 0, features, owner)).toMatch(/ - profile, pockets, drills CNC\.dxf$/);
     // Quotes and slashes never reach the file system.
     expect(safeName('3/4" 4x4: Front?')).toBe("3-4in 4x4 Front");
+  });
+
+  it("a sheet has one number: in its file's name, in the label inside the file and on screen", () => {
+    const n = smallNesting();
+    // Three sheets of one stock after the board, the middle one the track saw's: the router's
+    // files are sheets 2 and 4 of the nesting, 1 and 3 of 3 of their stock.
+    const sheet = n.pieces[1];
+    n.pieces = [n.pieces[0], { ...sheet, index: 2, seq: 1, count: 3 }, { ...sheet, index: 3, seq: 2, count: 3, saw: true }, { ...sheet, index: 4, seq: 3, count: 3, material: "Back plywood" }];
+    const router = { ...n, pieces: n.pieces.filter((p) => !p.saw) };
+    const names = router.pieces.map((_, i) => cncFileName("Kitchen", router, i, undefined, () => null));
+    expect(names).toEqual([
+      "Kitchen 01 board 1 of 1 - Shelf - 4-4 x 12 x 96 (Oak) - profile CNC.dxf",
+      "Kitchen 02 sheet 1 of 3 - Back panel - 4 x 8 sheet, 1-4 - profile CNC.dxf",
+      "Kitchen 04 sheet 3 of 3 - Back panel - 4 x 8 sheet, 1-4 (Back plywood) - profile CNC.dxf",
+    ]);
+    expect(new Set(names).size).toBe(names.length);
+    router.pieces.forEach((p, i) => {
+      const label = pieceLabel(p);
+      // The label is the on-screen title with the sheet's number in the nesting before it...
+      expect(label).toBe(`${p.index}. ${pieceTitle(p).replace(/ · /g, " - ")}`);
+      // ...and is what the file holds, and the file's name starts with the same two numbers.
+      expect(nestingDxf(router, "lwpolyline", undefined, { piece: i })).toContain(`\n${label}\n`);
+      const kind = p.kind === "sheet" ? "sheet" : "board";
+      expect(names[i].startsWith(`Kitchen ${String(p.index).padStart(2, "0")} ${kind} ${p.seq} of ${p.count} - `)).toBe(true);
+    });
+    expect(pieceLabel(n.pieces[2])).toBe("3. Sheet 2 of 3 - 4 x 8 sheet, 1/4 - track saw");
+  });
+
+  it("a file name is one every file system takes, whatever the title and the parts are called", () => {
+    const bytes = (x: string) => new TextEncoder().encode(x).length;
+    // Slashes, quotes, control characters, a leading dot, a trailing dot and space.
+    expect(safeName("..\tKitchen\u0000 1/2\n.  ")).toBe("Kitchen 1-2");
+    expect(safeName(".hidden")).toBe("hidden");
+    // Never empty, never a Windows device name.
+    expect(safeName("")).toBe("untitled");
+    expect(safeName(" ?:. ")).toBe("untitled");
+    expect(safeName("CON")).toBe("CON_");
+    expect(safeName("lpt1")).toBe("lpt1_");
+    // Cut to a number of bytes, never through a character.
+    const long = safeName("x".repeat(500));
+    expect(bytes(long)).toBeLessThanOrEqual(200);
+    expect(long.endsWith("...")).toBe(true);
+    const greek = safeName("\u03b1\u03b2\u03b3".repeat(100), 50);
+    expect(bytes(greek)).toBeLessThanOrEqual(50);
+    expect(greek).toMatch(/^(\u03b1\u03b2\u03b3)+\u03b1?\u03b2?\.\.\.$/);
+    expect(safeName("\u{1f600}".repeat(40), 30)).toMatch(/^(\u{1f600})+\.\.\.$/u);
+    // A whole CNC file name: a 334-character part, a long title, a long stock, all in three-byte characters.
+    const n = smallNesting();
+    const piece = n.pieces[1];
+    piece.stock = "\u5408\u677f".repeat(60);
+    piece.material = "\u6750".repeat(60);
+    piece.placements = [{ ...piece.placements[0], name: "\u90e8".repeat(334) }, { ...piece.placements[0], tag: "9", name: "Door" }];
+    const name = cncFileName(`.${"\u53f0\u6240".repeat(80)}`, n, 1, undefined, () => "\u30ad\u30e3\u30d3\u30cd\u30c3\u30c8");
+    expect(bytes(name)).toBeLessThanOrEqual(255);
+    expect(name.startsWith(".")).toBe(false);
+    expect(name).toMatch(/ 02 sheet 1 of 1 - /);
+    expect(name).toMatch(/ - profile CNC\.dxf$/);
+    // A plain one is not touched.
+    expect(cncFileName("Kitchen", smallNesting(), 1, undefined, () => "Sink base")).toBe("Kitchen 02 sheet 1 of 1 - Sink base Back panel - 4 x 8 sheet, 1-4 - profile CNC.dxf");
   });
 
   it("a long list of parts is cut short with how many more", () => {
@@ -116,7 +177,9 @@ describe("spacing for the router", () => {
     expect(spacingProblem(n, "sixteenth")).toBeNull();
   });
 
-  it("asks before saving: a sheet of another thickness, cuts left out, cuts not measured", () => {
+  const cutFeature = (o: Partial<BlankFeatures> = {}): BlankFeatures => ({ profile: null, cutouts: [], pockets: [], drills: [], flip: { pockets: [], drills: [] }, skipped: false, ...o });
+
+  it("asks before saving: cuts left out, cuts not measured", () => {
     const n = structuredClone(smallNesting());
     for (const p of n.pieces) for (const q of p.placements) q.size = [p.thickness, q.size[1], q.size[2]];
     const clean = { features: new Map<string, BlankFeatures>(), skipped: [], flipped: [] };
@@ -129,12 +192,111 @@ describe("spacing for the router", () => {
     const left = cutProblems(n, { ...clean, skipped: ["Shelf"] }, "sixteenth");
     expect(left).toEqual([expect.objectContaining({ kind: "cuts", name: "Shelf", tag: "1a, 1b" })]);
     expect(left[0].text).toMatch(/would be left out of the file/);
-    // Drawn half a millimetre thicker than its sheet: named with both thicknesses and which way.
-    const piece = n.pieces[0];
-    piece.placements[0].size = [piece.thickness + 0.5e-3, piece.placements[0].size[1], piece.placements[0].size[2]];
-    const thick = cutProblems(n, clean, "half_mm");
-    expect(thick).toEqual([expect.objectContaining({ kind: "thickness", name: "Shelf" })]);
-    expect(thick[0].text).toMatch(/a sheet 0\.5 mm thinner: every dado and fit was cut to the drawing/);
+  });
+
+  it("asks about a sheet of another thickness only when the file holds machined cuts", () => {
+    const n = structuredClone(smallNesting());
+    for (const p of n.pieces) for (const q of p.placements) q.size = [p.thickness, q.size[1], q.size[2]];
+    // The shelves drawn half a millimetre thicker than their board, the back panel a quarter
+    // millimetre thinner than its sheet.
+    for (const q of n.pieces[0].placements) q.size = [n.pieces[0].thickness + 0.5e-3, q.size[1], q.size[2]];
+    n.pieces[1].placements[0].size = [n.pieces[1].thickness - 0.25e-3, n.pieces[1].placements[0].size[1], n.pieces[1].placements[0].size[2]];
+    expect(thicknessMismatches(n)).toHaveLength(2);
+    // Plain rectangles (a bookshelf drawn at 3/4 in on 23/32 plywood): nothing was sized to the
+    // thickness, nothing to ask. A part measured as a plain box is the same.
+    const plain = { features: new Map<string, BlankFeatures>(), skipped: [], flipped: [] };
+    expect(cutProblems(n, plain, "half_mm")).toEqual([]);
+    expect(cutProblems(n, { ...plain, features: new Map([["2", cutFeature()]]) }, "half_mm")).toEqual([]);
+    // One part with a pocket: every mismatched part is named, the one that slides into the
+    // dado as much as the one with it.
+    const dado = { ...plain, features: new Map([["2", cutFeature({ pockets: [{ loop: [], depth: 0.006 }] })]]) };
+    const asked = cutProblems(n, dado, "half_mm");
+    expect(asked.map((p) => [p.kind, p.name])).toEqual([
+      ["thickness", "Shelf"],
+      ["thickness", "Back panel"],
+    ]);
+    expect(asked[0].text).toBe(
+      "drawn 19.55 mm thick but nested on 4/4 x 12 x 96 (19.05 mm), a sheet 0.5 mm thinner: joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut",
+    );
+    expect(asked[1].text).toMatch(/^drawn 5\.31 mm thick but nested on 4 x 8 sheet, 1\/4 \(5\.56 mm\), a sheet 0\.25 mm thicker: /);
+    // A hole, a cutout, a notched outline or a cut in the other face each count; the wording
+    // is true of a file with only holes.
+    const hole = { loop: [], center: [0, 0] as [number, number], diameter: 0.005, depth: 0.01, through: false };
+    for (const f of [cutFeature({ drills: [hole] }), cutFeature({ cutouts: [[]] }), cutFeature({ profile: [[0, 0]] }), cutFeature({ flip: { pockets: [], drills: [hole] } })]) {
+      expect(cutProblems(n, { ...plain, features: new Map([["1a", f]]) }, "half_mm").filter((p) => p.kind === "thickness")).toHaveLength(2);
+    }
+    expect(asked[0].text).not.toContain("every dado");
+    // Not measured: the file may hold cuts, so it is asked, with the cuts problem after.
+    expect(cutProblems(n, null, "half_mm").map((p) => p.kind)).toEqual(["thickness", "thickness", "cuts"]);
+    // The note after saving still names the mismatch, cuts or none.
+    expect(cncNotes(n, plain, "half_mm")[0]).toMatch(/^Shelf is drawn 19\.55 mm thick but nested on .* \(19\.05 mm\), a sheet 0\.5 mm thinner: joints and depths/);
+  });
+
+  it("a small difference in thickness is a real number, never 0 in or the same fraction twice", () => {
+    const n = structuredClone(smallNesting());
+    for (const p of n.pieces) for (const q of p.placements) q.size = [p.thickness, q.size[1], q.size[2]];
+    // The back panel drawn 0.15 mm thicker than its 7/32 in sheet: both round to 7/32.
+    const q = n.pieces[1].placements[0];
+    q.size = [n.pieces[1].thickness + 0.15e-3, q.size[1], q.size[2]];
+    expect(fineU(q.size[0], "sixteenth")).toBe(fineU(n.pieces[1].thickness, "sixteenth"));
+    expect(fineU(0.15e-3, "sixteenth")).toBe("0 in");
+    const dado = { features: new Map([["2", cutFeature({ pockets: [{ loop: [], depth: 0.006 }] })]]), skipped: [], flipped: [] };
+    const [p] = cutProblems(n, dado, "sixteenth");
+    expect(p.text).toMatch(/^drawn 0\.225 in thick but nested on 4 x 8 sheet, 1\/4 \(7\/32 in\), a sheet 0\.006 in \(0\.15 mm\) thinner: /);
+    expect(p.text).not.toContain(" 0 in");
+    const note = cncNotes(n, dado, "sixteenth")[0];
+    expect(note).toMatch(/drawn 0\.225 in thick but nested on 4 x 8 sheet, 1\/4 \(7\/32 in\), a sheet 0\.006 in \(0\.15 mm\) thinner/);
+    // The formatters: a fraction only when the length is that fraction.
+    expect(exactU((23 / 32) * IN, "sixteenth")).toBe("23/32 in");
+    expect(exactU(0.727 * IN, "sixteenth")).toBe("0.727 in");
+    expect(exactU(0.018, "half_mm")).toBe("18 mm");
+    expect(exactU(0.727 * IN, { r: "sixteenth", style: "decimal" })).toBe("0.727 in");
+    expect(diffU(IN / 32, "sixteenth")).toBe("1/32 in");
+    expect(diffU(-0.15e-3, "sixteenth")).toBe("0.006 in (0.15 mm)");
+    expect(diffU(0.26e-3, "half_mm")).toBe("0.26 mm");
+    // A negative length keeps its sign and its size.
+    expect(fineU(-IN / 8, "sixteenth")).toBe("-1/8 in");
+    expect(fineU(-1.5 * IN, "sixteenth")).toBe("-1 1/2 in");
+    expect(fineU(-0.003, "half_mm")).toBe("-3 mm");
+    expect(fineU(1.875 * IN, "sixteenth")).toBe("1 7/8 in");
+    expect(fineU(0, "sixteenth")).toBe("0 in");
+    // Whole steps write as fineU does, so a width and its edges agree.
+    for (const u of ["sixteenth", "half_mm", { r: "sixteenth", style: "decimal" }] as const) {
+      for (const m of [0, 0.0031, 0.0185, 0.1234, 2.1336]) expect(`${fineSteps(Math.round(m / fineStep(u)), u)} ${u === "half_mm" ? "mm" : "in"}`).toBe(fineU(m, u));
+    }
+  });
+
+  it("the spacing problem speaks the document's units", () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, kerf: 0.003 };
+    expect(spacingProblem(n, "half_mm")?.text).toContain("parts are 3 mm apart (Kerf), too close for a 6.35 mm bit");
+    expect(spacingProblem(n, "half_mm")?.text).toContain("Use CNC spacing (10 mm apart)");
+    expect(spacingProblem(n, "half_mm")?.text).not.toContain("3/8 in");
+    expect(spacingProblem(n, "sixteenth")?.text).toContain("Use CNC spacing (3/8 in apart)");
+  });
+
+  it("a sheet among the router's that is not the router's sheet is a problem to ask about", () => {
+    const n = structuredClone(smallNesting());
+    // No sheet size set: any sheet is the router's.
+    expect(routerSheetProblems(n, "sixteenth")).toEqual([]);
+    n.settings = { ...n.settings, sheetSize: { width: 48 * IN, length: 48 * IN } };
+    // The back panel's 4 x 8: its material's stock is set to it, so "nest on 4 x 4" left it there.
+    const sheet = n.pieces[1];
+    sheet.material = "Cabinet plywood";
+    n.library.defaults = { "Cabinet plywood": sheet.stock };
+    n.pieces.push({ ...sheet, index: 3, seq: 2, count: 2, placements: [{ ...sheet.placements[0], tag: "5" }] });
+    const [p, ...rest] = routerSheetProblems(n, "sixteenth");
+    expect(rest).toEqual([]);
+    expect([p.kind, p.name, p.tag]).toEqual(["footprint", "4 x 8 sheet, 1/4", "2, 5"]);
+    expect(p.text).toBe("2 sheets 48 x 96 in, not the 48 x 48 in the router is set to: Cabinet plywood's stock is set to it, so they stay on this sheet and would be written as some of the CNC files. Set Cabinet plywood's stock to a sheet the router takes (Stock...), or cut these sheets another way");
+    // The board is not a sheet; a sheet the track saw cuts is not the router's; a 4 x 4 either way round is.
+    expect(routerSheetProblems({ ...n, pieces: [n.pieces[0]] }, "sixteenth")).toEqual([]);
+    expect(routerSheetProblems({ ...n, pieces: n.pieces.map((x) => ({ ...x, saw: x.kind === "sheet" })) }, "sixteenth")).toEqual([]);
+    expect(routerSheetProblems({ ...n, pieces: [{ ...sheet, length: 48 * IN }] }, "sixteenth")).toEqual([]);
+    // A part that names the sheet as its stock, in millimetres.
+    n.library.defaults = {};
+    n.pieces = [{ ...sheet, material: sheet.stock }];
+    expect(routerSheetProblems(n, "half_mm")[0].text).toMatch(/^a sheet 1219\.2 x 2438\.4 mm, not the 1219\.2 x 1219\.2 mm the router is set to: its parts name it as their stock, so it stays on this sheet and would be written as one of the CNC files\. Set the parts' stock to /);
   });
 
   // A pocket toolpath keeps the bit inside its outline: a dado that ends on its part's edge

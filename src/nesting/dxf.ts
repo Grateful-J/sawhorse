@@ -19,6 +19,7 @@
 // every laser and CAM program reads; or R12 (`$ACADVER` AC1009, POLYLINE / VERTEX / SEQEND)
 // for strict R12-only readers.
 import type { Nesting, StockPiece } from "../kernel/types";
+import { pieceNumber } from "./format";
 import type { BlankFeatures } from "./machine";
 
 export const DXF_TYPE = { description: "DXF", mime: "image/vnd.dxf", extensions: [".dxf"] };
@@ -38,6 +39,13 @@ export function dxfNum(x: number): string {
 /** The layer of a stock piece: "SHEET-01", "BOARD-12". */
 export function pieceLayer(p: StockPiece): string {
   return `${p.kind.toUpperCase()}-${String(p.index).padStart(2, "0")}`;
+}
+
+/** A piece's label in the file: its number in the nesting and its title as the Nesting
+ * section, the PDF and the CNC file names write it, in plain ASCII: "8. Sheet 1 of 2 - 4 x 4
+ * sheet, 3/4 - Door plywood". One sheet has one number wherever it is named. */
+export function pieceLabel(p: StockPiece): string {
+  return `${p.index}. ${pieceNumber(p)} - ${p.stock}${p.material ? ` - ${p.material}` : ""}${p.saw ? " - track saw" : ""}`;
 }
 
 /** Each piece's lower-left corner in the file (mm): stacked upward, the first on top. */
@@ -267,7 +275,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       const [x0, y0, x1, y1] = p.usable;
       poly("STOCK", rect(ox + x0 * MM, fy(y1), (x1 - x0) * MM, (y1 - y0) * MM));
     }
-    text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), `${p.index}. ${p.stock}${p.material ? ` - ${p.material}` : ""} (${p.seq} of ${p.count})`);
+    text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), pieceLabel(p));
     const layer = profileLayer(p);
     const over = options.overcut ? pocketOvercut(p) : 0;
     for (const q of p.placements) {

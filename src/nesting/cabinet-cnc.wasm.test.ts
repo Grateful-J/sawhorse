@@ -16,7 +16,7 @@ import DxfParser from "dxf-parser";
 import { nestingDxf, pocketOvercut } from "./dxf";
 import { measureNest } from "./measure";
 import { sheetSetOps } from "./sheetset";
-import { handWork, routerShare, sawShare, spacingProblem, thicknessMismatches } from "./cnc";
+import { handWork, handWorkText, routerShare, sawShare, spacingProblem, thicknessMismatches } from "./cnc";
 import { overflowOps } from "./sheetset";
 
 const pkg = path.resolve(__dirname, "../wasm/pkg");
@@ -480,5 +480,200 @@ run("a cabinet to the CNC router", () => {
       expect(Math.min(...vs)).toBeCloseTo(0.5 * 0.0254, 9);
       expect(Math.max(...vs)).toBeCloseTo(q.dy, 9);
     }
+  }, 120_000);
+});
+
+// The hand work list of the track saw's parts, and the sheets a metric document gets, through
+// the real kernel. What the list says is checked against the model itself (the kernel's faces
+// of the solid), and against the drawing of the sheet, not against the list's own wording.
+run("the track saw's hand work and metric sheets, through the kernel", () => {
+  const IN = 0.0254;
+  const MM = 0.001;
+  type Dx = { type: string; layer: string; vertices?: { x: number; y: number }[]; center?: { x: number; y: number } };
+
+  /**
+   * A tall pantry nested on 4 x 4 with the track saw on, and its saw parts measured. With
+   * `across`, the 3/4 in 4 x 8 lies the other way (48 long, 96 wide, no grain), so the nester
+   * has to turn the 84 in sides: they are drawn with their length down the sheet.
+   */
+  const pantry = async (across: boolean) => {
+    const d = await doc();
+    const s = applyPreset(defaults(false), "tall", false);
+    const p = plan(s, false);
+    expect(p.error).toBeNull();
+    d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(p.parts, [0, 0, 0], s.name, s.name, Object.values(MATERIALS))] }));
+    const nest = () => JSON.parse(d.nest("{}")) as Nesting;
+    d.apply_op(JSON.stringify(sheetSetOps(nest().library, 48 * IN, 48 * IN).op));
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...nest().library.settings, ...cncSettings(false) } }));
+    d.apply_op(JSON.stringify(overflowOps(nest().library, true, false).op));
+    if (across) {
+      const sheet = nest().library.stocks.find((x) => x.name === "4 x 8 sheet, 3/4")!;
+      d.apply_op(JSON.stringify({ op: "define_stock", stock: { ...sheet, length: sheet.width, width: sheet.length, grain: "none" }, replace: sheet.name }));
+    }
+    const n = nest();
+    expect(n.unplaced).toEqual([]);
+    const st = JSON.parse(d.state_json()) as DocState;
+    const sawn = await measureNest(measurer(d), st.graph.objects, sawShare(n));
+    expect(sawn.skipped).toEqual([]);
+    return { d, n, st, sawn, s };
+  };
+
+  /** A list's number in metres: "6 15/16", "3/4", "84". */
+  const inches = (text: string) => text.trim().split(" ").reduce((x, part) => x + (part.includes("/") ? Number(part.split("/")[0]) / Number(part.split("/")[1]) : Number(part)), 0) * IN;
+  /** Every (A, B) of a line of holes, metres. */
+  const centres = (line: string) => [...line.matchAll(/\(([^,()]+), ([^()]+)\)/g)].map((m) => [inches(m[1]), inches(m[2])] as [number, number]);
+  /** Half a 64th: what a position rounded to the nearest 1/64 in may be off by. */
+  const ROUND = IN / 128 + 1e-9;
+
+  it("the pantry's Left side: the hinge plates are 37 mm from its front edge, measured from the corner the list says, turned or not", async () => {
+    const lists: string[][] = [];
+    for (const across of [false, true]) {
+      const { d, n, st, sawn, s } = await pantry(across);
+      const pi = n.pieces.findIndex((p) => p.placements.some((x) => x.name === "Left side"));
+      const piece = n.pieces[pi];
+      expect(piece.saw).toBe(true);
+      const q = piece.placements.find((x) => x.name === "Left side")!;
+      expect(q.turned).toBe(across);
+
+      // --- The model. The side's box, and where the cabinet's front and bottom are: the door
+      // stands in front of the side's front edge, the toe kick is at its bottom end.
+      const rows = (JSON.parse(d.cut_list(JSON.stringify({ rounding: "sixteenth", visible_only: false }))) as { rows: { name: string; occurrences: { center: V3; size: V3; axes: [V3, V3, V3] }[] }[] }).rows;
+      const at = (name: string) => rows.find((r) => r.name === name)!.occurrences[0];
+      const side = at("Left side");
+      // Its thickness is along x, its width (the cabinet's depth) along y, its length up z.
+      expect(side.axes.map((a) => a.map((v) => Math.round(v * 1e9) / 1e9 + 0))).toEqual([[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+      const [t, D, H] = side.size;
+      const y0 = side.center[1] - D / 2;
+      const z0 = side.center[2] - H / 2;
+      expect(at("Door").center[1]).toBeLessThan(y0);
+      expect(at("Toe kick").center[2]).toBeLessThan(z0 + s.toeKick + 1e-9);
+      expect(at("Toe kick").center[2]).toBeLessThan(side.center[2]);
+      // The hinge plates' holes, from the kernel's faces of the solid: their floors look into
+      // the cabinet (+x) 11.5 mm under the inside face. Each is 37 mm from the front edge.
+      const ids = "object" in q.item ? [q.item.object] : st.graph.objects.filter((o) => o.parent === (q.item as { node: number }).node).map((o) => o.id);
+      const floors = ids.flatMap((id) => JSON.parse(d.faces_json(id)) as FaceInfo[]).filter((f) => Math.abs(f.normal[0] - 1) < 1e-9 && Math.abs(f.origin[0] - (side.center[0] + t / 2 - 11.5 * MM)) < 1e-6);
+      expect(floors).toHaveLength(10);
+      const model = floors.map((f) => ({ front: f.centroid[1] - y0, bottom: f.centroid[2] - z0 })).sort((a, b) => a.bottom - b.bottom);
+      for (const h of model) expect(h.front).toBeCloseTo(37 * MM, 6);
+
+      // --- The list. Ten holes, each 37 mm (1 29/64 in) from edge B, as far from end A as the
+      // model's hole is from the side's bottom: end A is the bottom, edge B the front edge. The
+      // side is not its mirror image (that would be B from the back, or A from the top alone).
+      const work = handWork(n, sawn.features, "sixteenth");
+      const w = work.find((x) => x.name === "Left side")!;
+      expect(w.turned).toBe(across);
+      const line = w.lines.find((l) => l.includes("5 mm × 11.5 mm deep"))!;
+      expect(line).toMatch(/^10 holes 5 mm × 11\.5 mm deep at \(6 15\/16, 1 29\/64\)/);
+      const listed = centres(line);
+      expect(listed).toHaveLength(10);
+      listed.forEach(([a, b], k) => {
+        expect(Math.abs(a - model[k].bottom)).toBeLessThanOrEqual(ROUND);
+        expect(Math.abs(b - model[k].front)).toBeLessThanOrEqual(ROUND);
+        // Never the mirror image: 37 mm from the back edge is 21 51/64 in from edge B.
+        expect(Math.abs(b - (D - model[k].front))).toBeGreaterThan(0.5);
+      });
+      // The toe-kick notch is in the list too, at the same corner: the bottom end, the front edge.
+      expect(w.lines).toContain("Notch through, 4 × 3, cut out of the outline: 0 to 4 from end A, 0 to 3 from edge B");
+      expect([s.toeKick / IN, s.toeSetback / IN].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([4, 3]);
+
+      // --- The drawing. In the sheet's drawing (the DXF: x to the right, y up) end A is the
+      // part's left end and edge B its top edge; turned, its top end and its right edge.
+      const all = (new DxfParser().parseSync(nestingDxf(n, "lwpolyline", sawn.features, { piece: pi })) as unknown as { entities: Dx[] }).entities;
+      const holes = all.filter((x) => x.type === "CIRCLE" && x.layer === "DRILL_D5MM_11.5MM").map((x) => x.center!);
+      expect(holes).toHaveLength(10);
+      const outlines = all.filter((x) => x.layer === "PROFILE_THRU").map((x) => ({ x0: Math.min(...x.vertices!.map((v) => v.x)), x1: Math.max(...x.vertices!.map((v) => v.x)), y0: Math.min(...x.vertices!.map((v) => v.y)), y1: Math.max(...x.vertices!.map((v) => v.y)) }));
+      const box = outlines.find((b) => holes.every((h) => h.x > b.x0 && h.x < b.x1 && h.y > b.y0 && h.y < b.y1))!;
+      expect(box).toBeDefined();
+      const drawn = holes.map((h) => (across ? [box.y1 - h.y, box.x1 - h.x] : [h.x - box.x0, box.y1 - h.y]).map((mm) => mm * MM) as [number, number]).sort((a, b) => a[0] - b[0]);
+      listed.forEach(([a, b], k) => {
+        expect(Math.abs(a - drawn[k][0])).toBeLessThanOrEqual(ROUND);
+        expect(Math.abs(b - drawn[k][1])).toBeLessThanOrEqual(ROUND);
+      });
+      const text = handWorkText("Pantry", work, "sixteenth");
+      expect(text).toContain("In the sheet's diagram end A is the part's left end and edge B its top edge. For a part");
+      expect(text).toContain("drawn turned (its length down the sheet), end A is its top end and edge B its right edge.");
+      expect(text).toContain(`${w.tag} Left side (Sheet 1 of 1 · 4 x 8 sheet, 3/4 · Cabinet plywood)${across ? " (drawn turned)" : ""}`);
+      lists.push(w.lines);
+    }
+    // One rule for every part: the list is the same however the nester laid the side.
+    expect(lists[1]).toEqual(lists[0]);
+  }, 120_000);
+
+  it("the pantry side's top end: a strip across the top and a strip along the rear edge, not the box around them; the right side is the left's mirror", async () => {
+    const { n, sawn } = await pantry(false);
+    const work = handWork(n, sawn.features, "sixteenth");
+    const left = work.find((x) => x.name === "Left side")!;
+    const right = work.find((x) => x.name === "Right side")!;
+    // The top's dado (the 23/32 in stock and its clearance, to the part's end) across the
+    // side from its 1/2 in stop to the rear edge, joined to the top nailer's dado along the
+    // rear edge: 3 in long, as wide as the nailer is thick, behind the back's groove.
+    expect(left.lines).toContain("Pocket, 1/4 deep, in 2 rectangles that join: 23/32 × 22 3/4 at 83 9/32 to 84 from end A, 1/2 to 23 1/4 from edge B; 3 × 23/32 at 80 9/32 to 83 9/32 from end A, 22 17/32 to 23 1/4 from edge B");
+    // The bottom's dado is one rectangle (the back's groove through it is cut deeper anyway),
+    // its width and its edges agreeing; the back's groove is the third pocket.
+    expect(left.lines).toContain("Pocket 47/64 × 22 3/4, 1/4 deep: 4 to 4 47/64 from end A, 1/2 to 23 1/4 from edge B");
+    expect(left.lines.filter((l) => l.startsWith("Pocket"))).toHaveLength(3);
+    expect(left.pockets).toBe(3);
+    // Nothing tells the reader to rout the box around the L away.
+    for (const w of [left, right]) expect(w.lines.join("\n")).not.toMatch(/3 23\/32 × 22 3\/4/);
+    // The right side: every shelf pin hole where the left's is, counted from the other end.
+    const pins = (w: typeof left) => centres(w.lines.find((l) => l.includes("5 mm × 10 mm deep"))!);
+    const L = 84 * IN;
+    const mirrored = pins(left).map(([a, b]) => [L - a, b] as [number, number]);
+    expect(pins(right)).toHaveLength(40);
+    for (const [a, b] of pins(right)) expect(mirrored.some(([x, y]) => Math.abs(x - a) <= 2 * ROUND && Math.abs(y - b) <= 2 * ROUND)).toBe(true);
+    expect(right.lines).toContain("Notch through, 4 × 3, cut out of the outline: 80 to 84 from end A, 0 to 3 from edge B");
+    // The door: its pull holes are 3/16 in, said both ways.
+    const door = work.find((x) => x.name === "Door")!;
+    expect(door.lines.some((l) => /^2 holes 4\.76 mm \(3\/16 in\) through at /.test(l))).toBe(true);
+  }, 120_000);
+
+  it("a metric cabinet nests on metric sheets: nothing drawn at a thickness its sheet is not, nothing on no stock", async () => {
+    const metricDoc = async (preset: string) => {
+      const d = await doc();
+      const s = applyPreset(defaults(true), preset, true);
+      const p = plan(s, true);
+      expect(p.error).toBeNull();
+      d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(p.parts, [0, 0, 0], s.name, s.name, Object.values(MATERIALS))] }));
+      return d;
+    };
+    const nest = (d: Doc) => JSON.parse(d.nest("{}")) as Nesting;
+    // The default base cabinet, 18, 12 and 6 mm: "Use 4 x 4 plywood", then CNC spacing.
+    const d = await metricDoc("base");
+    const set = sheetSetOps(nest(d).library, 48 * IN, 48 * IN, true);
+    expect(set.added).toEqual(["1220 x 1220 sheet, 18 mm", "1220 x 1220 sheet, 12 mm", "1220 x 1220 sheet, 6 mm"]);
+    d.apply_op(JSON.stringify(set.op));
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...nest(d).library.settings, ...cncSettings(true) } }));
+    const n = nest(d);
+    expect(n.settings.sheetSize).toEqual({ width: 1.22, length: 1.22 });
+    expect(n.unplaced).toEqual([]);
+    expect(thicknessMismatches(n)).toEqual([]);
+    expect(n.pieces.every((p) => p.stock.startsWith("1220 x 1220 sheet, "))).toBe(true);
+    expect(new Set(n.pieces.map((p) => Math.round(p.thickness * 1000)))).toEqual(new Set([18, 6]));
+    // Again: nothing to add.
+    expect(sheetSetOps(n.library, 48 * IN, 48 * IN, true).added).toEqual([]);
+    // What it did before (the inch sheets, 18.26 and 5.56 mm): every part named as a mismatch.
+    const old = await metricDoc("base");
+    old.apply_op(JSON.stringify(sheetSetOps(nest(old).library, 1.22, 1.22).op));
+    old.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...nest(old).library.settings, ...cncSettings(true) } }));
+    expect(thicknessMismatches(nest(old)).length).toBeGreaterThan(0);
+
+    // The tall pantry with the track saw on: 1220 x 2440 at 18, 12 and 6 mm for what the
+    // 1220 x 1220 cannot take, by name and by thickness.
+    const tall = await metricDoc("tall");
+    tall.apply_op(JSON.stringify(sheetSetOps(nest(tall).library, 48 * IN, 48 * IN, true).op));
+    tall.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...nest(tall).library.settings, ...cncSettings(true) } }));
+    expect(nest(tall).unplaced.map((u) => u.name)).toEqual(expect.arrayContaining(["Left side", "Right side"]));
+    const saw = overflowOps(nest(tall).library, true, true);
+    expect(saw.added).toEqual(["1220 x 2440 sheet, 18 mm", "1220 x 2440 sheet, 12 mm", "1220 x 2440 sheet, 6 mm"]);
+    tall.apply_op(JSON.stringify(saw.op));
+    const m = nest(tall);
+    expect(m.unplaced).toEqual([]);
+    expect(thicknessMismatches(m)).toEqual([]);
+    const sawn = m.pieces.filter((p) => p.saw);
+    expect(sawn.length).toBeGreaterThan(0);
+    expect(sawn.every((p) => p.stock.startsWith("1220 x 2440 sheet, "))).toBe(true);
+    expect(sawn.flatMap((p) => p.placements.map((q) => q.name))).toEqual(expect.arrayContaining(["Left side", "Right side"]));
+    expect(m.pieces.filter((p) => !p.saw).every((p) => p.stock.startsWith("1220 x 1220 sheet, "))).toBe(true);
+    expect(m.library.stocks.some((x) => /8\.01|3\/4 \(2\)/.test(x.name))).toBe(false);
   }, 120_000);
 });
