@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cncSettings } from "../components/NestingSection";
-import { cncFileName, cncNotes, safeName, sheetOps, thicknessMismatches } from "./cnc";
+import { cncFileName, cncNotes, nestProblems, safeName, sheetOps, thicknessMismatches } from "./cnc";
 import type { BlankFeatures } from "./machine";
 import { smallNesting } from "./fixture";
 
@@ -76,3 +76,25 @@ describe("CNC export notes", () => {
   });
 });
 
+
+describe("nest problems", () => {
+  it("lists parts on no stock, glued up, and off the sheet their material names", () => {
+    const n = smallNesting();
+    n.unplaced = [{ ...n.unplaced[0], tag: "9", name: "Pantry side", reason: "too_large" } as (typeof n.unplaced)[number]].filter((u) => u.tag);
+    n.glue_ups = [];
+    const piece = n.pieces.find((p) => p.kind === "sheet")!;
+    piece.material = "Door plywood";
+    n.library.stocks.push({ name: '1/2" 4x4', kind: "sheet", length: 48 * IN, width: 48 * IN, thickness: (15 / 32) * IN, grain: "length" });
+    n.library.defaults = { "Door plywood": '1/2" 4x4' };
+    const problems = nestProblems(n, "sixteenth", () => "larger than every sheet");
+    expect(problems.filter((p) => p.kind === "unplaced").map((p) => p.name)).toEqual(["Pantry side"]);
+    const off = problems.filter((p) => p.kind === "material");
+    expect(off).toHaveLength(piece.placements.length);
+    expect(off[0].text).toContain('Door plywood is set to 1/2" 4x4, but it went on');
+    expect(off[0].text).toContain("15/32");
+    // Set right, nothing to say.
+    n.library.defaults = { "Door plywood": piece.stock };
+    n.unplaced = [];
+    expect(nestProblems(n, "sixteenth", () => "")).toEqual([]);
+  });
+});

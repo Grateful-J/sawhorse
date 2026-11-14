@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
+import { nestProblems } from "../nesting/cnc";
 import { ALGORITHMS, cutText, dims, fineU, glueText, JOINT_LOSS_DEFAULT, type Units, nestNote, nestSummary, pieceNumber, pieceYield, placedSize, reasonText, stripText } from "../nesting/format";
 
 export interface NestingSectionProps {
@@ -229,6 +230,24 @@ export function NestingSection(p: NestingSectionProps) {
               </ul>
             </div>
           ) : null}
+          {(() => {
+            // Parts the nester moved off the sheet their material names (it is another thickness).
+            const off = nestProblems(n, r, reasonText).filter((x) => x.kind === "material");
+            return off.length ? (
+              <div className="nest-unplaced" role="alert" data-testid="nest-off-sheet">
+                <b>
+                  {off.length} part{off.length === 1 ? "" : "s"} not on {off.length === 1 ? "its" : "their"} material's sheet
+                </b>
+                <ul>
+                  {off.map((x) => (
+                    <li key={x.tag}>
+                      <span className="tag">{x.tag}</span> {x.name}: {x.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })()}
           {n.glue_ups?.length ? (
             <div className="nest-glued" data-testid="nest-glued">
               <b>

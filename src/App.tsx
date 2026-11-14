@@ -12,9 +12,10 @@ import { NestingSection } from "./components/NestingSection";
 import { StockDialog } from "./components/StockDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
-import { fineU, lenU, pieceTitle } from "./nesting/format";
+import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
-import { cncFileName, cncNotes, thicknessMismatches } from "./nesting/cnc";
+import { cncFileName, cncNotes, nestProblems, thicknessMismatches } from "./nesting/cnc";
+import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
 import { sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
@@ -2282,6 +2283,19 @@ export function App() {
     },
     [cutList, cutTitle],
   );
+  // A nesting that went wrong (parts on no stock, glued up, or off their material's sheet) is
+  // not saved for cutting without asking.
+  const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
+  const guardNest = useCallback(
+    (what: string, save: () => void) => {
+      const n = nesting;
+      if (!n) return;
+      const problems = nestProblems(n, nestUnits, reasonText);
+      if (!problems.length) return save();
+      setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true) });
+    },
+    [nesting, nestUnits],
+  );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
       const n = nesting;
@@ -3024,6 +3038,7 @@ export function App() {
       {isWebDemo() ? <DemoBanner /> : null}
       {report ? <ImportReport report={report} onClose={() => setReport(null)} /> : null}
       {nameRequest ? <NameDialog req={nameRequest} onClose={() => setNameRequest(null)} /> : null}
+      {problemRequest ? <NestProblemDialog req={problemRequest} onClose={() => setProblemRequest(null)} /> : null}
       {settingsOpen ? <SettingsDialog url={gate.url} status={gate.status} onUrl={gate.setUrl} onRecheck={gate.recheck} onClose={() => setSettingsOpen(false)} /> : null}
       {plugins.dialogs}
       <CutListReport list={printing ? cutList : null} title={cutTitle} />
@@ -3156,9 +3171,9 @@ export function App() {
               onHover={hoverPlacement}
               onSelect={selectPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
-              onDxf={(f) => void saveNestDxf(f)}
-              onCnc={() => void saveNestCnc()}
-              onPdf={() => void saveNestPdf()}
+              onDxf={(f) => guardNest("the DXF", () => void saveNestDxf(f))}
+              onCnc={() => guardNest("the CNC files", () => void saveNestCnc())}
+              onPdf={() => guardNest("the PDF", () => void saveNestPdf())}
               lit={nestLit}
             />
           ) : null,

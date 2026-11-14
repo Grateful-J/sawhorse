@@ -237,6 +237,10 @@ button.chip:hover{border-color:var(--accent)}
 .scenes input.rename{font:12px var(--mono);width:110px;padding:2px 5px;border:1px solid var(--accent);border-radius:4px;background:var(--bg);color:var(--fg)}
 .name-dialog{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);z-index:45;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #0003;padding:10px 12px;font-size:13px}
 .name-dialog header{margin-bottom:8px}
+.nest-problem-dialog{width:min(460px,calc(100vw - 32px))}
+.nest-problems{max-height:40vh;overflow:auto;margin:0 0 10px;padding-left:16px;font-size:12px}
+.nest-problems li{margin:2px 0}
+.nest-problem-dialog .btnrow{flex-wrap:wrap}
 .name-dialog label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:11px}
 .name-dialog input{font:13px var(--body);padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg)}
 .name-dialog input:focus{outline:2px solid var(--accent);outline-offset:-1px}

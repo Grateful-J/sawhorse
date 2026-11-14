@@ -112,3 +112,34 @@ export function cncFileName(title: string, n: Nesting, index: number, features: 
   const stock = piece.material && !piece.stock.includes(piece.material) ? `${piece.stock} (${piece.material})` : piece.stock;
   return safeName(`${title} sheet ${num} - ${parts.join("; ")}${more} - ${stock} - ${sheetOps(piece, features).join(", ")} CNC`) + ".dxf";
 }
+
+export interface NestProblem {
+  kind: "unplaced" | "glued" | "material";
+  tag: string;
+  name: string;
+  text: string;
+}
+
+/**
+ * What went wrong in a nesting, part by part, before anything is cut:
+ * - a part on no stock (too large for the sheet, no sheet of its thickness, ...);
+ * - a part glued up from strips (its cuts are not measured onto the strips);
+ * - a part whose material names a sheet it is not on, because that sheet is another
+ *   thickness: the nester quietly took the first sheet that fits instead.
+ */
+export function nestProblems(n: Nesting, units: Units, reason: (u: Nesting["unplaced"][number]) => string): NestProblem[] {
+  const out: NestProblem[] = n.unplaced.map((u) => ({ kind: "unplaced" as const, tag: u.tag, name: u.name, text: reason(u) }));
+  for (const g of n.glue_ups ?? []) out.push({ kind: "glued", tag: g.tag, name: g.name, text: `glued up from ${g.widths.length} strips of ${g.stock}: its cuts are not on the strips` });
+  const defaults = n.library.defaults ?? {};
+  for (const p of n.pieces) {
+    const want = p.material ? defaults[p.material] : undefined;
+    if (!want || want === p.stock) continue;
+    const s = n.library.stocks.find((x) => x.name === want);
+    for (const q of p.placements) {
+      if (q.strip) continue;
+      const why = s ? `${want} is ${fineU(s.thickness, units)}, the part ${fineU(q.size[0], units)}` : `${want} is not in the library`;
+      out.push({ kind: "material", tag: q.tag, name: q.name, text: `${p.material} is set to ${want}, but it went on ${p.stock}: ${why}` });
+    }
+  }
+  return out;
+}
