@@ -10,6 +10,11 @@
 // toolpath to each layer; holes are CIRCLEs at their true diameter. With `piece`, the file is
 // one sheet with its lower-left corner at the origin and part outlines on PROFILE_THRU.
 //
+// A pocket toolpath keeps the bit inside its outline, so a dado that ends on its part's edge
+// would be left with round corners there, and the part that slides into it would not seat.
+// With `overcut`, a pocket that reaches the edge of its blank is drawn past it into the gap
+// between parts (`pocketOvercut`), where the profile cut passes anyway.
+//
 // Two flavours, like the face outline export (crates/export dxf.rs): LWPOLYLINE, which
 // every laser and CAM program reads; or R12 (`$ACADVER` AC1009, POLYLINE / VERTEX / SEQEND)
 // for strict R12-only readers.
@@ -78,6 +83,41 @@ export interface DxfOptions {
   /** Only this piece (its index in `n.pieces`), with the sheet's lower-left corner at the
    * origin and part outlines on PROFILE_THRU: one file per sheet, ready for a CAM job. */
   piece?: number;
+  /** Draw each pocket that reaches its part's edge past that edge (see `pocketOvercut`), so a
+   * router bit clears the end of a dado or groove that runs out of the part. */
+  overcut?: boolean;
+}
+
+/** 0.25 mm: what an overcut stops short of the middle of the gap between two parts, so the
+ * overcuts of two neighbours never touch. */
+const OVERCUT_CLEAR = 0.00025;
+/** 0.01 mm: a pocket's corner this near its blank's edge is on it. */
+const ON_EDGE = 1e-5;
+
+/**
+ * How far past a part's edge a pocket that reaches it is drawn, on this piece: just under half
+ * the gap between parts, and never more than the margin at the sheet's edge. Any bit that fits
+ * between the parts (the CNC export checks that) has a radius smaller than this, so its centre
+ * passes the edge and the pocket's end is cut square; and the cut stays in the waste, short of
+ * the next part's own overcut. 0 when the parts touch or the sheet has no margin.
+ */
+export function pocketOvercut(p: Pick<StockPiece, "kerf" | "trim">): number {
+  const e = Math.min(p.kerf / 2 - OVERCUT_CLEAR, p.trim);
+  return e > 0 ? e : 0;
+}
+
+/** Whether a pocket reaches the edge of its `dx` by `dy` blank (a dado or groove that runs
+ * out of the part, a rabbet along its edge). */
+export function reachesEdge(loop: readonly (readonly [number, number])[], dx: number, dy: number): boolean {
+  return loop.some(([u, v]) => u <= ON_EDGE || u >= dx - ON_EDGE || v <= ON_EDGE || v >= dy - ON_EDGE);
+}
+
+/** A pocket's outline with each corner that is on the blank's edge moved `e` straight out
+ * past it. Corners inside the blank stay where they are, so the pocket's width and its
+ * blind end are as measured. */
+export function overcutLoop(loop: [number, number][], dx: number, dy: number, e: number): [number, number][] {
+  if (!(e > 0)) return loop;
+  return loop.map(([u, v]) => [u <= ON_EDGE ? -e : u >= dx - ON_EDGE ? dx + e : u, v <= ON_EDGE ? -e : v >= dy - ON_EDGE ? dy + e : v]);
 }
 
 /** The whole nesting as one DXF. Without `features` the file is the rectangles only.
@@ -229,6 +269,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
     }
     text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), `${p.index}. ${p.stock}${p.material ? ` - ${p.material}` : ""} (${p.seq} of ${p.count})`);
     const layer = profileLayer(p);
+    const over = options.overcut ? pocketOvercut(p) : 0;
     for (const q of p.placements) {
       // Blank (u, v) to file millimetres. v runs with the sheet's y, which the file flips.
       const f = feat(q.tag);
@@ -242,8 +283,8 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       if (!f) continue;
       const l = featureLayers(f, r12);
       for (const c of f.cutouts) poly("CUTOUT_THRU", c.map(([u, v]) => place(u, v)));
-      f.pockets.forEach((pocket, k) => poly(l.pockets[k], pocket.loop.map(([u, v]) => place(u, v))));
-      f.flip.pockets.forEach((pocket, k) => poly(l.flipPockets[k], pocket.loop.map(([u, v]) => place(u, v))));
+      f.pockets.forEach((pocket, k) => poly(l.pockets[k], overcutLoop(pocket.loop, q.dx, q.dy, over).map(([u, v]) => place(u, v))));
+      f.flip.pockets.forEach((pocket, k) => poly(l.flipPockets[k], overcutLoop(pocket.loop, q.dx, q.dy, over).map(([u, v]) => place(u, v))));
       f.drills.forEach((drill, k) => {
         const [x, y] = place(drill.center[0], drill.center[1]);
         circle(l.drills[k], x, y, (drill.diameter * MM) / 2);

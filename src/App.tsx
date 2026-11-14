@@ -14,7 +14,7 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
-import { cncFileName, cncNotes, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, safeName, sawShare, spacingProblem, thicknessMismatches, type HandWork } from "./nesting/cnc";
+import { cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, safeName, sawShare, spacingProblem, thicknessMismatches, type HandWork, type NestProblem } from "./nesting/cnc";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
 import { overflowOps, sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
@@ -2339,20 +2339,42 @@ export function App() {
   // A nesting that went wrong (parts on no stock, glued up, or off their material's sheet) is
   // not saved for cutting without asking.
   const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
+  /** The cuts inside each nested part, measured from the model (null when they cannot be). */
+  const measureNesting = useCallback(async (n: Nesting) => {
+    const k = kernelRef.current;
+    if (!k) return null;
+    try {
+      return await measureNest(k, graphOf(live.current.scene?.state).objects, n);
+    } catch {
+      return null;
+    }
+  }, []);
+  // What was asked for last: a slow measurement that comes back after a newer request, or
+  // after the nesting has changed, asks nothing.
+  const guardSeq = useRef(0);
   const guardNest = useCallback(
-    (what: string, save: () => void, cnc = false) => {
+    (what: string, save: () => void, kind: "plain" | "dxf" | "cnc" = "plain") => {
       const n = nesting;
       if (!n) return;
-      const problems = nestProblems(n, nestUnits, reasonText);
-      // For the router: parts too close for the bit cut as one blob in the CAM program.
-      const spacing = cnc ? spacingProblem(n, nestUnits) : null;
-      if (spacing) problems.unshift(spacing);
-      if (!problems.length) return save();
-      const metric = units === "mm" || units === "cm" || units === "m";
-      const fix = spacing ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
-      setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true), fix });
+      const seq = ++guardSeq.current;
+      const ask = (cuts: NestProblem[]) => {
+        if (seq !== guardSeq.current) return;
+        const problems = [...nestProblems(n, nestUnits, reasonText), ...cuts];
+        // For the router: parts too close for the bit cut as one blob in the CAM program.
+        const spacing = kind === "cnc" ? spacingProblem(n, nestUnits) : null;
+        if (spacing) problems.unshift(spacing);
+        if (!problems.length) return save();
+        const metric = units === "mm" || units === "cm" || units === "m";
+        const fix = spacing ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
+        setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true), fix });
+      };
+      if (kind === "plain") return ask([]);
+      // A file with measured cuts: measure them first, so a part whose dados would be left out,
+      // or cut for a sheet of another thickness, is asked about before anything is written.
+      const share = kind === "cnc" ? routerShare(n) : n;
+      void measureNesting(share).then((m) => ask(cutProblems(share, m, nestUnits)));
     },
-    [nesting, nestUnits, units, patchNestSettings],
+    [nesting, nestUnits, units, patchNestSettings, measureNesting],
   );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
@@ -2373,16 +2395,6 @@ export function App() {
     },
     [nesting, cutTitle, nestUnits],
   );
-  /** The cuts inside each nested part, measured from the model (null when they cannot be). */
-  const measureNesting = useCallback(async (n: Nesting) => {
-    const k = kernelRef.current;
-    if (!k) return null;
-    try {
-      return await measureNest(k, graphOf(live.current.scene?.state).objects, n);
-    } catch {
-      return null;
-    }
-  }, []);
   // The track saw's parts with cuts a router would have made, measured whenever the nesting
   // sends anything to the saw (only its sheets are measured).
   const [sawWork, setSawWork] = useState<HandWork[] | null>(null);
@@ -2415,14 +2427,14 @@ export function App() {
       if (!n) return;
       try {
         const features = await measureNesting(n);
-        const text = nestingDxf(n, flavour, features?.features);
+        const text = nestingDxf(n, flavour, features?.features, { overcut: true });
         const res = await saveFile(`${cutTitle} nesting${flavour === "r12" ? " R12" : ""}.dxf`, new TextEncoder().encode(text), DXF_TYPE);
         if (res) {
           const all = features ? [...features.features.values()] : [];
           const pockets = all.reduce((s, f) => s + f.pockets.length + f.flip.pockets.length, 0);
           const drills = all.reduce((s, f) => s + f.drills.length + f.flip.drills.length, 0);
           const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"}, measured from the parts, on a layer per depth and size.` : "";
-          const missed = features?.skipped.length ? ` Left out cuts on ${features.skipped.join(", ")}: a loop fell outside the blank, so only its outline was written.` : "";
+          const missed = features?.skipped.length ? ` Cuts were left out on ${features.skipped.join(", ")}: they could not be placed on the part, so it is not cut as drawn.` : "";
           setMessage({ text: `Saved ${res.name}: ${n.pieces.length} ${n.pieces.length === 1 ? "sheet or board" : "sheets and boards"}, a layer each, a polyline per part, in millimetres.${measured}${missed}`, error: false });
         }
       } catch (e) {
@@ -2467,7 +2479,7 @@ export function App() {
       let saved = 0;
       let stopped = false;
       for (let i = 0; i < n.pieces.length; i++) {
-        const text = nestingDxf(n, "lwpolyline", features?.features, { piece: i });
+        const text = nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true });
         const res = await saveFile(cncFileName(cutTitle, n, i, features?.features, ownerOf), new TextEncoder().encode(text), DXF_TYPE);
         if (!res) {
           stopped = true;
@@ -3295,8 +3307,8 @@ export function App() {
               onSelect={selectPlacement}
               onGrain={grainPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
-              onDxf={(f) => guardNest("the DXF", () => void saveNestDxf(f))}
-              onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), true)}
+              onDxf={(f) => guardNest("the DXF", () => void saveNestDxf(f), "dxf")}
+              onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), "cnc")}
               onPdf={() => guardNest("the PDF", () => void saveNestPdf())}
               lit={nestLit}
               onOverflow={(on) => void setOverflow(on)}

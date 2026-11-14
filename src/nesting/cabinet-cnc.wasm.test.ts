@@ -12,7 +12,8 @@ import { applyPreset, defaults, flatImportOp, importOp, MATERIALS, plan } from "
 import { baseDefaults, IDENTITY, placeNext, planBase, type Cab } from "../../plugins/cabinet-generator/row.js";
 import type { DocState, FaceInfo, Nesting, V3 } from "../kernel/types";
 import { cncSettings } from "../components/NestingSection";
-import { nestingDxf } from "./dxf";
+import DxfParser from "dxf-parser";
+import { nestingDxf, pocketOvercut } from "./dxf";
 import { measureNest } from "./measure";
 import { sheetSetOps } from "./sheetset";
 import { handWork, routerShare, sawShare, spacingProblem, thicknessMismatches } from "./cnc";
@@ -32,6 +33,12 @@ type Doc = {
   faces_json(object: number): string;
   outline(kind: string, owner: number, index: number): string;
 };
+/** What the app hands `measureNest`: the kernel's faces, outlines and cut list. */
+const measurer = (d: Doc) => ({
+  faces: async (o: number) => JSON.parse(d.faces_json(o)) as FaceInfo[],
+  outline: async (_k: string, owner: number, index: number) => JSON.parse(d.outline("face", owner, index)) as V3[][],
+  cutList: async (o: unknown) => JSON.parse(d.cut_list(JSON.stringify(o))),
+});
 async function doc(): Promise<Doc> {
   const mod = (await import(/* @vite-ignore */ path.join(pkg, "sawhorse_wasm.js"))) as { initSync(o: { module: Buffer }): void; document_new(): Doc };
   mod.initSync({ module: readFileSync(path.join(pkg, "sawhorse_wasm_bg.wasm")) });
@@ -308,5 +315,170 @@ run("a cabinet to the CNC router", () => {
     expect(grain("Toe kick")).toBe("none");
     expect(st2.undo_depth).toBe(2);
   }, 60_000);
-});
 
+  /** One preset, nested on 4 x 4 with the CNC spacing, standing turned `deg` about the vertical. */
+  const nested = async (preset: string, deg: number, metric = false) => {
+    const d = await doc();
+    const s = applyPreset(defaults(metric), preset, metric);
+    const p = plan(s, metric);
+    expect(p.error).toBeNull();
+    const a = (deg * Math.PI) / 180;
+    const at = { linear: [[Math.cos(a), -Math.sin(a), 0], [Math.sin(a), Math.cos(a), 0], [0, 0, 1]], translation: [0.3, -0.2, 0] as V3 };
+    d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(p.parts, at, s.name, s.name, Object.values(MATERIALS))] }));
+    const side = metric ? 1.22 : 48 * 0.0254;
+    d.apply_op(JSON.stringify(sheetSetOps((JSON.parse(d.nest("{}")) as Nesting).library, side, side).op));
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...(JSON.parse(d.nest("{}")) as Nesting).library.settings, ...cncSettings(metric) } }));
+    const n = JSON.parse(d.nest("{}")) as Nesting;
+    const st = JSON.parse(d.state_json()) as DocState;
+    return { d, n, st };
+  };
+  type Cut = { kind: string; nums: number[]; pts: [number, number][] };
+  /** Every cut of every part, by tag and name, with the blank's size: a list to compare. */
+  const cuts = (n: Nesting, m: Awaited<ReturnType<typeof measureNest>>) => {
+    const out = new Map<string, { dx: number; dy: number; cuts: Cut[] }>();
+    for (const q of n.pieces.flatMap((p) => p.placements)) {
+      const f = m.features.get(q.tag);
+      const list: Cut[] = [];
+      if (f) {
+        if (f.profile) list.push({ kind: "profile", nums: [], pts: f.profile });
+        for (const k of f.pockets) list.push({ kind: "pocket", nums: [k.depth], pts: k.loop });
+        for (const h of f.drills) list.push({ kind: h.through ? "through" : "drill", nums: [h.diameter, h.depth], pts: [h.center] });
+        for (const c of f.cutouts) list.push({ kind: "cutout", nums: [], pts: c });
+        for (const k of f.flip.pockets) list.push({ kind: "flip pocket", nums: [k.depth], pts: k.loop });
+        for (const h of f.flip.drills) list.push({ kind: "flip drill", nums: [h.diameter, h.depth], pts: [h.center] });
+      }
+      // Along the sheet and across it, whichever way the nester turned the part.
+      out.set(`${q.tag} ${q.name}`, { dx: q.turned ? q.dy : q.dx, dy: q.turned ? q.dx : q.dy, cuts: q.turned ? list.map((c) => ({ ...c, pts: c.pts.map(([u, v]) => [v, u] as [number, number]) })) : list });
+    }
+    return out;
+  };
+  const TOL = 1e-7;
+  /** The same cut: its kind, its sizes, and the same corners in any order, within a tenth of a micron. */
+  const sameCut = (a: Cut, b: Cut) =>
+    a.kind === b.kind &&
+    a.nums.length === b.nums.length &&
+    a.nums.every((x, i) => Math.abs(x - b.nums[i]) <= TOL) &&
+    a.pts.length === b.pts.length &&
+    a.pts.every((p) => b.pts.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= TOL));
+  /** Every cut of `a` is one of `b`'s and the other way round. */
+  const sameCuts = (a: Cut[], b: Cut[]) => {
+    if (a.length !== b.length) return false;
+    const left = [...b];
+    for (const c of a) {
+      const i = left.findIndex((x) => sameCut(c, x));
+      if (i < 0) return false;
+      left.splice(i, 1);
+    }
+    return true;
+  };
+  /**
+   * The parts that are not cut the same in `got` as in `want`. A part may lie either way round
+   * in its rectangle (turned half a turn: the same part), but never as its mirror image.
+   * A part turned on its sheet by the nester has its length across the sheet in both.
+   */
+  const differ = (got: ReturnType<typeof cuts>, want: ReturnType<typeof cuts>) => {
+    const out: string[] = [];
+    if ([...got.keys()].sort().join("|") !== [...want.keys()].sort().join("|")) return ["the parts are not the same"];
+    for (const [name, w] of want) {
+      const g = got.get(name)!;
+      if (Math.abs(g.dx - w.dx) > TOL || Math.abs(g.dy - w.dy) > TOL) {
+        out.push(`${name}: its blank`);
+        continue;
+      }
+      const half = g.cuts.map((c) => ({ ...c, pts: c.pts.map(([u, v]) => [g.dx - u, g.dy - v] as [number, number]) }));
+      if (!sameCuts(g.cuts, w.cuts) && !sameCuts(half, w.cuts)) out.push(name);
+    }
+    return out;
+  };
+
+  it("a cabinet standing at any angle is cut exactly as one standing square: every dado, groove and hole", async () => {
+    for (const preset of ["base", "drawers"]) {
+      const square = await nested(preset, 0);
+      const want = await measureNest(measurer(square.d), square.st.graph.objects, square.n);
+      expect(want.skipped).toEqual([]);
+      const total = [...want.features.values()].reduce((k, f) => k + f.pockets.length + f.drills.length, 0);
+      expect(total).toBeGreaterThan(30);
+      for (const deg of [30, 45, 0.5, 213]) {
+        const { d, n, st } = await nested(preset, deg);
+        expect(n.unplaced).toEqual([]);
+        const got = await measureNest(measurer(d), st.graph.objects, n);
+        expect(got.skipped).toEqual([]);
+        expect(got.flipped).toEqual([]);
+        expect(differ(cuts(n, got), cuts(square.n, want))).toEqual([]);
+        // The comparison can fail: a part drawn as its mirror image is not the same part.
+        const flipped = cuts(n, got);
+        const side = [...flipped.keys()].find((k) => k.endsWith("Left side"));
+        if (side) {
+          const g = flipped.get(side)!;
+          flipped.set(side, { ...g, cuts: g.cuts.map((c) => ({ ...c, pts: c.pts.map(([u, v]) => [g.dx - u, v] as [number, number]) })) });
+          expect(differ(flipped, cuts(square.n, want))).toEqual([side]);
+        }
+        // Without the cut list's directions the parts cannot be placed on their blanks: every
+        // part with a cut is named, none is written as a bare rectangle without a word.
+        const blind = await measureNest({ faces: measurer(d).faces, outline: measurer(d).outline }, st.graph.objects, n);
+        expect(blind.features.size).toBe(0);
+        const cut = n.pieces.flatMap((p) => p.placements).filter((q) => want.features.has(q.tag)).map((q) => q.name);
+        expect([...blind.skipped].sort()).toEqual([...new Set(cut)].sort());
+      }
+    }
+  }, 120_000);
+
+  it("a dado or groove that runs out of a part is drawn past its edge: in the waste, short of the next part, inside the sheet", async () => {
+    type E = { type: string; layer: string; vertices?: { x: number; y: number }[] };
+    for (const metric of [false, true]) {
+      for (const preset of ["base", "drawers", "mixed"]) {
+        const { d, n, st } = await nested(preset, 0, metric);
+        const m = await measureNest(measurer(d), st.graph.objects, n);
+        expect(m.skipped).toEqual([]);
+        let open = 0;
+        n.pieces.forEach((piece, i) => {
+          const e = pocketOvercut(piece) * 1000;
+          expect(e).toBeGreaterThan(4.5);
+          const all = (new DxfParser().parseSync(nestingDxf(n, "lwpolyline", m.features, { piece: i, overcut: true })) as unknown as { entities: E[] }).entities;
+          const box = (x: E) => ({ x0: Math.min(...x.vertices!.map((v) => v.x)), x1: Math.max(...x.vertices!.map((v) => v.x)), y0: Math.min(...x.vertices!.map((v) => v.y)), y1: Math.max(...x.vertices!.map((v) => v.y)) });
+          const parts = all.filter((x) => x.layer === "PROFILE_THRU").map(box);
+          expect(parts).toHaveLength(piece.placements.length);
+          const W = piece.width * 1000;
+          const L = piece.length * 1000;
+          const gap = piece.kerf * 1000;
+          for (const pocket of all.filter((x) => x.layer.startsWith("POCKET_")).map(box)) {
+            // Its own part: the one it overlaps by more than a sliver.
+            const own = parts.filter((b) => Math.min(pocket.x1, b.x1) - Math.max(pocket.x0, b.x0) > 1 && Math.min(pocket.y1, b.y1) - Math.max(pocket.y0, b.y0) > 1);
+            expect(own).toHaveLength(1);
+            const b = own[0];
+            const out = [b.x0 - pocket.x0, pocket.x1 - b.x1, b.y0 - pocket.y0, pocket.y1 - b.y1];
+            // Out of the part by the overcut exactly, or not at all.
+            for (const o of out) expect(o <= 1e-6 || Math.abs(o - e) <= 1e-6).toBe(true);
+            if (out.some((o) => o > 1e-6)) open += 1;
+            // Inside the sheet, and more than half the gap from every other part.
+            expect(pocket.x0).toBeGreaterThanOrEqual(-1e-6);
+            expect(pocket.y0).toBeGreaterThanOrEqual(-1e-6);
+            expect(pocket.x1).toBeLessThanOrEqual(L + 1e-6);
+            expect(pocket.y1).toBeLessThanOrEqual(W + 1e-6);
+            for (const other of parts) {
+              if (other === b) continue;
+              const apart = Math.max(other.x0 - pocket.x1, pocket.x0 - other.x1, other.y0 - pocket.y1, pocket.y0 - other.y1);
+              expect(apart).toBeGreaterThan(gap / 2);
+            }
+          }
+        });
+        // The sides' rail dados run out at the rear; the bottom's and the stretchers' grooves at both ends.
+        expect(open).toBeGreaterThanOrEqual(4);
+      }
+    }
+    // The default base's left side: the bottom's dado stops 1/2 in from the front as drawn, and
+    // runs 3/16 in less 0.25 mm past the rear edge.
+    const { d, n, st } = await nested("base", 0);
+    const m = await measureNest(measurer(d), st.graph.objects, n);
+    const pi = n.pieces.findIndex((p) => p.placements.some((q) => q.name === "Left side"));
+    const q = n.pieces[pi].placements.find((x) => x.name === "Left side")!;
+    const f = m.features.get(q.tag)!;
+    const dados = f.pockets.filter((k) => Math.abs(k.depth - 0.25 * 0.0254) < 1e-9);
+    expect(dados).toHaveLength(2);
+    for (const k of dados) {
+      const vs = k.loop.map((v) => v[1]);
+      expect(Math.min(...vs)).toBeCloseTo(0.5 * 0.0254, 9);
+      expect(Math.max(...vs)).toBeCloseTo(q.dy, 9);
+    }
+  }, 120_000);
+});

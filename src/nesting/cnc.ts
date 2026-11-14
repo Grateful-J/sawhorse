@@ -5,6 +5,7 @@ import type { Nesting, Placement, StockPiece } from "../kernel/types";
 import type { BlankFeatures } from "./machine";
 import { fineU, sizeUnit, type Units } from "./format";
 import type { MeasuredNest } from "./measure";
+import { pocketOvercut, reachesEdge } from "./dxf";
 
 /** 0.1 mm: a part drawn thinner or thicker than this from its sheet is named. */
 export const THICKNESS_TOLERANCE = 1e-4;
@@ -42,15 +43,44 @@ export function cncNotes(n: Nesting, measured: MeasuredNest | null, units: Units
   }
   if (!measured) notes.push("The cuts inside the parts could not be measured: only the outlines were written.");
   else {
-    if (measured.skipped.length) notes.push(`Left out cuts on ${measured.skipped.join(", ")}: a loop fell outside the blank, so only its outline was written.`);
+    if (measured.skipped.length) notes.push(`Cuts were left out on ${measured.skipped.join(", ")}: they could not be placed on the part, so it is not cut as drawn. Check it against the model before cutting.`);
     if (measured.flipped.length) notes.push(`${measured.flipped.join(", ")} ${measured.flipped.length === 1 ? "has" : "have"} cuts in both faces: those on FLIP_ layers are cut after turning the part over.`);
   }
   const kerf = n.settings.kerf;
   notes.push(`Parts are ${fineU(kerf, units)} apart: use a smaller bit than that.`);
+  const open = openPockets(n, measured?.features);
+  if (open.drawn) notes.push(`Dados and grooves that run out of a part's edge are drawn ${fineU(open.past, units)} past it, into the gap between parts, so the bit cuts their ends square.`);
+  if (open.left) notes.push(`${open.left} ${open.left === 1 ? "dado or groove runs" : "dados or grooves run"} out of a part's edge and could not be drawn past it (the parts touch, or Trim is 0): the bit leaves round corners at ${open.left === 1 ? "its end" : "their ends"}. Use CNC spacing, or square them with a chisel.`);
   if (!(n.settings.trim > 0)) notes.push("No margin at the sheet edges (Trim is 0).");
   const saw = n.pieces.filter((p) => p.saw).length;
   if (saw) notes.push(`${saw} ${saw === 1 ? "sheet is" : "sheets are"} for the track saw, not the router: ${saw === 1 ? "it is" : "they are"} not in these files (see its cut sequence in the Nesting section or the PDF).`);
   return notes;
+}
+
+/**
+ * The router's pockets that reach their part's edge (a dado or groove that runs out of the
+ * part): how many are drawn past it and how far (`pocketOvercut`), and how many could not be
+ * because their sheet has no gap between parts or no margin.
+ */
+export function openPockets(n: Nesting, features: ReadonlyMap<string, BlankFeatures> | undefined): { drawn: number; past: number; left: number } {
+  let drawn = 0;
+  let left = 0;
+  let past = 0;
+  for (const p of n.pieces) {
+    if (p.saw) continue;
+    const e = pocketOvercut(p);
+    for (const q of p.placements) {
+      const f = features?.get(q.tag);
+      if (!f) continue;
+      const k = [...f.pockets, ...f.flip.pockets].filter((pocket) => reachesEdge(pocket.loop, q.dx, q.dy)).length;
+      if (!k) continue;
+      if (e > 0) {
+        drawn += k;
+        past = past ? Math.min(past, e) : e;
+      } else left += k;
+    }
+  }
+  return { drawn, past, left };
 }
 
 /** The CNC router's share of a nesting: every sheet and board but those the track saw cuts
@@ -228,7 +258,7 @@ export function cncFileName(title: string, n: Nesting, index: number, features: 
 }
 
 export interface NestProblem {
-  kind: "unplaced" | "glued" | "material" | "spacing";
+  kind: "unplaced" | "glued" | "material" | "spacing" | "thickness" | "cuts";
   tag: string;
   name: string;
   text: string;
@@ -255,6 +285,36 @@ export function nestProblems(n: Nesting, units: Units, reason: (u: Nesting["unpl
       out.push({ kind: "material", tag: q.tag, name: q.name, text: `${p.material} is set to ${want}, but it went on ${p.stock}: ${why}` });
     }
   }
+  return out;
+}
+
+/**
+ * What a file with measured cuts would get wrong, asked about before it is saved (a status
+ * line after the files are written is too late for a sheet of plywood):
+ * - parts drawn at a thickness their sheet is not: every dado and tongue was sized to the
+ *   drawing, so on that sheet the joints are loose or will not go together;
+ * - parts whose cuts could not be placed on them, written as their outline only;
+ * - the cuts could not be measured at all (`measured` null): every part is its outline only.
+ * `n` is what the file holds (the router's share for the CNC files).
+ */
+export function cutProblems(n: Nesting, measured: MeasuredNest | null, units: Units): NestProblem[] {
+  const out: NestProblem[] = [];
+  for (const m of thicknessMismatches(n)) {
+    const off = Math.abs(m.drawn - m.sheet);
+    out.push({
+      kind: "thickness",
+      tag: "",
+      name: m.parts.join(", "),
+      text: `drawn ${fineU(m.drawn, units)} thick but nested on ${m.stock} (${fineU(m.sheet, units)}), a sheet ${fineU(off, units)} ${m.drawn > m.sheet ? "thinner" : "thicker"}: every dado and fit was cut to the drawing. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut`,
+    });
+  }
+  if (!measured) {
+    out.push({ kind: "cuts", tag: "", name: "Every part", text: "the cuts inside the parts (dados, grooves, holes, notches) could not be measured: only the outlines would be written" });
+    return out;
+  }
+  const byName = new Map<string, string[]>();
+  for (const p of n.pieces) for (const q of p.placements) if (measured.skipped.includes(q.name)) byName.set(q.name, [...(byName.get(q.name) ?? []), q.tag]);
+  for (const [name, tags] of byName) out.push({ kind: "cuts", tag: tags.join(", "), name, text: "some of its cuts (dados, grooves, holes or notches) could not be placed on the part and would be left out of the file" });
   return out;
 }
 

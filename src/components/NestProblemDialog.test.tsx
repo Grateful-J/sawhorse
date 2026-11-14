@@ -41,3 +41,21 @@ describe("nest problem dialog with a fix", () => {
   });
 });
 
+describe("nest problem dialog for cuts that would be wrong", () => {
+  it("names them, offers Stock only for a thickness, and saves only when asked", () => {
+    const onSave = vi.fn();
+    const cuts = [{ kind: "cuts" as const, tag: "2", name: "Left side", text: "some of its cuts could not be placed on the part and would be left out of the file" }];
+    const first = render(<NestProblemDialog req={{ what: "the CNC files", problems: cuts, onSave, onStock: () => {} }} onClose={() => {}} />);
+    const mine = within(first.container);
+    expect(first.container.textContent).toContain("Some parts will not be cut as drawn");
+    expect(first.container.textContent).toContain("Left side");
+    expect(mine.queryByRole("button", { name: "Open Stock..." })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(mine.getByRole("button", { name: "Save the CNC files anyway" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    first.unmount();
+    const thick = [{ kind: "thickness" as const, tag: "", name: "Door", text: "drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4 (23/32 in)" }];
+    const second = render(<NestProblemDialog req={{ what: "the CNC files", problems: thick, onSave, onStock: () => {} }} onClose={() => {}} />);
+    expect(within(second.container).getByRole("button", { name: "Open Stock..." })).toBeTruthy();
+  });
+});

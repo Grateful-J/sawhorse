@@ -1,5 +1,6 @@
 // Asked before a nesting is saved for cutting when it has gone wrong (parts on no stock,
-// glued up, or off the sheet their material names): what, part by part, and whether to save
+// glued up, off the sheet their material names, drawn at a thickness their sheet is not, or
+// with cuts that would be left out of the file): what, part by part, and whether to save
 // anyway. Esc is Cancel.
 import type { NestProblem } from "../nesting/cnc";
 
@@ -26,7 +27,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "thickness" || p.kind === "cuts") ? "Some parts will not be cut as drawn" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (
@@ -49,7 +50,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
             {req.fix.label}
           </button>
         ) : null}
-        {req.problems.some((p) => p.kind !== "spacing") ? (
+        {req.problems.some((p) => p.kind !== "spacing" && p.kind !== "cuts") ? (
           <button
             type="button"
             className={req.fix ? "btn" : "btn primary"}
