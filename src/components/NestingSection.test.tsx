@@ -350,3 +350,68 @@ describe("Cut list pane with nesting", () => {
     expect(screen.getByTestId("nesting")).toBeTruthy();
   });
 });
+
+describe("Nesting section: the track saw for what the CNC cannot take", () => {
+  /** A 4 x 4 CNC shop whose 71 1/4 in back panel is on no stock (too large). */
+  const cncOnly = () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, algorithm: "maxrects", kerf: 0.375 * IN, trim: 0.5 * IN, sheetSize: { width: 48 * IN, length: 48 * IN } };
+    n.library = { ...n.library, settings: n.settings };
+    n.unplaced.push({ row: 1, copy: 1, tag: "2", name: "Back panel", item: { node: 7 }, size: [0.25 * IN, 34.5 * IN, 71.25 * IN], material: null, stock: "4 x 4 sheet, 1/4", sheet: true, reason: "too_large" });
+    n.pieces = n.pieces.slice(0, 1);
+    return n;
+  };
+
+  it("offers the track saw for parts too large for the CNC's sheet, and the switch beside the kerf", () => {
+    const onOverflow = vi.fn();
+    render(<NestingSection {...props({ nesting: cncOnly(), onOverflow })} />);
+    const offer = screen.getByRole("button", { name: "Cut it on the track saw" });
+    fireEvent.click(offer);
+    expect(onOverflow).toHaveBeenLastCalledWith(true);
+    const box = document.querySelector('[data-field="overflow"]') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(onOverflow).toHaveBeenLastCalledWith(true);
+    // No saw yet: no saw kerf, no badges.
+    expect(screen.queryByLabelText("Saw kerf")).toBeNull();
+    expect(document.querySelector(".via")).toBeNull();
+  });
+
+  it("with the saw on: its kerf and trim, a badge on every sheet, and the switch turns it off", () => {
+    const n = cncOnly();
+    n.unplaced = n.unplaced.filter((u) => u.tag !== "2");
+    const back = smallNesting().pieces[1];
+    n.pieces.push({ ...back, saw: true, trim: IN / 4 });
+    n.settings = { ...n.settings, overflow: { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: IN / 8, trim: IN / 4 } };
+    const onOverflow = vi.fn();
+    const onSettings = vi.fn();
+    render(<NestingSection {...props({ nesting: n, onOverflow, onSettings })} />);
+    expect(screen.queryByRole("button", { name: /on the track saw/ })).toBeNull();
+    const figs = document.querySelectorAll("figure.nest-piece");
+    expect(figs[0].querySelector(".via")?.textContent).toBe("CNC");
+    expect(figs[1].querySelector(".via.saw")?.textContent).toBe("Track saw");
+    expect(figs[1].getAttribute("data-saw")).toBe("true");
+    const kerf = screen.getByLabelText("Saw kerf") as HTMLInputElement;
+    expect(kerf.value).toBe("1/8 in");
+    fireEvent.change(kerf, { target: { value: "3/32" } });
+    fireEvent.keyDown(kerf, { key: "Enter" });
+    expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ overflow: { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: (3 / 32) * IN, trim: IN / 4 } }));
+    fireEvent.click(document.querySelector('[data-field="overflow"]') as HTMLInputElement);
+    expect(onOverflow).toHaveBeenLastCalledWith(false);
+  });
+
+  it("lists the saw's parts with cuts to do by hand", () => {
+    const work = [{ tag: "2", name: "Back panel", sheet: "Sheet 1 of 1 · 4 x 8 sheet, 1/4", pockets: 2, holes: 12, cutouts: 0, shaped: false, lines: ["Pocket 3/4 × 33 1/2, 1/4 deep: 10 to 10 3/4 from end A, 1/2 to 34 from edge B"] }];
+    render(<NestingSection {...props({ handWork: work })} />);
+    const box = screen.getByTestId("nest-handwork");
+    expect(box.textContent).toContain("1 track saw part has cuts to do by hand");
+    expect(box.textContent).toContain("Back panel: 2 pockets, 12 holes");
+    expect(box.querySelector("li")?.getAttribute("title")).toContain("Pocket 3/4");
+  });
+
+  it("shows no switch without a CNC sheet size", () => {
+    render(<NestingSection {...props({ onOverflow: vi.fn() })} />);
+    expect(document.querySelector('[data-field="overflow"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: /on the track saw/ })).toBeNull();
+  });
+});

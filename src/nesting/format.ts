@@ -110,7 +110,7 @@ export function pieceNumber(p: StockPiece): string {
 
 /** "Sheet 1 of 2 · 4 x 8 sheet, 3/4 · Oak". */
 export function pieceTitle(p: StockPiece): string {
-  return `${pieceNumber(p)} · ${p.stock}${p.material ? ` · ${p.material}` : ""}`;
+  return `${pieceNumber(p)} · ${p.stock}${p.material ? ` · ${p.material}` : ""}${p.saw ? " · track saw" : ""}`;
 }
 
 /** "62.4% used · 12.71 sq ft waste". */
@@ -177,7 +177,8 @@ export function nestSummary(n: Nesting, r: Units): NestSummary {
   const t = n.totals;
   const sheetGroups = t.groups.filter((g) => g.kind === "sheet");
   const stocks = [...new Set(sheetGroups.map((g) => g.stock))];
-  const sheetsLabel = stocks.length === 0 ? "sheets" : stocks.length === 1 ? `sheet${t.sheets === 1 ? "" : "s"}: ${stocks[0]}` : `sheets, ${stocks.length} kinds`;
+  const saw = n.pieces.filter((p) => p.saw).length;
+  const sheetsLabel = (stocks.length === 0 ? "sheets" : stocks.length === 1 ? `sheet${t.sheets === 1 ? "" : "s"}: ${stocks[0]}` : `sheets, ${stocks.length} kinds`) + (saw ? `, ${saw} on the track saw` : "");
   const nominal = t.by_nominal.map((b) => `${b.count} × ${b.nominal}`).join(", ");
   const bf = t.by_nominal.reduce((s, b) => s + b.board_feet, 0);
   const boardsLabel = t.boards === 0 ? "boards" : `board${t.boards === 1 ? "" : "s"}: ${nominal}, ${bf.toFixed(1)} bd ft`;
@@ -196,7 +197,10 @@ export function settingsText(n: Nesting, r: Units): string {
   const alg = n.algorithm === "guillotine" ? "table saw" : "tightest layout (CNC)";
   // #49: the joint loss only when something is glued up, so every other footer reads as before.
   const joint = n.glue_ups?.length ? ` · joint loss ${fineU(n.settings.jointLoss ?? JOINT_LOSS_DEFAULT, r)}` : "";
-  return `Kerf ${fineU(n.settings.kerf, r)} · trim ${n.settings.trim > 0 ? `${fineU(n.settings.trim, r)} per edge` : "none"}${joint} · ${alg}`;
+  // Mixed: the track saw's own kerf and trim, when anything went to it.
+  const o = n.settings.overflow;
+  const saw = o && n.pieces.some((p) => p.saw) ? ` · track saw: kerf ${fineU(o.kerf, r)}, trim ${o.trim > 0 ? `${fineU(o.trim, r)} per edge` : "none"}, straight cuts` : "";
+  return `Kerf ${fineU(n.settings.kerf, r)} · trim ${n.settings.trim > 0 ? `${fineU(n.settings.trim, r)} per edge` : "none"}${joint} · ${alg}${saw}`;
 }
 
 /** The footer every nesting output carries. */

@@ -14,9 +14,9 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
-import { cncFileName, cncNotes, nestProblems, spacingProblem, thicknessMismatches } from "./nesting/cnc";
+import { cncFileName, cncNotes, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, sawShare, spacingProblem, thicknessMismatches, type HandWork } from "./nesting/cnc";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
-import { sheetSetOps } from "./nesting/sheetset";
+import { overflowOps, sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
@@ -2220,6 +2220,16 @@ export function App() {
       void apply({ op: "set_nest_settings", settings: s }, () => `Nesting: kerf ${fineU(s.kerf, nestUnits)}, trim ${s.trim > 0 ? `${fineU(s.trim, nestUnits)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, nestUnits)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), nestUnits)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), nestUnits)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`),
     [apply, nestUnits],
   );
+  /** Mixed: the track saw takes what does not fit the CNC's sheet (or no longer does). */
+  const setOverflow = useCallback(
+    (on: boolean) => {
+      if (!nesting) return;
+      const metric = units === "mm" || units === "cm" || units === "m";
+      const { op, added } = overflowOps(nesting.library, on, metric);
+      void apply(op, () => (on ? `${added.length ? `Added ${added.join(", ")}; p` : "P"}arts too large for the CNC's sheet are cut on the track saw from 4 x 8 sheets, in straight cuts.` : "Every part is on the CNC's sheets again; those too large for them are on no stock."));
+    },
+    [apply, nesting, units],
+  );
   const defineStock = useCallback(
     (stock: StockDef, replace: string | null) =>
       void apply({ op: "define_stock", stock, replace }, () => (replace ? `Stock ${quoted(replace)} saved${replace !== stock.name ? ` as ${quoted(stock.name)}` : ""}.` : `Stock ${quoted(stock.name)} added.`)),
@@ -2338,6 +2348,24 @@ export function App() {
       return null;
     }
   }, []);
+  // The track saw's parts with cuts a router would have made, measured whenever the nesting
+  // sends anything to the saw (only its sheets are measured).
+  const [sawWork, setSawWork] = useState<HandWork[] | null>(null);
+  useEffect(() => {
+    const n = nesting;
+    if (!n || !n.pieces.some((p) => p.saw)) {
+      setSawWork(null);
+      return;
+    }
+    let stale = false;
+    const saw = sawShare(n);
+    void measureNesting(saw).then((m) => {
+      if (!stale) setSawWork(handWork(saw, m?.features, nestUnits));
+    });
+    return () => {
+      stale = true;
+    };
+  }, [nesting, nestUnits, measureNesting]);
   const saveNestDxf = useCallback(
     async (flavour: DxfFlavour) => {
       const n = nesting;
@@ -2361,8 +2389,10 @@ export function App() {
     [nesting, cutTitle, measureNesting],
   );
   const saveNestCnc = useCallback(async () => {
-    const n = nesting;
-    if (!n) return;
+    const all = nesting;
+    if (!all) return;
+    // The router's sheets only: the track saw's are cut from their diagrams, by hand.
+    const n = routerShare(all);
     try {
       const features = await measureNesting(n);
       // The cabinet (the outermost named instance) each part is in, for the file names.
@@ -2376,15 +2406,30 @@ export function App() {
         return top && top.id !== start ? (top.name ?? top.label) : null;
       };
       let saved = 0;
+      let stopped = false;
       for (let i = 0; i < n.pieces.length; i++) {
         const text = nestingDxf(n, "lwpolyline", features?.features, { piece: i });
         const res = await saveFile(cncFileName(cutTitle, n, i, features?.features, ownerOf), new TextEncoder().encode(text), DXF_TYPE);
-        if (!res) break;
+        if (!res) {
+          stopped = true;
+          break;
+        }
         saved += 1;
       }
-      if (saved) {
-        const notes = cncNotes(n, features, nestUnits);
-        setMessage({ text: `Saved ${saved} CNC ${saved === 1 ? "file" : "files"} (one per sheet, millimetres, origin at the lower-left corner). ${notes.join(" ")}`, error: thicknessMismatches(n).length > 0 });
+      // The track saw's parts with dados and holes: a list of them to do by hand.
+      let work = 0;
+      if (!stopped && all.pieces.some((p) => p.saw)) {
+        const saw = sawShare(all);
+        const items = handWork(saw, (await measureNesting(saw))?.features, nestUnits);
+        if (items.length) {
+          const res = await saveFile(`${cutTitle} track saw hand work.txt`, new TextEncoder().encode(handWorkText(cutTitle, items, nestUnits)), HAND_WORK_TYPE);
+          if (res) work = items.length;
+        }
+      }
+      if (saved || work) {
+        const notes = cncNotes(all, features, nestUnits);
+        const hand = work ? ` Saved the hand work on ${work} track saw ${work === 1 ? "part" : "parts"}.` : "";
+        setMessage({ text: `Saved ${saved} CNC ${saved === 1 ? "file" : "files"} (one per sheet, millimetres, origin at the lower-left corner).${hand} ${notes.join(" ")}`, error: thicknessMismatches(n).length > 0 });
       }
     } catch (e) {
       setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
@@ -3189,6 +3234,8 @@ export function App() {
               onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), true)}
               onPdf={() => guardNest("the PDF", () => void saveNestPdf())}
               lit={nestLit}
+              onOverflow={setOverflow}
+              handWork={sawWork}
             />
           ) : null,
         }}

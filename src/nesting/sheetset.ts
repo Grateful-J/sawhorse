@@ -38,3 +38,30 @@ export function sheetSetOps(lib: StockLibrary, width: number, length: number): {
   ops.push({ op: "set_nest_settings", settings: { ...lib.settings, sheetSize: { width, length } } });
   return { op: { op: "batch", ops }, added };
 }
+
+/** The track saw's sheet: 4 x 8 (1220 x 2440 in a metric shop). */
+export function sawSheet(metric: boolean): { width: number; length: number } {
+  return metric ? { width: 1.22, length: 2.44 } : { width: 48 * IN, length: 96 * IN };
+}
+
+/** A track saw's defaults: a 1/8 in (3 mm) blade, 1/4 in (6 mm) off each factory edge so the
+ * first cuts square the sheet. A 4 x 8 then takes parts up to 95 1/2 x 47 1/2 in. */
+export function sawDefaults(metric: boolean): { kerf: number; trim: number } {
+  return metric ? { kerf: 0.003, trim: 0.006 } : { kerf: IN / 8, trim: IN / 4 };
+}
+
+/**
+ * Mixed: what does not fit the CNC router's sheet (`settings.sheetSize`) is cut on a track saw
+ * from 4 x 8 sheets, laid out in straight cuts. One batch, one undo step: the 4 x 8 plywood the
+ * library lacks in 3/4, 1/2 and 1/4, and the overflow setting. Off clears the setting and
+ * leaves the sheets.
+ */
+export function overflowOps(lib: StockLibrary, on: boolean, metric: boolean): { op: KernelOp; added: string[] } {
+  if (!on) return { op: { op: "set_nest_settings", settings: { ...lib.settings, overflow: null } }, added: [] };
+  const size = sawSheet(metric);
+  const { op, added } = sheetSetOps(lib, size.width, size.length);
+  const ops = (op as { op: "batch"; ops: KernelOp[] }).ops.slice(0, -1);
+  const saw = { sheetSize: size, ...sawDefaults(metric), ...(lib.settings.overflow ? { kerf: lib.settings.overflow.kerf, trim: lib.settings.overflow.trim } : {}) };
+  ops.push({ op: "set_nest_settings", settings: { ...lib.settings, overflow: saw } });
+  return { op: { op: "batch", ops }, added };
+}

@@ -3,7 +3,7 @@
 // together than a bit, no margin at the sheet edge, and cuts that were left out.
 import type { Nesting, Placement, StockPiece } from "../kernel/types";
 import type { BlankFeatures } from "./machine";
-import { fineU, type Units } from "./format";
+import { fineU, sizeUnit, type Units } from "./format";
 import type { MeasuredNest } from "./measure";
 
 /** 0.1 mm: a part drawn thinner or thicker than this from its sheet is named. */
@@ -48,7 +48,121 @@ export function cncNotes(n: Nesting, measured: MeasuredNest | null, units: Units
   const kerf = n.settings.kerf;
   notes.push(`Parts are ${fineU(kerf, units)} apart: use a smaller bit than that.`);
   if (!(n.settings.trim > 0)) notes.push("No margin at the sheet edges (Trim is 0).");
+  const saw = n.pieces.filter((p) => p.saw).length;
+  if (saw) notes.push(`${saw} ${saw === 1 ? "sheet is" : "sheets are"} for the track saw, not the router: ${saw === 1 ? "it is" : "they are"} not in these files (see its cut sequence in the Nesting section or the PDF).`);
   return notes;
+}
+
+/** The CNC router's share of a nesting: every sheet and board but those the track saw cuts
+ * (`StockPiece.saw`). The same nesting when nothing goes to the saw. */
+export function routerShare(n: Nesting): Nesting {
+  return n.pieces.some((p) => p.saw) ? { ...n, pieces: n.pieces.filter((p) => !p.saw) } : n;
+}
+
+/** The track saw's share: the sheets too large parts went to (none without an overflow). */
+export function sawShare(n: Nesting): Nesting {
+  return { ...n, pieces: n.pieces.filter((p) => p.saw) };
+}
+
+/** A part cut on the track saw that has cuts a router would have made: they are done by hand. */
+export interface HandWork {
+  tag: string;
+  name: string;
+  /** "Sheet 1 of 2 · 4 x 8 sheet, 3/4". */
+  sheet: string;
+  pockets: number;
+  holes: number;
+  cutouts: number;
+  /** Its outline is not a rectangle (a notch, a rabbet through the thickness). */
+  shaped: boolean;
+  /** One line per cut (or per group of like holes), positions from the part's corner. */
+  lines: string[];
+}
+
+/** A drill's size as Blum and the DXF layers write it: millimetres to 0.1. */
+const holeMm = (m: number) => `${Math.round(m * 1e4) / 10} mm`;
+
+/**
+ * The hand work on the track saw's parts: each pocket, hole and cutout the router would have
+ * cut, measured from the part. Positions are along the part's length from its end A, then
+ * across its width from its edge B: the corner nearest the sheet's corner as the part lies in
+ * its sheet's diagram, on the face up there (a mirrored pair stays mirrored).
+ */
+export function handWork(n: Nesting, features: ReadonlyMap<string, BlankFeatures> | undefined, units: Units): HandWork[] {
+  const out: HandWork[] = [];
+  // Bare numbers: the unit is said once, at the top of the list (holes stay in mm, as Blum's).
+  const u = (m: number) => fineU(m, units).replace(/ (in|mm|cm|m)$/, "");
+  for (const piece of n.pieces) {
+    if (!piece.saw) continue;
+    for (const q of piece.placements) {
+      const f = features?.get(q.tag);
+      if (!f) continue;
+      // The blank's u runs along the sheet: along the part's length unless the part is turned.
+      const part = ([x, y]: [number, number]): [number, number] => (q.turned ? [y, x] : [x, y]);
+      const span = (loop: [number, number][]) => {
+        const pts = loop.map(part);
+        const a = pts.map((p) => p[0]);
+        const b = pts.map((p) => p[1]);
+        return { a0: Math.min(...a), a1: Math.max(...a), b0: Math.min(...b), b1: Math.max(...b) };
+      };
+      const where = (s: ReturnType<typeof span>) => `${u(s.a0)} to ${u(s.a1)} from end A, ${u(s.b0)} to ${u(s.b1)} from edge B`;
+      const lines: string[] = [];
+      const face = (ff: { pockets: BlankFeatures["pockets"]; drills: BlankFeatures["drills"] }, other: boolean) => {
+        const side = other ? " (other face)" : "";
+        for (const k of ff.pockets) {
+          const s = span(k.loop);
+          lines.push(`Pocket${side} ${u(s.a1 - s.a0)} × ${u(s.b1 - s.b0)}, ${u(k.depth)} deep: ${where(s)}`);
+        }
+        // Like holes together: one line each size and depth, every centre listed.
+        const groups = new Map<string, [number, number][]>();
+        for (const h of ff.drills) {
+          const key = `${holeMm(h.diameter)} ${h.through ? "through" : `× ${holeMm(h.depth)} deep`}`;
+          const list = groups.get(key) ?? [];
+          list.push(part(h.center));
+          groups.set(key, list);
+        }
+        for (const [key, cs] of groups) {
+          cs.sort((p, r) => p[0] - r[0] || p[1] - r[1]);
+          lines.push(`${cs.length} ${cs.length === 1 ? "hole" : "holes"}${side} ${key} at ${cs.map(([a, b]) => `(${u(a)}, ${u(b)})`).join(", ")}`);
+        }
+      };
+      face(f, false);
+      face(f.flip, true);
+      for (const c of f.cutouts) lines.push(`Cutout through: ${where(span(c))}`);
+      if (f.profile) lines.push("Outline: not a rectangle (a notch): cut it to the drawing after the saw");
+      if (!lines.length) continue;
+      out.push({
+        tag: q.tag,
+        name: q.name,
+        sheet: `${piece.kind === "sheet" ? "Sheet" : "Board"} ${piece.seq} of ${piece.count} · ${piece.stock}`,
+        pockets: f.pockets.length + f.flip.pockets.length,
+        holes: f.drills.length + f.flip.drills.length,
+        cutouts: f.cutouts.length,
+        shaped: !!f.profile,
+        lines,
+      });
+    }
+  }
+  return out;
+}
+
+/** The hand work list's file: plain text. */
+export const HAND_WORK_TYPE = { description: "Hand work list (text)", mime: "text/plain", extensions: [".txt"] };
+
+/** The hand work as a text file a shop can print. */
+export function handWorkText(title: string, work: HandWork[], units: Units): string {
+  const head = [
+    `${title}: hand work on the track saw's parts`,
+    "",
+    "These parts are too large for the CNC router's sheet and are cut on the track saw. Their",
+    "dados, grooves and holes are done by hand (a router with a guide or jig, a drill press).",
+    "Positions: along the part's length from end A, then across its width from edge B, on the",
+    "face up, as the part lies in its sheet's diagram (end A at the left, edge B at the bottom).",
+    `Lengths in ${sizeUnit(units) === "in" ? "inches" : "millimetres"}; hole sizes in millimetres.`,
+    "",
+  ];
+  const body = work.flatMap((w) => [`${w.tag} ${w.name} (${w.sheet})`, ...w.lines.map((l) => `  - ${l}`), ""]);
+  return [...head, ...body].join("\n");
 }
 
 /** What a sheet's file asks of the router: the outlines, and pockets, holes and so on when
@@ -156,7 +270,8 @@ export const CNC_BIT = 0.25 * 0.0254;
 export function spacingProblem(n: Nesting, units: Units, bit = CNC_BIT): NestProblem | null {
   const gap = n.settings.kerf;
   if (gap >= bit + 0.0625 * 0.0254 - 1e-9) return null;
-  if (!n.pieces.some((p) => p.placements.length > 1)) return null;
+  // The track saw's sheets are laid out with the saw's kerf: only the router's sheets count.
+  if (!n.pieces.some((p) => !p.saw && p.placements.length > 1)) return null;
   return {
     kind: "spacing",
     tag: "",

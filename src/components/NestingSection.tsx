@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
-import { nestProblems } from "../nesting/cnc";
+import { nestProblems, type HandWork } from "../nesting/cnc";
 import { ALGORITHMS, cutText, dims, fineU, glueText, JOINT_LOSS_DEFAULT, type Units, nestNote, nestSummary, pieceNumber, pieceYield, placedSize, reasonText, stripText } from "../nesting/format";
 
 export interface NestingSectionProps {
@@ -35,6 +35,10 @@ export interface NestingSectionProps {
   onPdf?: () => void;
   /** The tag of the part lit up from the model side (its rectangle shows it). */
   lit?: string | null;
+  /** Mixed: turn the track saw on or off for what does not fit the CNC's sheet (one undo step). */
+  onOverflow?: (on: boolean) => void;
+  /** The track saw's parts with cuts a router would have made (measured), or null while unknown. */
+  handWork?: HandWork[] | null;
 }
 
 /** Kerf or trim typed in a field: committed on Enter, on leaving the field, or after a pause. */
@@ -160,6 +164,13 @@ function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: Stoc
   );
 }
 
+/** "2 pockets, 12 holes" for a track saw part's hand work. */
+export function handWorkCounts(w: HandWork): string {
+  const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const bits = [w.pockets ? plural(w.pockets, "pocket", "pockets") : "", w.holes ? plural(w.holes, "hole", "holes") : "", w.cutouts ? plural(w.cutouts, "cutout", "cutouts") : "", w.shaped ? "a shaped outline" : ""].filter(Boolean);
+  return bits.join(", ");
+}
+
 /** The grain choices for a nested part, as the nester reads them. */
 const GRAIN_OPTIONS: [Grain, string][] = [
   ["length", "Along its length"],
@@ -175,6 +186,9 @@ export function NestingSection(p: NestingSectionProps) {
   const s = n ? nestSummary(n, r) : null;
   const settings = n?.settings;
   const set = (patch: Partial<NestSettings>) => settings && p.onSettings({ ...settings, ...patch });
+  const saw = settings?.overflow ?? null;
+  // Parts the CNC's sheet cannot take, that the track saw could.
+  const tooBig = n && settings?.sheetSize && !saw ? n.unplaced.filter((u) => u.sheet && (u.reason === "too_large" || u.reason === "grain" || u.reason === "no_stock")) : [];
   return (
     <section className="nesting" aria-label="Nesting" data-testid="nesting">
       <header className="nest-head">
@@ -206,6 +220,18 @@ export function NestingSection(p: NestingSectionProps) {
           >
             CNC spacing
           </button>
+          {settings.sheetSize && p.onOverflow ? (
+            <label className="check" title="Parts too large for the CNC's sheet are cut on a track saw from 4 x 8 sheets, laid out in straight cuts with the saw's kerf and trim">
+              <input type="checkbox" checked={!!saw} onChange={(e) => p.onOverflow?.(e.currentTarget.checked)} data-field="overflow" />
+              <span>Track saw what won't fit</span>
+            </label>
+          ) : null}
+          {saw ? (
+            <>
+              <LengthField label="Saw kerf" value={saw.kerf} units={p.units} rounding={r} max={KERF_MAX} onCommit={(kerf) => set({ overflow: { ...saw, kerf } })} />
+              <LengthField label="Saw trim" value={saw.trim} units={p.units} rounding={r} max={TRIM_MAX} onCommit={(trim) => set({ overflow: { ...saw, trim } })} />
+            </>
+          ) : null}
         </div>
       ) : null}
       {p.problem ? <p className="note err">{p.problem}</p> : null}
@@ -239,6 +265,26 @@ export function NestingSection(p: NestingSectionProps) {
                   </li>
                 ))}
               </ul>
+              {tooBig.length && p.onOverflow ? (
+                <button type="button" className="btn" data-action="overflow" onClick={() => p.onOverflow?.(true)} title="Cut the parts the CNC's sheet cannot take on a track saw, from 4 x 8 sheets in straight cuts; the rest stays on the CNC">
+                  Cut {tooBig.length === 1 ? "it" : "them"} on the track saw
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {p.handWork?.length ? (
+            <div className="nest-handwork" data-testid="nest-handwork">
+              <b>
+                {p.handWork.length} track saw part{p.handWork.length === 1 ? " has" : "s have"} cuts to do by hand
+              </b>
+              <ul>
+                {p.handWork.map((w) => (
+                  <li key={w.tag} title={w.lines.join("\n")}>
+                    <span className="tag">{w.tag}</span> {w.name}: {handWorkCounts(w)}
+                  </li>
+                ))}
+              </ul>
+              <small>CNC files saves each one's positions in a hand work list beside the router's files.</small>
             </div>
           ) : null}
           {(() => {
@@ -273,9 +319,9 @@ export function NestingSection(p: NestingSectionProps) {
           ) : null}
           {n.pieces.length === 0 && !n.unplaced.length ? <p className="placeholder">No parts to nest yet: the cut list is empty.</p> : null}
           {n.pieces.map((piece) => (
-            <figure key={piece.index} className="nest-piece" data-piece={piece.index} data-kind={piece.kind}>
+            <figure key={piece.index} className="nest-piece" data-piece={piece.index} data-kind={piece.kind} data-saw={piece.saw ? "true" : undefined}>
               <figcaption>
-                <b>{pieceNumber(piece)}</b> <span className="stock">{piece.stock}</span>
+                <b>{pieceNumber(piece)}</b> {saw ? <span className={`via${piece.saw ? " saw" : ""}`}>{piece.saw ? "Track saw" : "CNC"}</span> : null} <span className="stock">{piece.stock}</span>
                 {piece.material ? <span className="mat"> · {piece.material}</span> : null}
                 <small>
                   {pieceYield(piece, r)}

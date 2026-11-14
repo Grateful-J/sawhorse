@@ -1165,6 +1165,18 @@ export interface NestSettings {
   jointLoss?: number;
   /** Sheet footprint for parts that do not name their own stock. Absent: the first sheet that fits. */
   sheetSize?: { width: number; length: number } | null;
+  /** With a sheet size: sheet goods too large for it come from sheets of this footprint, cut on a
+   * saw (a track saw): straight cuts edge to edge, the saw's kerf and trim. Absent: none. */
+  overflow?: SawOverflow | null;
+}
+
+/** The saw that cuts what a CNC router's sheet cannot take. */
+export interface SawOverflow {
+  sheetSize: { width: number; length: number };
+  /** The blade's kerf (metres). */
+  kerf: number;
+  /** Taken off each edge of the saw's sheets (metres). */
+  trim: number;
 }
 
 export interface StockLibrary {
@@ -1244,6 +1256,8 @@ export interface StockPiece {
   placements: Placement[];
   cuts: NestCut[];
   guillotine: boolean;
+  /** Cut on the saw ({@link NestSettings.overflow}), not the CNC router. Absent when false. */
+  saw?: boolean;
   parts_area: number;
   stock_area: number;
   waste_area: number;

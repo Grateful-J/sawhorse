@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CSV_TYPE } from "../cutlist/csv";
 import { PDF_TYPE } from "../cutlist/pdf";
 import { DXF_TYPE as NEST_DXF } from "../nesting/dxf";
+import { HAND_WORK_TYPE } from "../nesting/cnc";
 import { SVG_TYPE as NEST_SVG } from "../nesting/svg";
 import { DXF_TYPE as SHEET_DXF, PNG_TYPE as SHEET_PNG, SVG_TYPE as SHEET_SVG } from "../sheets/runExport";
 import { EXPORTS, MTL_TYPE, textureType } from "./exports";
@@ -140,7 +141,7 @@ describe("every save the page sends to the shell", () => {
   const only = (path: string) => ({ "x-path": encodeURIComponent(path) });
 
   /** Every file type the app saves with: the document, each export, the OBJ's companions, the cut list, the nesting and the sheets. */
-  const TYPES: FileType[] = [SHZ, ...EXPORTS.map((c) => c.type), MTL_TYPE, textureType("image/png"), textureType("image/jpeg"), CSV_TYPE, PDF_TYPE, NEST_DXF, NEST_SVG, SHEET_DXF, SHEET_SVG, SHEET_PNG];
+  const TYPES: FileType[] = [SHZ, ...EXPORTS.map((c) => c.type), MTL_TYPE, textureType("image/png"), textureType("image/jpeg"), CSV_TYPE, PDF_TYPE, NEST_DXF, HAND_WORK_TYPE, NEST_SVG, SHEET_DXF, SHEET_SVG, SHEET_PNG];
 
   it("every type's extension is one the shell takes as added (1 to 10 letters or digits)", () => {
     // Otherwise a name typed without it on Linux would be refused as not chosen.

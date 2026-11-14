@@ -15,7 +15,8 @@ import { cncSettings } from "../components/NestingSection";
 import { nestingDxf } from "./dxf";
 import { measureNest } from "./measure";
 import { sheetSetOps } from "./sheetset";
-import { spacingProblem, thicknessMismatches } from "./cnc";
+import { handWork, routerShare, sawShare, spacingProblem, thicknessMismatches } from "./cnc";
+import { overflowOps } from "./sheetset";
 
 const pkg = path.resolve(__dirname, "../wasm/pkg");
 const built = existsSync(path.join(pkg, "sawhorse_wasm_bg.wasm"));
@@ -190,6 +191,73 @@ run("a cabinet to the CNC router", () => {
     const all = nestingDxf(n, "lwpolyline", measured.features, { piece: 0 });
     expect(all).toContain("PROFILE_THRU");
     expect(all).toMatch(/POCKET_6\.35MM/);
+  }, 60_000);
+
+  it("mixed: a tall pantry's long parts go to the track saw on 4 x 8, the rest stays on the 4 x 4 CNC, the saw's dados and holes are hand work", async () => {
+    const d = await doc();
+    const IN = 0.0254;
+    let x = 0;
+    for (const id of ["tall", "base"]) {
+      const s = applyPreset(defaults(false), id, false);
+      const p = plan(s, false);
+      expect(p.error).toBeNull();
+      d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(p.parts, [x, 0, 0], s.name, s.name, Object.values(MATERIALS))] }));
+      x += s.width + 0.1;
+    }
+    const lib = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify(sheetSetOps(lib, 48 * IN, 48 * IN).op));
+    const lib2 = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...lib2.settings, ...cncSettings(false) } }));
+    // CNC only: the pantry's 84 in sides, back and doors are on no stock.
+    const before = JSON.parse(d.nest("{}")) as Nesting;
+    const long = before.unplaced.map((u) => u.name);
+    expect(long).toEqual(expect.arrayContaining(["Left side", "Right side", "Back"]));
+    expect(before.unplaced.every((u) => u.reason === "too_large")).toBe(true);
+
+    // The switch the Nesting section sends: 4 x 8 sheets added, the saw set, one undo step.
+    const lib3 = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify(overflowOps(lib3, true, false).op));
+    const n = JSON.parse(d.nest("{}")) as Nesting;
+    expect(n.unplaced).toEqual([]);
+    const saw = n.pieces.filter((p) => p.saw);
+    expect(saw.length).toBeGreaterThan(0);
+    for (const p of saw) {
+      expect(p.stock.startsWith("4 x 8")).toBe(true);
+      expect(p.guillotine).toBe(true);
+      expect(p.kerf).toBeCloseTo(IN / 8, 12);
+      expect(p.trim).toBeCloseTo(IN / 4, 12);
+      // Every part the saw takes is one the 4 x 4 could not.
+      for (const q of p.placements) expect(long).toContain(q.name);
+    }
+    for (const p of n.pieces.filter((p) => !p.saw)) expect(p.stock.startsWith("4 x 4")).toBe(true);
+    // The router's files: its sheets only, spaced for the bit, nothing too thick or thin.
+    const cnc = routerShare(n);
+    expect(cnc.pieces.every((p) => !p.saw)).toBe(true);
+    expect(spacingProblem(n, "sixteenth")).toBeNull();
+    expect(thicknessMismatches(cnc)).toEqual([]);
+    const st = JSON.parse(d.state_json()) as DocState;
+    const m = { faces: async (o: number) => JSON.parse(d.faces_json(o)) as FaceInfo[], outline: async (_k: string, owner: number, index: number) => JSON.parse(d.outline("face", owner, index)) as V3[][] };
+    const routed = await measureNest(m, st.graph.objects, cnc);
+    expect(routed.skipped).toEqual([]);
+    const files = cnc.pieces.map((_, i) => nestingDxf(cnc, "lwpolyline", routed.features, { piece: i }));
+    expect(files).toHaveLength(cnc.pieces.length);
+    // The saw's parts: the pantry sides' dados and runner-free holes, measured, listed by hand.
+    const sawn = await measureNest(m, st.graph.objects, sawShare(n));
+    expect(sawn.skipped).toEqual([]);
+    const work = handWork(n, sawn.features, "sixteenth");
+    const side = work.find((w) => w.name === "Left side");
+    expect(side).toBeDefined();
+    expect(side!.pockets).toBeGreaterThan(0);
+    expect(side!.holes).toBeGreaterThan(0);
+    // Each line places its cut inside the part (84 x 23 1/4 in).
+    for (const line of side!.lines.filter((l) => l.startsWith("Pocket"))) expect(line).toMatch(/from end A, .* from edge B$/);
+    // Off again: the saw is gone and the long parts are on no stock, as before.
+    const lib4 = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify(overflowOps(lib4, false, false).op));
+    const off = JSON.parse(d.nest("{}")) as Nesting;
+    expect(off.pieces.some((p) => p.saw)).toBe(false);
+    expect(off.unplaced.map((u) => u.tag).sort()).toEqual(before.unplaced.map((u) => u.tag).sort());
+    expect(off.hash).toBe(before.hash);
   }, 60_000);
 
   it("the generator's batch: parts imported flat, each one's grain set, wrapped in one cabinet; and rebuilt from inside it", async () => {
