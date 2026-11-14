@@ -451,7 +451,7 @@ Plugins add tools, panels and commands. Each runs in its own sandbox, apart from
 **The samples** come with Sawhorse, off until you enable them:
 
 - **Cabinet generator**: a frameless cabinet for a CNC router. The panel starts short:
-  - **Start from** a cabinet (Base, Drawer base, Sink base, a drawer over a door, Wall, Tall pantry, Open shelves).
+  - **Start from** a cabinet (Base, Drawer base, Sink base, a drawer over a door, Trash pull-out, Wall, Tall pantry, Open shelves).
   - Its name, sizes and style.
   - **Hidden (blind) dado joints** and **Drill hardware holes**.
   - **Generate**, with one line on what it comes to: parts, the exact stock thicknesses, holes, and the runner's part number.
@@ -460,7 +460,9 @@ Plugins add tools, panels and commands. Each runs in its own sandbox, apart from
   - **Cabinet:** a name (it names the cabinet and its CNC files, and counts up: Base 1, Base 2), the sizes, and the style (Doors and shelves, Drawers, Drawers over a door, or Open shelves).
   - **Stock, measured:** the cabinet and doors (23/32 in, what "3/4" ply is), drawer fronts and drawer boxes (15/32 in, "1/2" ply), and the back and drawer bottoms (7/32 in). Every joint is cut to these numbers. Each kind of part is on its own plywood material (Cabinet, Door, Drawer front, Drawer box and Back plywood), so the Cut list nests it as sheet goods; for a 4 x 4 bed, Stock... > **Use 4 x 4 plywood** sets that up in one click.
   - **Base and back:** a toe kick with the sides notched for it, or none, for cabinets set on a base you build. The back sits in grooves in the sides, top and bottom, 1/2 in in from the rear edge, or between the sides as before.
-  - **Fronts:** overlay or inset, with the gap between them yours to set. A door over 24 in wide is a pair.
+  - **Fronts:** overlay or inset, with the gap between them yours to set. Doors: automatic (a pair over 24 in), one or two; one door hinges on the side you pick, its pull on the other edge. Doors with no shelves: set Fixed shelves to 0.
+  - **Rear nailers:** none, top, or top and bottom (the Wall cabinet starts with both), behind the back at the rear edge, to screw the cabinet to the wall through.
+  - **Trash pull-out:** one tall front on Blum runners carrying a low tray, full-height uprights and a frame cut for one bin, two side by side, or two front to back, at the size and lip height of your own bins.
   - **Joinery and bit:** blind dados, their depth, how far short of the front they stop, the fit over the stock, and your bit's diameter. The rails' front corners are notched the stop plus one bit deep, so the router's round groove ends never meet them.
   - **Drawer runners:** **Blum TANDEM 563H** or **MOVENTO 763H**, sized from Blum's tables: the inside of the box 42 mm narrower than the opening, the bottom 13 mm up and sliding in from the back under the box's back, the box 21 mm (MOVENTO 23 mm) shorter than its opening, and the longest runner the depth allows (or the one you pick).
   - **Hardware:** with **Drill hardware holes** ticked, the router drills:

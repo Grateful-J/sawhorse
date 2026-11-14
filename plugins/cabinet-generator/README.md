@@ -6,14 +6,15 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
 
 1. Open the Plugins pane (the puzzle-piece tab at the end of the side panel) and click **Enable…** beside Cabinet generator. The dialog lists what it asks for: read the model, change the model, add a panel and a command, keep settings.
 2. The **Cabinet** section appears at the top of the pane, short like a cabinet shop's order form:
-   - **Start from** fills in a cabinet: Base (a door and a shelf), Drawer base (three drawers), Sink base, a drawer over a door, Wall (12 in deep, no toe kick, door pulls measured from the bottom), Tall pantry (84 in, too long for a 4 x 4 bed), or Open shelves. It sets the style, the usual sizes and the name, and keeps your stock, joints and hardware.
-   - **Name**, width, height and depth, the **style** and how many shelves or drawers.
+   - **Start from** fills in a cabinet: Base (a door and a shelf), Drawer base (three drawers), Sink base, a drawer over a door, Trash pull-out (two bins), Wall (12 in deep, no toe kick, nailers top and bottom, door pulls measured from the bottom), Tall pantry (84 in, too long for a 4 x 4 bed), or Open shelves. It sets the style, the usual sizes and the name, and keeps your stock, joints and hardware.
+   - **Name**, width, height and depth, the **style** (doors, drawers, drawers over a door, trash pull-out, open shelves) and how many shelves (0 for none), drawers or bins.
    - Two switches: **Hidden (blind) dado joints** and **Drill hardware holes**.
    - **Generate cabinet**, with what it will add and one line on what it comes to: how many parts, from which stock thicknesses (exactly: 23/32 in, not 3/4), how many holes, and the runner's part number.
 3. **Details** opens one group at a time; a field shows only when it applies:
    - **Construction:** base, back, joints and bit.
    - **Stock thicknesses.**
    - **Fronts, pulls and hinges.**
+   - **Trash bins** (for a trash pull-out).
    - **Drawer runners.**
    - **Every cut and hole**, the table of each cut and how it is made.
 
@@ -32,9 +33,11 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 
 **Base and back.**
 - **Base:** a toe kick (4 x 3 in to start, with the sides notched for it), or none, for a row of cabinets set on a base you build.
+- **Rear nailers:** none, top, or top and bottom, the cabinet stock and a height you set (3 in to start), at the rear edge and behind the back (in dados with blind dados on), to screw the cabinet to the wall through. The back moves in to clear them. With no back, shelves stop at the nailers.
 - **Back:** sits in grooves in the sides, the top and the bottom, 1/2 in in from the rear edge. The grooves are 5/16 in deep, and the back plus the fit wide. The top and bottom run to the rear edge to carry the groove; fixed shelves stop at the back. The back can also sit between the sides at the rear, as before. With blind dados, the back's groove must be a different depth from the dados, so each gets its own layer (and bit) in the DXF.
 
 **Fronts.**
+- **Doors:** automatic (a pair over 24 in), one or two. One door hinges on the side you pick, and its pull goes on the other edge.
 - **Full overlay** (default): the fronts tile the cabinet's face with the gap you set between them (1/8 in) and half of it at the edges.
 - **Inset:** fronts sit inside the opening, with half the gap all round.
 - A door wider than 24 in is a pair.
@@ -43,6 +46,8 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 - **Blind dados:** each side gets a groove for the top, the bottom and each fixed shelf. The groove is a dado depth deep (1/4 in), the stock plus the **fit** wide (0.008 in), and stops short of the front by the distance you set (1/2 in).
 - **Rails:** each rail's tongue is 0.5 mm shorter than its groove, so the shoulders close. Its front corners are notched the stop plus one **bit diameter** deep, so the round end the router leaves in the groove never meets the rail's square shoulder.
 - **Narrow grooves:** a groove narrower than the bit (the back and drawer-bottom grooves, about 7/32 in) is listed, to cut with a smaller bit on its own layer.
+
+**Trash pull-out.** One full-height drawer front on Blum runners. The box is a low tray (6 in sides to start); its sub-front and back run full height as uprights, and a bin frame spans between them in dados, at the bins' lip height, with a cutout for each bin: one, two side by side, or two front to back. Set the cutout (measured just under the lip) and the lip's height above the tray's bottom from your own bins; the starting numbers are only placeholders. The frame needs 3/4 in of wood around each cutout; the cutouts go on CUTOUT_THRU in the DXF.
 
 **Drawer runners.** Drawers are sized for Blum runners from Blum's own tables (TANDEM plus BLUMOTION 563H, 2017 pp. 14-15; MOVENTO 763H, 2019 pp. 8-9; in `RUNNERS` in `cabinet.js`):
 

@@ -6,6 +6,13 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ### Added (CNC cabinets, 2026-11-13)
 
+- **Doors hinged where you want them, rear nailers, and a trash pull-out.** The cabinet generator can make:
+  - one door or two, whatever the width, a single door hinged on the side you pick (its pull on the other edge), and doors with no shelves;
+  - rear nailers, top or top and bottom, behind the back (which moves in to clear them), in dados with blind dados on;
+  - a trash pull-out: one tall front on Blum runners, a low tray with full-height uprights, and a frame in dados cut for one bin, two side by side or two front to back.
+
+  The Wall starting point hangs on top and bottom nailers, and Trash pull-out is a starting point. How: `doors`, `hingeSide`, `nailers`, `trashBins` and the bin sizes in `plugins/cabinet-generator/cabinet.js` (`backInsetOf`), and the panel in `main.js`. Tests: `src/plugins/cabinet.test.ts`.
+
 - **A cabinet panel that starts short, and 4 x 4 plywood in one click.** The cabinet generator's panel reads like a cabinet shop's order form:
   - **Start from** a cabinet (Base, Drawer base, Sink base, a drawer over a door, Wall, Tall pantry, Open shelves).
   - The name, sizes and style.
