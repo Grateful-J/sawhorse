@@ -16,7 +16,33 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
    - **7 · CNC:** the bit's diameter and the joint clearance.
    - **8 · Cuts and holes:** every cut and hole, and how it is made.
    - **Generate cabinet**, with what it will add and one line on what it comes to: parts, thicknesses, holes, and the runner's part number.
-3. **Editing a cabinet.** The new cabinet is selected, and the panel now edits it: every change rebuilds it in place, one undo step each, with no button to press. Select any cabinet the generator made (a click, a click in the Outliner, or a double-click into it) and the panel shows that cabinet's own settings, kept in the document by cabinet. Click empty space and the panel is back to a new cabinet, numbered on (Base 2); **Add another like this** makes a copy of the one being edited beside the model.
+3. **Editing a cabinet.** The new cabinet is selected, and the panel now edits it: every change rebuilds it in place, one undo step each, with no button to press. Select any cabinet the generator made (a click, a click in the Outliner, or a double-click into it) and the panel shows that cabinet's own settings, kept in the document by cabinet. Click empty space and the panel is back to a new cabinet, numbered on (Base 2); **Add another like this** makes a copy of the one being edited, placed as **Place** says (against it, to start).
+
+4. **A row of cabinets.** Each new cabinet goes against the last one made or edited (**Place**, under Name): right of it at its row's end (to start), left of it at the row's start, **around the corner** right or left (turned a quarter, its back on the next wall, its side a **corner filler** in front of the corner cabinet's carcass, 3 in or 75 mm to start, for the doors and pulls to clear; a filler strip covers the gap), or apart, beside the model. After a corner, Place carries on down the new wall. Pick Base, Generate, click empty space, pick Drawer base, Generate: the drawer base stands against the base, backs in line.
+   - A **row** is cabinets side by side: turned the same way, each against the last one's side, backs in line, on one floor (or, for wall cabinets, tops level). It is found from where they stand, so it survives rebuilds, moves and saves.
+   - A cabinet made **wider or narrower** moves the cabinets right of it in its row along with its side, in the same undo step. One made **deeper or shallower** keeps its back where it was, on the wall.
+5. **Rows and base frames**, the plugin's second panel. Select a cabinet: it names the row ("Row of 3: Base 1, Drawer base 2, Sink base 3 · 78 long, 23 1/4 deep"). Select two or more and **Line up the selected cabinets**: the longest row among them stays where it is, and the others butt against its ends in the order they stand, turned its way, backs in line, on its floor. Move a cabinet roughly into place with Move, then line it up.
+6. **A base frame for a row.** With a cabinet of the row selected, the panel plans the frame the row stands on, and its **cut list** (part, quantity, length, width, thickness, then what to do) shows before you make it. **Put the row on a base frame** is one undo step:
+   - each cabinet with a toe kick is rebuilt without it, its box the kick shorter, where it stands (the panel says so, and where the tops end up: 34 1/2 in on a 4 in frame);
+   - every cabinet is lifted onto the frame's top;
+   - the frame goes under them, a component named Base frame 1, selected, so the panel edits it: each change rebuilds it in place (a taller frame lifts the row with it). **Fit to the row again** when the row has changed under it (a wider cabinet, one more).
+
+## The base frame
+
+A ladder: a **front rail** set back for the toes (the toe setback, 3 in or 75 mm to start), a **back rail** at the cabinets' backs (or a **back inset** in from them, for a wall that is not flat), and **sleepers** between them.
+
+| Field | Starts at | |
+|---|---|---|
+| Height | 4 in (100 mm) | The toe space. Height plus each box is where its top ends up. |
+| Toe setback | 3 in (75 mm) | The front rail behind the carcass front. |
+| Back inset | 0 | The back rail in from the cabinets' backs. |
+| Ends | against walls or cabinets | A showing end is set back like the front, so the toe space turns the corner. |
+| Stock | plywood strips, 23/32 in (18 mm) | Strips on Cabinet plywood nest with the carcass on the same sheets; **Lumber** (1 1/2 in, 38 mm, 8 ft) is its own material, counted in board feet. |
+| Sleepers | in dados in the rails, 1/4 in (6 mm) deep | Each a dado across the rail's inside face, open top and bottom, the stock plus the fit wide; the sleeper's tongue 0.5 mm short so the shoulders close, and the ladder comes out square. Or butted between the rails, glued and screwed. |
+| Sleepers at most | 16 in (400 mm) on centre | One at each end of a ladder, one centred under each joint between cabinets (under both sides), and more between. |
+| Longest piece | 47 in (1190 mm) | A 4 x 4 sheet less the CNC preset's trim. A longer row is split into **ladders**, each under whole cabinets where it can (a cabinet longer than a piece is split evenly), set side by side and screwed together through their end sleepers. |
+
+The frame follows the shallowest cabinet when depths differ, backs in line. Level it on the floor with shims under the sleepers, screw it down, then set the cabinets on it and screw down through their bottoms; the cut list's last rows say so. The parts are **Base front rail**, **Base back rail** and **Base sleeper** in the Cut list too, so Nesting and **CNC files** cut them with the cabinets: a 78 in row's frame fits one 4 x 4 sheet.
 
 ## The details
 
@@ -110,7 +136,7 @@ The last sizes are kept for next time (the plugin's own store), and which cabine
 
 ## How it is built
 
-`main.js` is the panel. `cabinet.js` plans the parts and holds the Blum tables. `mesh.js` builds a closed mesh for a box with grooves, notches, and blind or through holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
+`main.js` is the two panels. `cabinet.js` plans the parts and holds the Blum tables. `row.js` finds rows, places cabinets against each other and plans the base frame. `mesh.js` builds a closed mesh for a box with grooves, notches, and blind or through holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
 
 ## Licence
 
