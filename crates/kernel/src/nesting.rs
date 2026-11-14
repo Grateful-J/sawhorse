@@ -58,8 +58,8 @@ use crate::hash::StableHasher;
 use crate::model::Model;
 use crate::nodes::Item;
 use crate::stock::{
-    NestAlgorithm, NestSettings, SHEET_THICKNESS_SLACK, STOCK_EPSILON, StockDef, StockGrain,
-    StockKind, StockLibrary,
+    NestAlgorithm, NestSettings, SHEET_THICKNESS_SLACK, STOCK_EPSILON, SawOverflow, SheetSize,
+    StockDef, StockGrain, StockKind, StockLibrary,
 };
 
 /// Geometric slack in fits and gaps (1 nm): floating-point noise only.
@@ -195,6 +195,10 @@ pub struct StockPiece {
     pub cuts: Vec<Cut>,
     /// The cuts free every part (always, for the guillotine algorithm and boards).
     pub guillotine: bool,
+    /// Cut on the saw, not the CNC ([`NestSettings::overflow`]): a sheet of the saw's
+    /// footprint, laid out in straight cuts with its kerf and trim. Absent when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub saw: bool,
     /// Parts, stock and waste, m² (exact sizes); efficiency = parts / stock.
     pub parts_area: f64,
     pub stock_area: f64,
@@ -526,7 +530,8 @@ fn choose_stock(
     trim: f64,
     joint: f64,
     kerf: f64,
-    footprint: Option<crate::stock::SheetSize>,
+    footprint: Option<SheetSize>,
+    overflow: Option<SawOverflow>,
 ) -> Vec<Choice> {
     let n = list.rows.len();
     let mut out: Vec<Option<Choice>> = vec![None; n];
@@ -564,7 +569,7 @@ fn choose_stock(
         }
     }
     // How well a part sits on a stock: fits, fits only across its grain, does not fit.
-    let rank = |row: &CutRow, s: &StockDef| match fit(row, s, trim) {
+    let rank = |row: &CutRow, s: &StockDef, trim: f64| match fit(row, s, trim) {
         Ok(_) => 0,
         Err(UnplacedReason::Grain) => 1,
         Err(_) => 2,
@@ -598,24 +603,40 @@ fn choose_stock(
         let affinity = |s: &StockDef| u8::from(!words(&s.name).iter().any(|w| mine.contains(w)));
         // A chosen footprint replaces the automatic sheet, and only that. A part that names
         // its own stock, or whose material has a default, already decided above. There is
-        // no fall-back to a larger sheet: a 4 × 4 shop does not silently cut from a 4 × 8.
-        let best = lib
-            .stocks
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| {
-                s.kind == StockKind::Sheet
-                    && thickness_fits(s, t)
-                    && footprint.is_none_or(|fp| fp.matches(s))
-            })
-            .min_by(|(a, sa), (b, sb)| {
-                rank(row, sa)
-                    .cmp(&rank(row, sb))
-                    .then(affinity(sa).cmp(&affinity(sb)))
-                    .then(near(sa, t).total_cmp(&near(sb, t)))
-                    .then(a.cmp(b))
-            })
-            .map(|(k, _)| k);
+        // no silent fall-back to a larger sheet: a 4 × 4 shop does not cut from a 4 × 8
+        // unless it said what does not fit goes to the saw (`overflow`).
+        let pick = |fp: Option<SheetSize>, trim: f64| {
+            lib.stocks
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| {
+                    s.kind == StockKind::Sheet
+                        && thickness_fits(s, t)
+                        && fp.is_none_or(|fp| fp.matches(s))
+                })
+                .min_by(|(a, sa), (b, sb)| {
+                    rank(row, sa, trim)
+                        .cmp(&rank(row, sb, trim))
+                        .then(affinity(sa).cmp(&affinity(sb)))
+                        .then(near(sa, t).total_cmp(&near(sb, t)))
+                        .then(a.cmp(b))
+                })
+                .map(|(k, _)| k)
+        };
+        let mut best = pick(footprint, trim);
+        if footprint.is_some()
+            && let Some(o) = overflow
+            && best.is_none_or(|k| rank(row, &lib.stocks[k], trim) != 0)
+        {
+            // Too large (or the wrong way round) for the router's sheet, or no sheet of its
+            // thickness that size: the saw's sheet, when the part fits it.
+            let saw_trim = effective_trim(o.trim, o.kerf);
+            if let Some(k) = pick(Some(o.sheet_size), saw_trim)
+                && rank(row, &lib.stocks[k], saw_trim) == 0
+            {
+                best = Some(k);
+            }
+        }
         out[i] = Some(best.ok_or((UnplacedReason::NoStock, None)));
     }
     // Lumber, automatically: grouped by material and thickness class.
@@ -705,8 +726,8 @@ fn choose_stock(
                     .iter()
                     .filter(|(_, s)| thickness_fits(s, t))
                     .min_by(|(a, sa), (b, sb)| {
-                        rank(row, sa)
-                            .cmp(&rank(row, sb))
+                        rank(row, sa, trim)
+                            .cmp(&rank(row, sb, trim))
                             .then(sa.thickness.total_cmp(&sb.thickness))
                             .then(sb.width.total_cmp(&sa.width))
                             .then(sb.length.total_cmp(&sa.length))
@@ -1344,7 +1365,23 @@ fn trim_cuts(s: &StockDef, trim: f64, kerf: f64) -> Vec<Cut> {
 pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> Nesting {
     let kerf = settings.kerf;
     let trim = effective_trim(settings.trim, kerf);
-    let choice = choose_stock(list, lib, trim, settings.joint_loss, kerf, settings.sheet_size);
+    let choice = choose_stock(
+        list,
+        lib,
+        trim,
+        settings.joint_loss,
+        kerf,
+        settings.sheet_size,
+        settings.overflow,
+    );
+    // The saw's settings for a stock it cuts: a sheet of the saw's footprint that is not the
+    // router's (a 4 × 8 when the router takes 4 × 4).
+    let saw_of = |s: &StockDef| -> Option<SawOverflow> {
+        let fp = settings.sheet_size?;
+        let o = settings.overflow?;
+        (s.kind == StockKind::Sheet && o.sheet_size.matches(s) && !fp.matches(s)).then_some(o)
+    };
+    let trim_of = |s: &StockDef| saw_of(s).map_or(trim, |o| effective_trim(o.trim, o.kerf));
     let mut glue_ups: Vec<GlueUp> = Vec::new();
     let mut needs: Vec<Need> = Vec::new();
     let mut unplaced: Vec<Unplaced> = Vec::new();
@@ -1363,12 +1400,21 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
             .collect();
         let many = counted.len() > 1;
         // Whole, with its orientations; or (#49) glued up from strips of these widths.
-        let stocked = choice[ri].and_then(|k| match fit(row, &lib.stocks[k], trim) {
-            Ok(o) => Ok((k, o, None)),
-            Err(r) => glue_widths(row, &lib.stocks[k], trim, settings.joint_loss, kerf)
-                .map(|v| (k, Vec::new(), Some(v)))
-                .ok_or((r, Some(k))),
-        });
+        let stocked =
+            choice[ri].and_then(
+                |k| match fit(row, &lib.stocks[k], trim_of(&lib.stocks[k])) {
+                    Ok(o) => Ok((k, o, None)),
+                    Err(r) => glue_widths(
+                        row,
+                        &lib.stocks[k],
+                        trim_of(&lib.stocks[k]),
+                        settings.joint_loss,
+                        kerf,
+                    )
+                    .map(|v| (k, Vec::new(), Some(v)))
+                    .ok_or((r, Some(k))),
+                },
+            );
         for (ci, o) in counted.iter().enumerate() {
             let copy = ci + 1;
             let tag = if many {
@@ -1449,9 +1495,24 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
     for (gi, key) in group_order.iter().enumerate() {
         let s = &lib.stocks[key.0];
         let items = &group_items[key];
+        // The saw's sheets: straight cuts, its kerf and trim; everything else as set.
+        let saw = saw_of(s);
+        let (kerf, trim, layout_settings) = match saw {
+            Some(o) => (
+                o.kerf,
+                effective_trim(o.trim, o.kerf),
+                NestSettings {
+                    algorithm: NestAlgorithm::Guillotine,
+                    kerf: o.kerf,
+                    trim: o.trim,
+                    ..settings
+                },
+            ),
+            None => (kerf, trim, settings),
+        };
         let u = usable(s, trim);
         let layout = match s.kind {
-            StockKind::Sheet => sheet_layout(items, u, &settings),
+            StockKind::Sheet => sheet_layout(items, u, &layout_settings),
             StockKind::Board => board_layout(items, u, kerf),
         };
         let count = layout.len();
@@ -1541,6 +1602,7 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                 placements,
                 cuts: all,
                 guillotine,
+                saw: saw.is_some(),
                 parts_area,
                 stock_area,
                 waste_area: stock_area - parts_area,
@@ -1636,6 +1698,10 @@ impl Nesting {
             h.tag(&p.stock);
             h.tag(p.material.as_deref().unwrap_or(""));
             h.u64(u64::from(p.guillotine));
+            // Only on the saw's sheets, so every nesting without one hashes as before.
+            if p.saw {
+                h.tag("saw");
+            }
             h.usize(p.placements.len());
             for q in &p.placements {
                 h.usize(q.row);

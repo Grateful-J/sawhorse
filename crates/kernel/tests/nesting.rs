@@ -16,7 +16,8 @@ use sawhorse_kernel::model::{DrawTarget, Op, OpOutcome};
 use sawhorse_kernel::nesting::{CutDir, NestOptions, Nesting, UnplacedReason, nest_list};
 use sawhorse_kernel::nodes::Item;
 use sawhorse_kernel::stock::{
-    NestAlgorithm, NestSettings, SheetSize, StockDef, StockGrain, StockKind, StockLibrary,
+    NestAlgorithm, NestSettings, SawOverflow, SheetSize, StockDef, StockGrain, StockKind,
+    StockLibrary,
 };
 use sawhorse_kernel::testing::{check_nesting, check_nesting_of};
 use sawhorse_kernel::transform::Xform;
@@ -854,6 +855,7 @@ fn settings() -> impl Strategy<Value = NestSettings> {
         algorithm,
         joint_loss,
         sheet_size: None,
+        overflow: None,
     })
 }
 
@@ -898,6 +900,7 @@ fn oak(parts: &[(f64, f64, f64, usize)], joint_loss: f64) -> Nesting {
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint_loss * IN,
         sheet_size: None,
+        overflow: None,
     };
     let n = nest_list(&list, &lib, st);
     check_nesting_of(&list, &n).unwrap();
@@ -1131,6 +1134,7 @@ fn on_six_inch_boards(size: [f64; 3], joint: f64, kerf: f64) -> (CutList, Nestin
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint,
         sheet_size: None,
+        overflow: None,
     };
     let n = nest_list(&list, &lib, st);
     (list, n)
@@ -1313,7 +1317,10 @@ fn the_joint_loss_is_saved_and_hashed_only_when_set() {
 /// Nothing falls back onto the 4 × 8 that is still in the library.
 #[test]
 fn a_sheet_footprint_is_the_sheet_you_asked_for() {
-    let four = SheetSize { width: 48.0 * IN, length: 48.0 * IN };
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
     let (mut d, _) = bookshelf();
     let before = nest(&d);
     assert!(before.settings.sheet_size.is_none());
@@ -1363,7 +1370,10 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     ok(
         &mut d,
         Op::SetNestSettings {
-            settings: NestSettings { sheet_size: Some(four), ..NestSettings::default() },
+            settings: NestSettings {
+                sheet_size: Some(four),
+                ..NestSettings::default()
+            },
         },
     );
     // The bookshelf's oak is lumber. Mark the carcass as sheet goods the way the plywood
@@ -1406,12 +1416,21 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     for name in ["Side", "Back panel"] {
         let u = n.unplaced.iter().find(|u| u.name == name).unwrap();
         assert_eq!(u.reason, UnplacedReason::TooLarge, "{name}");
-        assert!(u.stock.as_deref().unwrap().starts_with("4 x 4"), "{name} {:?}", u.stock);
+        assert!(
+            u.stock.as_deref().unwrap().starts_with("4 x 4"),
+            "{name} {:?}",
+            u.stock
+        );
     }
     assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
 
     // Drop the 1/4 sheet. The back is not moved onto the 4 × 8.
-    ok(&mut d, Op::DeleteStock { name: "4 x 4 sheet, 1/4".into() });
+    ok(
+        &mut d,
+        Op::DeleteStock {
+            name: "4 x 4 sheet, 1/4".into(),
+        },
+    );
     let n = nest(&d);
     let back = n.unplaced.iter().find(|u| u.name == "Back panel").unwrap();
     assert_eq!(back.reason, UnplacedReason::NoStock);
@@ -1419,6 +1438,143 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     let asked = back.asked.unwrap();
     assert!((asked[0] - 48.0 * IN).abs() < 1e-9 && (asked[1] - 48.0 * IN).abs() < 1e-9);
     assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
+}
+
+/// A 4 × 4 router and a track saw. With `overflow` set, what does not fit the router's
+/// sheet (the 71 1/4 in sides; the back, with no 4 × 4 of its thickness) comes from the
+/// saw's 4 × 8, laid out in straight cuts with the saw's kerf and trim; everything that fits
+/// stays on the 4 × 4 with the router's spacing. Unset, the file and the hash are as before.
+#[test]
+fn what_does_not_fit_the_router_goes_to_the_saw() {
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
+    let eight = SheetSize {
+        width: 48.0 * IN,
+        length: 96.0 * IN,
+    };
+    let (mut d, _) = bookshelf();
+    ok(
+        &mut d,
+        Op::DefineStock {
+            stock: StockDef {
+                name: "4 x 4 sheet, 3/4".into(),
+                kind: StockKind::Sheet,
+                length: 48.0 * IN,
+                width: 48.0 * IN,
+                thickness: 23.0 / 32.0 * IN,
+                nominal: Some("3/4".into()),
+                grain: StockGrain::Length,
+            },
+            replace: None,
+        },
+    );
+    let s = bookshelf_defs(&d);
+    for (def, stock) in [
+        (s.side, "3/4 birch ply"),
+        (s.shelf, "3/4 birch ply"),
+        (s.top, "3/4 birch ply"),
+        (s.toe, "3/4 birch ply"),
+        (s.back, "1/4 birch ply"),
+    ] {
+        ok(
+            &mut d,
+            Op::SetStock {
+                part: PartRef::Definition(def),
+                stock: Some(stock.into()),
+                sheet: None,
+            },
+        );
+    }
+    let router = NestSettings {
+        kerf: 0.375 * IN,
+        trim: 0.5 * IN,
+        algorithm: NestAlgorithm::Maxrects,
+        sheet_size: Some(four),
+        ..NestSettings::default()
+    };
+    ok(&mut d, Op::SetNestSettings { settings: router });
+    let json = serde_json::to_value(router).unwrap();
+    assert!(json.get("overflow").is_none(), "{json}");
+    let before = d.hash();
+    let n0 = nest(&d);
+    for name in ["Side", "Back panel"] {
+        assert!(n0.unplaced.iter().any(|u| u.name == name), "{name}");
+    }
+    assert!(n0.pieces.iter().all(|p| !p.saw));
+
+    let saw = SawOverflow {
+        sheet_size: eight,
+        kerf: IN / 8.0,
+        trim: 0.25 * IN,
+    };
+    let mixed = NestSettings {
+        overflow: Some(saw),
+        ..router
+    };
+    ok(&mut d, Op::SetNestSettings { settings: mixed });
+    assert_ne!(d.hash(), before);
+    let json = serde_json::to_value(mixed).unwrap();
+    assert!(
+        json["overflow"]["sheetSize"]["length"].as_f64().is_some(),
+        "{json}"
+    );
+    let n = nest(&d);
+    assert!(n.unplaced.is_empty(), "{:#?}", n.unplaced);
+    let on = |name: &str| -> Vec<bool> {
+        n.pieces
+            .iter()
+            .filter(|p| p.placements.iter().any(|q| q.name == name))
+            .map(|p| p.saw)
+            .collect()
+    };
+    for name in ["Side", "Back panel"] {
+        assert!(
+            !on(name).is_empty() && on(name).iter().all(|s| *s),
+            "{name}: {:?}",
+            on(name)
+        );
+    }
+    for name in ["Shelf", "Top", "Toe kick"] {
+        assert!(
+            !on(name).is_empty() && on(name).iter().all(|s| !*s),
+            "{name}: {:?}",
+            on(name)
+        );
+    }
+    for p in &n.pieces {
+        if p.saw {
+            assert!(p.stock.starts_with("4 x 8"), "{}", p.stock);
+            assert_eq!(p.kerf, IN / 8.0);
+            assert_eq!(p.trim, 0.25 * IN);
+            assert!(p.guillotine);
+        } else {
+            assert_eq!(p.stock, "4 x 4 sheet, 3/4");
+            assert_eq!(p.kerf, 0.375 * IN);
+            assert_eq!(p.trim, 0.5 * IN);
+        }
+    }
+    // Saved and read back, the setting is the same.
+    let back: NestSettings = serde_json::from_value(serde_json::to_value(mixed).unwrap()).unwrap();
+    assert_eq!(back, mixed);
+    // Without a router's sheet size, the overflow means nothing: every sheet as before.
+    ok(
+        &mut d,
+        Op::SetNestSettings {
+            settings: NestSettings {
+                sheet_size: None,
+                ..mixed
+            },
+        },
+    );
+    assert!(nest(&d).pieces.iter().all(|p| !p.saw));
+    // A bad saw is refused.
+    let bad = NestSettings {
+        overflow: Some(SawOverflow { kerf: IN, ..saw }),
+        ..router
+    };
+    assert!(bad.check().is_err());
 }
 
 /// The bookshelf's part definitions, found by name after `bookshelf` built them.

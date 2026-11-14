@@ -592,9 +592,36 @@ pub fn check_nesting_of(
         if p.index != pi + 1 || p.placements.is_empty() {
             return bad("numbered wrong or empty".into());
         }
-        if !(p.kerf == kerf && p.trim == effective_trim(n.settings.trim, kerf)) {
-            return bad("kerf or trim is not the settings'".into());
-        }
+        // The saw's sheets (`overflow`) have its kerf and trim, and always come apart in
+        // straight cuts; a sheet the saw does not cut has the settings'.
+        let kerf = if p.saw {
+            let (Some(fp), Some(o)) = (n.settings.sheet_size, n.settings.overflow) else {
+                return bad("on the saw with no overflow set".into());
+            };
+            let size = |a: f64, b: f64| {
+                ((a - p.width).abs() <= STOCK_EPSILON && (b - p.length).abs() <= STOCK_EPSILON)
+                    || ((a - p.length).abs() <= STOCK_EPSILON
+                        && (b - p.width).abs() <= STOCK_EPSILON)
+            };
+            if p.kind != StockKind::Sheet
+                || !size(o.sheet_size.width, o.sheet_size.length)
+                || size(fp.width, fp.length)
+            {
+                return bad("on the saw but not one of the saw's sheets".into());
+            }
+            if !(p.kerf == o.kerf && p.trim == effective_trim(o.trim, o.kerf)) {
+                return bad("kerf or trim is not the saw's".into());
+            }
+            if !p.guillotine {
+                return bad("a saw's sheet does not come apart in straight cuts".into());
+            }
+            o.kerf
+        } else {
+            if !(p.kerf == kerf && p.trim == effective_trim(n.settings.trim, kerf)) {
+                return bad("kerf or trim is not the settings'".into());
+            }
+            kerf
+        };
         let [x0, y0, x1, y1] = p.usable;
         for (k, q) in p.placements.iter().enumerate() {
             let row = list

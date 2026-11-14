@@ -138,6 +138,23 @@ impl SheetSize {
     }
 }
 
+/// A shop that cuts on a CNC router of one sheet size, and on a saw (a track saw, a panel saw)
+/// what does not fit it: sheet goods too large for [`NestSettings::sheet_size`] come from
+/// library sheets of this footprint instead, laid out in straight cuts from edge to edge
+/// (guillotine), with the saw's own kerf and trim. Each such sheet is marked
+/// [`crate::nesting::StockPiece::saw`].
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SawOverflow {
+    #[serde(rename = "sheetSize")]
+    pub sheet_size: SheetSize,
+    /// The saw blade's kerf, metres.
+    pub kerf: f64,
+    /// Taken off each edge of the saw's sheets first, metres.
+    #[serde(default)]
+    pub trim: f64,
+}
+
 /// The saw and the layout.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -166,6 +183,10 @@ pub struct NestSettings {
     /// the file and the hash until it is set, so older documents keep both.
     #[serde(default, rename = "sheetSize", skip_serializing_if = "Option::is_none")]
     pub sheet_size: Option<SheetSize>,
+    /// With a sheet size: what does not fit it is cut on a saw from these sheets. Absent
+    /// from the file and the hash until it is set, so older documents keep both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow: Option<SawOverflow>,
 }
 
 fn default_kerf() -> f64 {
@@ -188,6 +209,7 @@ impl Default for NestSettings {
             algorithm: NestAlgorithm::Guillotine,
             joint_loss: DEFAULT_JOINT_LOSS,
             sheet_size: None,
+            overflow: None,
         }
     }
 }
@@ -215,6 +237,24 @@ impl NestSettings {
                 ));
             }
         }
+        if let Some(o) = self.overflow {
+            let ok = |x: f64| x.is_finite() && (MIN_STOCK..=MAX_STOCK).contains(&x);
+            if !ok(o.sheet_size.width) || !ok(o.sheet_size.length) {
+                return Err(StockError::BadSettings(
+                    "the saw's sheet size must be 1 mm to 10 m on each side",
+                ));
+            }
+            if !(o.kerf.is_finite() && (0.0..=MAX_KERF).contains(&o.kerf)) {
+                return Err(StockError::BadSettings(
+                    "the saw's kerf must be 0 to 1/2 in",
+                ));
+            }
+            if !(o.trim.is_finite() && (0.0..=MAX_TRIM).contains(&o.trim)) {
+                return Err(StockError::BadSettings(
+                    "the saw's trim must be 0 to 4 in per edge",
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -235,6 +275,13 @@ impl NestSettings {
             h.tag("sheetSize");
             h.len(fp.width);
             h.len(fp.length);
+        }
+        if let Some(o) = self.overflow {
+            h.tag("overflow");
+            h.len(o.sheet_size.width);
+            h.len(o.sheet_size.length);
+            h.len(o.kerf);
+            h.len(o.trim);
         }
     }
 }
