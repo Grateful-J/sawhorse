@@ -406,6 +406,12 @@ test("cabinet generator: a wider cabinet moves its row along; Line up butts cabi
   await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Editing Cabinet 1");
   await field(page, panel, "width", "30");
   await expect.poll(async () => (await extent())[0]).toBe(48);
+  // Made shallower, it keeps its back on the wall: still in the row with Cabinet 2.
+  await field(page, panel, "depth", "12");
+  await expect(page.locator(`[data-panel="${CABINET}/rows"] [data-note="row"]`)).toContainText("Row of 2: Cabinet 1, Cabinet 2");
+  expect((await extent())[1]).toBe(23.25);
+  await field(page, panel, "depth", "23 1/4");
+  await expect(page.locator(`[data-panel="${CABINET}/rows"] [data-note="row"]`)).toContainText("23 1/4 deep");
   // One apart, 2 in off the end; then lined up against the row.
   await empty();
   await choose(page, panel, "place", "apart");

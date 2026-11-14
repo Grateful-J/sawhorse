@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { apply, baseDefaults, boxesOf, cncLength, compose, cutRows, edgesOf, IDENTITY, invert, ladderPicture, lineUp, normalizeBase, placeNext, planBase, rightOf, rowOf, sawStripDefaults, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
+import { apply, BASE_LUMBER, baseDefaults, boxesOf, cncLength, compose, cutRows, edgesOf, IDENTITY, invert, ladderPicture, lineUp, normalizeBase, placeNext, planBase, rightOf, rowOf, sawStripDefaults, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
 
 const IN = 0.0254;
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -218,6 +218,30 @@ describe("base frame", () => {
     ]);
     expect(rails.every((r) => r.material === "Cabinet plywood")).toBe(true);
     expect(p.notes.some((n) => n[1].startsWith("Sleepers butt"))).toBe(true);
+  });
+
+  it("metric: a 100 mm plinth, 75 mm toe space, 18 mm strips, ladders up to 1190 mm", () => {
+    const m = baseDefaults(true);
+    expect([m.height, m.setback, m.thickness, m.dadoDepth, m.spacing, m.maxLength].map((v) => Math.round(v * 1e4) / 10)).toEqual([100, 75, 18, 6, 400, 1190]);
+    const mm = (w: number): Cab => ({ id: 0, name: "", width: w / 1000, depth: 0.56, height: 0.72, world: IDENTITY });
+    const r: Cab[] = [];
+    for (const w of [600, 600, 900]) r.push({ ...mm(w), id: r.length + 1, world: r.length ? placeNext(r[r.length - 1], { width: w / 1000, depth: 0.56 }, "right") : IDENTITY });
+    const p = planBase(r, normalizeBase(m, true));
+    expect(p.error).toBeNull();
+    // 2100 mm: broken at the joints into 1200 (two cabinets) would be over 1190: 600, 600, 900.
+    expect(p.layout.ladders.map((l) => Math.round((l.x1 - l.x0) * 1000))).toEqual([600, 600, 900]);
+    expect(Math.max(...cutRows(p.parts).map((x) => x.length))).toBeLessThanOrEqual(1.19);
+  });
+
+  it("lumber: its own material (counted in board feet), sleepers butted", () => {
+    const p = planBase(row(24, 18), b({ stock: "lumber", thickness: 1.5 * IN, joints: "butt", maxLength: 96 * IN }));
+    expect(p.error).toBeNull();
+    expect(p.parts.every((x) => x.material === BASE_LUMBER.name)).toBe(true);
+    expect(BASE_LUMBER.name.toLowerCase()).not.toMatch(/ply|mdf|osb/);
+    const sleeper = p.parts.find((x) => x.name === "Base sleeper")!;
+    // Butted: rail face to rail face, no tongues.
+    expect(inches(sleeper.blank[1])).toBe(inches(23.25 * IN - 3 * IN - 2 * 1.5 * IN));
+    expect(p.ladders).toBe(1);
   });
 });
 

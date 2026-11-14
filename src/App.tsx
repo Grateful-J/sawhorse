@@ -14,7 +14,7 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
-import { cncFileName, cncNotes, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, sawShare, spacingProblem, thicknessMismatches, type HandWork } from "./nesting/cnc";
+import { cncFileName, cncNotes, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, safeName, sawShare, spacingProblem, thicknessMismatches, type HandWork } from "./nesting/cnc";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
 import { overflowOps, sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
@@ -2460,7 +2460,7 @@ export function App() {
         const saw = sawShare(all);
         const items = handWork(saw, (await measureNesting(saw))?.features, nestUnits);
         if (items.length) {
-          const res = await saveFile(`${cutTitle} track saw hand work.txt`, new TextEncoder().encode(handWorkText(cutTitle, items, nestUnits)), HAND_WORK_TYPE);
+          const res = await saveFile(safeName(`${cutTitle} track saw hand work`) + ".txt", new TextEncoder().encode(handWorkText(cutTitle, items, nestUnits)), HAND_WORK_TYPE);
           if (res) work = items.length;
         }
       }

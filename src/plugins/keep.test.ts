@@ -29,7 +29,7 @@ describe("kept cabinets", () => {
 
   it("reads a cabinet kept whole by an older version, and nothing from junk", () => {
     const s = applyPreset(defaults(false), "sink", false);
-    expect(unpack({ sizes: s, frame }, false)).toEqual(normalize(s, false));
+    expect(unpack({ sizes: s, frame }, false)).toEqual(normalize({ ...s }, false));
     for (const junk of [null, undefined, 3, "x", {}, { d: [1, 2] }, { d: null }]) expect(unpack(junk as never, false)).toBeNull();
     // Junk values inside are normalized away, never trusted.
     const odd = unpack({ d: { width: "wide", layout: "rocket", shelves: -4e9 } }, false)!;
