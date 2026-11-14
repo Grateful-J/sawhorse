@@ -27,6 +27,8 @@ export interface NestingSectionProps {
   /** Save SVG drawings (one piece, or every piece); without it there are no file buttons. */
   onSvg?: (piece: StockPiece | null) => void;
   onDxf?: (flavour: "lwpolyline" | "r12") => void;
+  /** One DXF per sheet for a CNC router: the sheet's corner at the origin, a layer per cut. */
+  onCnc?: () => void;
   onPdf?: () => void;
   /** The tag of the part lit up from the model side (its rectangle shows it). */
   lit?: string | null;
@@ -95,6 +97,13 @@ function LengthField({ label, value, units, rounding, max, onCommit }: { label: 
 const KERF_MAX = 0.5 * 0.0254;
 const TRIM_MAX = 4 * 0.0254;
 const JOINT_LOSS_MAX = 0.5 * 0.0254;
+
+/** A CNC router with a 1/4 in (6 mm) bit: the tightest layout, parts 3/8 in (10 mm) apart so
+ * one part's cut never reaches the next, and a 1/2 in (12 mm) margin at every sheet edge for
+ * the hold-downs and a sheet that is not quite square or full size. */
+export function cncSettings(metric: boolean): Pick<NestSettings, "algorithm" | "kerf" | "trim"> {
+  return metric ? { algorithm: "maxrects", kerf: 0.01, trim: 0.012 } : { algorithm: "maxrects", kerf: 0.375 * 0.0254, trim: 0.5 * 0.0254 };
+}
 
 function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: StockPiece; rounding: Units; lit?: string | null; onHover: (p: Placement | null) => void; onSelect: (p: Placement) => void }) {
   const d = useMemo(() => diagram(piece), [piece]);
@@ -177,6 +186,14 @@ export function NestingSection(p: NestingSectionProps) {
           <LengthField label="Kerf" value={settings.kerf} units={p.units} rounding={r} max={KERF_MAX} onCommit={(kerf) => set({ kerf })} />
           <LengthField label="Trim" value={settings.trim} units={p.units} rounding={r} max={TRIM_MAX} onCommit={(trim) => set({ trim })} />
           <LengthField label="Joint loss" value={settings.jointLoss ?? JOINT_LOSS_DEFAULT} units={p.units} rounding={r} max={JOINT_LOSS_MAX} onCommit={(jointLoss) => set({ jointLoss })} />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => set(cncSettings(p.units === "mm" || p.units === "cm" || p.units === "m"))}
+            title="For a CNC router with a 1/4 in (6 mm) bit: the tightest layout, parts 3/8 in (10 mm) apart (Kerf), and a 1/2 in (12 mm) margin at every sheet edge (Trim). A wider bit needs more: Kerf must be more than the bit."
+          >
+            CNC router
+          </button>
         </div>
       ) : null}
       {p.problem ? <p className="note err">{p.problem}</p> : null}
@@ -285,6 +302,17 @@ export function NestingSection(p: NestingSectionProps) {
           <button type="button" className="btn" disabled={!n || !n.pieces.length} onClick={() => p.onDxf?.("r12")} title="The same DXF in strict R12 form (POLYLINE) for older CAM programs">
             DXF R12
           </button>
+          {p.onCnc ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={!n || !n.pieces.length}
+              onClick={() => p.onCnc?.()}
+              title="One DXF per sheet for a CNC router: the sheet's lower-left corner at 0,0, part outlines on PROFILE_THRU, and each pocket depth and hole size on its own layer (POCKET_6.35MM, DRILL_D35MM_13MM, DRILL_D5MM_THRU), measured from the parts"
+            >
+              CNC DXF
+            </button>
+          ) : null}
           <button type="button" className="btn" disabled={!n} onClick={() => p.onPdf?.()} title="Save a PDF booklet: what to buy, then a page per sheet or board with its diagram and cut sequence">
             PDF
           </button>

@@ -14,6 +14,7 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
+import { cncFileName, cncNotes, thicknessMismatches } from "./nesting/cnc";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
@@ -2299,35 +2300,68 @@ export function App() {
     },
     [nesting, cutTitle, nestUnits],
   );
+  /** The cuts inside each nested part, measured from the model (null when they cannot be). */
+  const measureNesting = useCallback(async (n: Nesting) => {
+    const k = kernelRef.current;
+    if (!k) return null;
+    try {
+      return await measureNest(k, graphOf(live.current.scene?.state).objects, n);
+    } catch {
+      return null;
+    }
+  }, []);
   const saveNestDxf = useCallback(
     async (flavour: DxfFlavour) => {
       const n = nesting;
       if (!n) return;
       try {
-        let features: Awaited<ReturnType<typeof measureNest>> | null = null;
-        const k = kernelRef.current;
-        if (k) {
-          try {
-            features = await measureNest(k, graphOf(live.current.scene?.state).objects, n);
-          } catch {
-            features = null;
-          }
-        }
+        const features = await measureNesting(n);
         const text = nestingDxf(n, flavour, features?.features);
         const res = await saveFile(`${cutTitle} nesting${flavour === "r12" ? " R12" : ""}.dxf`, new TextEncoder().encode(text), DXF_TYPE);
         if (res) {
-          const pockets = features ? [...features.features.values()].reduce((s, f) => s + f.pockets.length, 0) : 0;
-          const drills = features ? [...features.features.values()].reduce((s, f) => s + f.drills.length, 0) : 0;
-          const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"} on their own layers, measured from the parts.` : "";
-          const missed = features?.skipped.length ? ` Skipped measured cuts on ${features.skipped.join(", ")}: a loop fell outside the blank, so only its rectangle was written.` : "";
+          const all = features ? [...features.features.values()] : [];
+          const pockets = all.reduce((s, f) => s + f.pockets.length + f.flip.pockets.length, 0);
+          const drills = all.reduce((s, f) => s + f.drills.length + f.flip.drills.length, 0);
+          const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"}, measured from the parts, on a layer per depth and size.` : "";
+          const missed = features?.skipped.length ? ` Left out cuts on ${features.skipped.join(", ")}: a loop fell outside the blank, so only its outline was written.` : "";
           setMessage({ text: `Saved ${res.name}: ${n.pieces.length} ${n.pieces.length === 1 ? "sheet or board" : "sheets and boards"}, a layer each, a polyline per part, in millimetres.${measured}${missed}`, error: false });
         }
       } catch (e) {
         setMessage({ text: `Could not save the DXF: ${e instanceof Error ? e.message : String(e)}`, error: true });
       }
     },
-    [nesting, cutTitle],
+    [nesting, cutTitle, measureNesting],
   );
+  const saveNestCnc = useCallback(async () => {
+    const n = nesting;
+    if (!n) return;
+    try {
+      const features = await measureNesting(n);
+      // The cabinet (the outermost named instance) each part is in, for the file names.
+      const graph = graphOf(live.current.scene?.state);
+      const nodes = new Map(graph.nodes.map((g) => [g.id, g]));
+      const ownerOf = (q: Placement): string | null => {
+        const start = "node" in q.item ? q.item.node : (graph.objects.find((o) => "object" in q.item && o.id === q.item.object)?.parent ?? null);
+        if (start === null) return null;
+        let top = nodes.get(start);
+        while (top && top.parent !== null && nodes.has(top.parent)) top = nodes.get(top.parent);
+        return top && top.id !== start ? (top.name ?? top.label) : null;
+      };
+      let saved = 0;
+      for (let i = 0; i < n.pieces.length; i++) {
+        const text = nestingDxf(n, "lwpolyline", features?.features, { piece: i });
+        const res = await saveFile(cncFileName(cutTitle, n, i, features?.features, ownerOf), new TextEncoder().encode(text), DXF_TYPE);
+        if (!res) break;
+        saved += 1;
+      }
+      if (saved) {
+        const notes = cncNotes(n, features, nestUnits);
+        setMessage({ text: `Saved ${saved} CNC ${saved === 1 ? "file" : "files"}, one per sheet or board, the corner at 0,0, in millimetres: outlines on PROFILE_THRU, each pocket depth and hole size on its own layer. ${notes.join(" ")}`, error: thicknessMismatches(n).length > 0 });
+      }
+    } catch (e) {
+      setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
+    }
+  }, [nesting, cutTitle, nestUnits, measureNesting]);
   const saveNestPdf = useCallback(async () => {
     const n = nesting;
     if (!n) return;
@@ -3118,6 +3152,7 @@ export function App() {
               onSelect={selectPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
               onDxf={(f) => void saveNestDxf(f)}
+              onCnc={() => void saveNestCnc()}
               onPdf={() => void saveNestPdf()}
               lit={nestLit}
             />
