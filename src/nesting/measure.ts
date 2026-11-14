@@ -47,7 +47,8 @@ function ringArea(ring: V3[], n: V3): number {
 /**
  * Pockets, drills and notched outlines for a nesting, measured from the model.
  * A glue-up strip is left as its rectangle: the strip is not the whole part.
- * A part that cannot be read is named in `skipped` and keeps its rectangle.
+ * A part that cannot be read, or whose solids are not in the model, is named in `skipped` and
+ * keeps its rectangle.
  */
 export async function measureNest(kernel: Measurer, objects: { id: number; parent: number | null }[], nesting: Nesting): Promise<MeasuredNest> {
   const cache = new Map<number, FaceLoop[]>();
@@ -90,7 +91,12 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
         const ids = solidsOf(objects, q);
         const loops: FaceLoop[] = [];
         for (const id of ids) loops.push(...(await loopsOf(id)));
-        if (!loops.length) continue;
+        // A part with no solids to read is not in the model any more (the nesting is older than
+        // the model): named, never passed off as a plain rectangle.
+        if (!loops.length) {
+          note(skipped, q.name);
+          continue;
+        }
         const feat = machineBlank(q.size, loops, q.turned, frames.get(itemKey(q.item)));
         if (feat.skipped) note(skipped, q.name);
         if (feat.flip.pockets.length || feat.flip.drills.length) note(flipped, q.name);

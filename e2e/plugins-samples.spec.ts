@@ -314,12 +314,215 @@ test("mixed CNC and track saw: a pantry too tall for a 4 x 4 goes to the saw, th
   expect(dxfs.every((f) => !/Left side|Right side/.test(f.name))).toBe(true);
   const work = files.find((f) => f.name.endsWith("track saw hand work.txt"));
   expect(work?.text).toContain("hand work on the track saw's parts");
-  expect(work?.text).toMatch(/Left side \(Sheet \d of \d · 4 x 8 sheet, 3\/4\)/);
+  // The entry names its sheet as the Nesting section does, material and all.
+  expect(work?.text).toMatch(/Left side \(Sheet \d of \d · 4 x 8 sheet, 3\/4 · Cabinet plywood\)/);
+  expect(work?.text).toContain("How to read a position");
+  expect(work?.text).toContain("Lengths in inches, to the nearest 1/64 in; hole sizes in millimetres.");
   expect(work?.text).toMatch(/holes? 5 mm/);
   await expect(page.locator("#hint")).toContainText("Saved the hand work on");
   // One undo takes the saw back off.
   await page.keyboard.press("Control+z");
   await expect(page.getByTestId("nest-unplaced")).toContainText("Left side");
+});
+
+/** A cabinet from a starting point, then the Cut list's Nesting section on 4 x 4 plywood. */
+async function nestedOnFourByFour(page: Page, presets: string[], before?: (panel: string) => Promise<void>) {
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  if (before) await before(panel);
+  for (const preset of presets) {
+    await page.getByRole("tab", { name: "Plugins" }).click();
+    await page.locator(`[data-panel="${panel}"] [data-field="preset"]`).selectOption(preset);
+    await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+    await expect(page.locator("#hint")).toContainText("Made ");
+  }
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await page.getByRole("button", { name: "Nesting ›" }).click();
+  const section = page.getByTestId("nesting");
+  await section.getByRole("button", { name: "Stock…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Stock" });
+  await dlg.getByRole("button", { name: /Use 4 × 4 plywood/ }).click();
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await expect(section.locator('[data-field="overflow"]')).toBeVisible();
+  return section;
+}
+
+/** The nesting on screen is of the model as it is: the file buttons are on. */
+async function nestingSettled(page: Page) {
+  const row = page.locator('[data-testid="nesting"] > .btnrow');
+  await expect(row.getByRole("button", { name: "CNC files" })).toBeEnabled();
+  await expect(row).not.toHaveAttribute("data-blocked", "true");
+}
+
+type Settings = { kerf: number; trim: number; algorithm: string; overflow?: { kerf: number; trim: number } | null };
+const settingsNow = (page: Page) => page.evaluate(async () => ((await (window as unknown as { __sawhorse: { nest(): Promise<{ settings: unknown }> } }).__sawhorse.nest()).settings as never)) as Promise<Settings>;
+
+test("nesting settings changed one right after the other both land: CNC spacing then the track saw, Kerf then Trim, Saw kerf then Saw trim", async ({ page }) => {
+  test.setTimeout(120_000);
+  const IN = 0.0254;
+  const section = await nestedOnFourByFour(page, ["tall"]);
+  await nestingSettled(page);
+  // Both clicked in one task: neither has reached the kernel when the other is asked for.
+  await page.evaluate(() => {
+    const sec = document.querySelector('[data-testid="nesting"]')!;
+    (Array.from(sec.querySelectorAll("button")).find((b) => b.textContent?.trim() === "CNC spacing") as HTMLButtonElement).click();
+    (sec.querySelector('[data-field="overflow"]') as HTMLInputElement).click();
+  });
+  await expect(section.locator('[data-field="overflow"]')).toBeChecked();
+  await expect.poll(async () => (await settingsNow(page)).algorithm).toBe("maxrects");
+  let st = await settingsNow(page);
+  expect(st.kerf).toBeCloseTo(0.375 * IN, 9);
+  expect(st.trim).toBeCloseTo(0.5 * IN, 9);
+  expect(st.overflow?.kerf).toBeCloseTo(IN / 8, 9);
+  await nestingSettled(page);
+
+  // Two fields typed, then Enter on each in one task.
+  const typeBoth = (a: [string, string], b: [string, string]) =>
+    page.evaluate(
+      ([a, b]) => {
+        const sec = document.querySelector('[data-testid="nesting"]')!;
+        const type = ([label, v]: string[]) => {
+          const el = sec.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, v);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          return el;
+        };
+        const fields = [type(a), type(b)];
+        return new Promise<void>((done) =>
+          requestAnimationFrame(() => {
+            for (const el of fields) el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+            done();
+          }),
+        );
+      },
+      [a, b],
+    );
+  await typeBoth(["Kerf", "5/16"], ["Trim", "3/4"]);
+  await expect.poll(async () => (await settingsNow(page)).trim).toBeCloseTo(0.75 * IN, 9);
+  st = await settingsNow(page);
+  expect(st.kerf).toBeCloseTo((5 / 16) * IN, 9);
+  expect(st.algorithm).toBe("maxrects");
+  expect(st.overflow).toBeTruthy();
+  await nestingSettled(page);
+
+  await typeBoth(["Saw kerf", "3/32"], ["Saw trim", "1/2"]);
+  await expect.poll(async () => (await settingsNow(page)).overflow?.trim).toBeCloseTo(0.5 * IN, 9);
+  st = await settingsNow(page);
+  expect(st.overflow?.kerf).toBeCloseTo((3 / 32) * IN, 9);
+  // And the router's own are as they were.
+  expect(st.kerf).toBeCloseTo((5 / 16) * IN, 9);
+  expect(st.trim).toBeCloseTo(0.75 * IN, 9);
+
+  // The saw off and on again keeps the kerf and trim typed for it.
+  await nestingSettled(page);
+  await section.locator('[data-field="overflow"]').click();
+  await expect(section.locator('[data-field="overflow"]')).not.toBeChecked();
+  await expect.poll(async () => (await settingsNow(page)).overflow ?? null).toBeNull();
+  await section.locator('[data-field="overflow"]').click();
+  await expect(section.locator('[data-field="overflow"]')).toBeChecked();
+  await expect.poll(async () => (await settingsNow(page)).overflow?.kerf).toBeCloseTo((3 / 32) * IN, 9);
+  expect((await settingsNow(page)).overflow?.trim).toBeCloseTo(0.5 * IN, 9);
+});
+
+test("CNC files are not saved from a nesting the model has moved on from: an undo and the button at once saves nothing, then the new nesting saves its own files", async ({ page }) => {
+  test.setTimeout(120_000);
+  const section = await nestedOnFourByFour(page, ["base"]);
+  await section.getByRole("button", { name: "CNC spacing" }).click();
+  await nestingSettled(page);
+  // A second cabinet, made last, so one undo takes it (and nothing else) away again.
+  const panel = `${CABINET}/cabinet`;
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await page.keyboard.press("Escape");
+  await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds ");
+  await page.locator(`[data-panel="${panel}"] [data-field="preset"]`).selectOption("drawers");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Drawer base");
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await nestingSettled(page);
+  const before = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { placements: { name: string }[] }[] };
+  const drawerParts = (n: { pieces: { placements: { name: string }[] }[] }) => n.pieces.flatMap((p) => p.placements.map((q) => q.name)).filter((name) => /^Drawer/.test(name)).length;
+  expect(drawerParts(before)).toBeGreaterThan(5);
+  const got: Download[] = [];
+  page.on("download", (d) => got.push(d));
+  // Undo the drawer cabinet and click CNC files in the same task: the nesting on screen still
+  // has the drawer cabinet's parts, the model will not.
+  await page.evaluate(() => {
+    const w = window as unknown as { __hints: string[]; __offAtUndone?: boolean };
+    w.__hints = [];
+    const hint = document.querySelector("#hint")!;
+    const btn = Array.from(document.querySelectorAll('[data-testid="nesting"] > .btnrow button')).find((b) => b.textContent?.trim() === "CNC files") as HTMLButtonElement;
+    new MutationObserver(() => {
+      const text = hint.textContent ?? "";
+      w.__hints.push(text);
+      // The render that says Undone already has the button off.
+      if (/Undone/.test(text) && w.__offAtUndone === undefined) w.__offAtUndone = btn.disabled;
+    }).observe(hint, { childList: true, subtree: true, characterData: true });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }));
+    btn.click();
+  });
+  await expect(page.locator("#hint")).toContainText("Undone");
+  await nestingSettled(page);
+  const seen = await page.evaluate(() => ({ hints: (window as unknown as { __hints: string[] }).__hints, off: (window as unknown as { __offAtUndone?: boolean }).__offAtUndone }));
+  expect(seen.hints.some((h) => /Nothing was saved: the model changed and the nesting is being worked out again/.test(h))).toBe(true);
+  expect(seen.off).toBe(true);
+  expect(got).toHaveLength(0);
+  // The nesting of the model as it is now: one cabinet, and its files only.
+  const after = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { saw?: boolean; placements: { name: string }[] }[] };
+  expect(drawerParts(after)).toBe(0);
+  expect(after.pieces.length).toBeLessThan(before.pieces.length);
+  const files = await downloads(page, after.pieces.length, () => section.getByRole("button", { name: "CNC files" }).click());
+  expect(files).toHaveLength(after.pieces.length);
+  expect(files.every((f) => f.name.endsWith(".dxf") && !/Drawer base/.test(f.name))).toBe(true);
+  await expect(page.locator("#hint")).toContainText(`Saved ${after.pieces.length} CNC files`);
+  expect(got).toHaveLength(after.pieces.length);
+});
+
+test("a cabinet drawn at a thickness its sheets are not is asked about before any CNC file is written; saving anyway is not an error; a material keeps its own stock and the status says so", async ({ page }) => {
+  test.setTimeout(120_000);
+  // Drawn at 3/4 in: the 4 x 4 plywood the button adds is 23/32.
+  const section = await nestedOnFourByFour(page, ["base"], async (panel) => {
+    await openSection(page, panel, "secMaterials");
+    const input = page.locator(`[data-panel="${panel}"] [data-field="thickness"]`);
+    await input.fill("3/4");
+    await input.press("Enter");
+  });
+  // A material with a stock of its own, of another size, is not moved to the 4 x 4 by the
+  // button: the status names it.
+  await section.getByRole("button", { name: "Stock…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Stock" });
+  await dlg.getByLabel("Stock for Cabinet plywood").selectOption("4 x 8 sheet, 3/4");
+  await expect(page.locator("#hint")).toContainText("come from");
+  await dlg.getByRole("button", { name: /Use 4 × 4 plywood/ }).click();
+  await expect(page.locator("#hint")).toContainText("Cabinet plywood keeps its own stock, which is another size");
+  await dlg.getByLabel("Stock for Cabinet plywood").selectOption("");
+  await expect(page.locator("#hint")).toContainText("stock chosen automatically");
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await section.getByRole("button", { name: "CNC spacing" }).click();
+  await nestingSettled(page);
+  const got: Download[] = [];
+  page.on("download", (d) => got.push(d));
+  await section.getByRole("button", { name: "CNC files" }).click();
+  const ask = page.getByRole("dialog", { name: "The nesting has problems" });
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText("Some parts will not be cut as drawn");
+  await expect(ask).toContainText("drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4");
+  expect(got).toHaveLength(0);
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toHaveCount(0);
+  expect(got).toHaveLength(0);
+  // Saving anyway writes the files, and the status line does not call that a mistake.
+  const n = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: unknown[] };
+  const files = await downloads(page, n.pieces.length, async () => {
+    await section.getByRole("button", { name: "CNC files" }).click();
+    await ask.getByRole("button", { name: "Save the CNC files anyway" }).click();
+  });
+  expect(files).toHaveLength(n.pieces.length);
+  await expect(page.locator("#hint")).toContainText(`Saved ${n.pieces.length} CNC files`);
+  await expect(page.locator("#hint")).toContainText("3/4 in thick");
+  await expect(page.locator("#hint")).not.toContainText("Can't do that");
 });
 
 test("base frame: drawn dimensioned in the panel and in the model before it is made, a click makes it, the Cut list groups it, long rails on the track saw", async ({ page }) => {

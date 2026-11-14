@@ -1,7 +1,7 @@
 // Asked before a nesting is saved for cutting when it has gone wrong (parts on no stock,
-// glued up, off the sheet their material names, drawn at a thickness their sheet is not, or
-// with cuts that would be left out of the file): what, part by part, and whether to save
-// anyway. Esc is Cancel.
+// glued up, off the sheet their material names, drawn at a thickness their sheet is not, with
+// cuts that would be left out of the file, or on a sheet that is not the router's): what, part
+// by part, and whether to save anyway. Esc is Cancel.
 import type { NestProblem } from "../nesting/cnc";
 
 export interface NestProblemRequest {
@@ -14,8 +14,13 @@ export interface NestProblemRequest {
   fix?: { label: string; run: () => void };
 }
 
+/** Problems that are one part each: a heading can count them. The others (a thickness, cuts
+ * left out, a sheet of another size) each name several parts, or a sheet. */
+const PER_PART: NestProblem["kind"][] = ["unplaced", "glued", "material"];
+
 export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; onClose: () => void }) {
   const n = req.problems.length;
+  const countable = req.problems.every((p) => PER_PART.includes(p.kind));
   return (
     <section
       className="name-dialog nest-problem-dialog"
@@ -27,7 +32,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "thickness" || p.kind === "cuts") ? "Some parts will not be cut as drawn" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : countable ? `${n} part${n === 1 ? "" : "s"} will not be cut as drawn` : "Some parts will not be cut as drawn"}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (

@@ -8,7 +8,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
-import { nestProblems, type HandWork } from "../nesting/cnc";
+import { handWorkLegend, nestProblems, type HandWork } from "../nesting/cnc";
+import type { NestSettingsPatch } from "../nesting/settingsQueue";
 import { ALGORITHMS, cutText, dims, fineU, glueText, JOINT_LOSS_DEFAULT, type Units, nestNote, nestSummary, pieceNumber, pieceYield, placedSize, reasonText, stripText } from "../nesting/format";
 
 export interface NestingSectionProps {
@@ -21,8 +22,8 @@ export interface NestingSectionProps {
   /** How typed kerf and trim are read (a bare number is in these units). */
   units: UnitSystem;
   /** New settings; `patch` is what changed (the rest may be a moment old: apply the patch to the
-   * settings as they are now). */
-  onSettings: (s: NestSettings, patch?: Partial<NestSettings>) => void;
+   * settings as they are now). The saw's fields are patched one by one too: `{ overflow: { kerf } }`. */
+  onSettings: (s: NestSettings, patch?: NestSettingsPatch) => void;
   onStock: () => void;
   /** The pointer is over a part's rectangle (null: over none). */
   onHover: (p: Placement | null) => void;
@@ -41,6 +42,11 @@ export interface NestingSectionProps {
   onOverflow?: (on: boolean) => void;
   /** The track saw's parts with cuts a router would have made (measured), or null while unknown. */
   handWork?: HandWork[] | null;
+  /** Said with that list when the saw's parts, or some of them, could not be measured. */
+  handWorkNote?: string | null;
+  /** Why no file can be saved from this nesting now (it is not of the model as it is: a new one
+   * is being worked out, or could not be). The file buttons are off and say so. */
+  blocked?: string | null;
 }
 
 /** Kerf or trim typed in a field: committed on Enter, on leaving the field, or after a pause. */
@@ -187,8 +193,13 @@ export function NestingSection(p: NestingSectionProps) {
   const r = p.rounding;
   const s = n ? nestSummary(n, r) : null;
   const settings = n?.settings;
-  const set = (patch: Partial<NestSettings>) => settings && p.onSettings({ ...settings, ...patch }, patch);
+  const set = (patch: Partial<Omit<NestSettings, "overflow">>) => settings && p.onSettings({ ...settings, ...patch }, patch);
   const saw = settings?.overflow ?? null;
+  // One of the saw's fields: only that field is sent, so Saw kerf then Saw trim both land.
+  const setSaw = (patch: Partial<NonNullable<NestSettings["overflow"]>>) => settings && saw && p.onSettings({ ...settings, overflow: { ...saw, ...patch } }, { overflow: patch });
+  // No file is saved from a nesting that is not of the model as it is.
+  const off = !!p.blocked;
+  const why = (title: string) => (p.blocked ? p.blocked.replace(/^Nothing was saved: /, "Not now: ") : title);
   // Parts the CNC's sheet cannot take, that the track saw could.
   const tooBig = n && settings?.sheetSize && !saw ? n.unplaced.filter((u) => u.sheet && (u.reason === "too_large" || u.reason === "grain" || u.reason === "no_stock")) : [];
   return (
@@ -230,13 +241,18 @@ export function NestingSection(p: NestingSectionProps) {
           ) : null}
           {saw ? (
             <>
-              <LengthField label="Saw kerf" value={saw.kerf} units={p.units} rounding={r} max={KERF_MAX} onCommit={(kerf) => set({ overflow: { ...saw, kerf } })} />
-              <LengthField label="Saw trim" value={saw.trim} units={p.units} rounding={r} max={TRIM_MAX} onCommit={(trim) => set({ overflow: { ...saw, trim } })} />
+              <LengthField label="Saw kerf" value={saw.kerf} units={p.units} rounding={r} max={KERF_MAX} onCommit={(kerf) => setSaw({ kerf })} />
+              <LengthField label="Saw trim" value={saw.trim} units={p.units} rounding={r} max={TRIM_MAX} onCommit={(trim) => setSaw({ trim })} />
             </>
           ) : null}
         </div>
       ) : null}
-      {p.problem ? <p className="note err">{p.problem}</p> : null}
+      {p.problem ? (
+        <p className="note err">
+          {p.problem}
+          {n ? " The diagrams below are of the model before that: no file is saved from them." : ""}
+        </p>
+      ) : null}
       {!n ? (
         p.problem ? null : <p className="note">Nesting the parts…</p>
       ) : (
@@ -274,19 +290,28 @@ export function NestingSection(p: NestingSectionProps) {
               ) : null}
             </div>
           ) : null}
-          {p.handWork?.length ? (
+          {p.handWork?.length || p.handWorkNote ? (
             <div className="nest-handwork" data-testid="nest-handwork">
-              <b>
-                {p.handWork.length} track saw part{p.handWork.length === 1 ? " has" : "s have"} cuts to do by hand
-              </b>
-              <ul>
-                {p.handWork.map((w) => (
-                  <li key={w.tag} title={w.lines.join("\n")}>
-                    <span className="tag">{w.tag}</span> {w.name}: {handWorkCounts(w)}
-                  </li>
-                ))}
-              </ul>
-              <small>CNC files saves each one's positions in a hand work list beside the router's files.</small>
+              {p.handWork?.length ? (
+                <>
+                  <b>
+                    {p.handWork.length} track saw part{p.handWork.length === 1 ? " has" : "s have"} cuts to do by hand
+                  </b>
+                  <ul>
+                    {p.handWork.map((w) => (
+                      <li key={w.tag} title={w.lines.join("\n")}>
+                        <span className="tag">{w.tag}</span> {w.name}: {handWorkCounts(w)}
+                      </li>
+                    ))}
+                  </ul>
+                  <small data-testid="nest-handwork-legend">Hover a part for its cuts. {handWorkLegend(r)} CNC files saves the list beside the router's files.</small>
+                </>
+              ) : null}
+              {p.handWorkNote ? (
+                <p className="note err" role="alert" data-testid="nest-handwork-note">
+                  {p.handWorkNote}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {(() => {
@@ -368,11 +393,12 @@ export function NestingSection(p: NestingSectionProps) {
                     <button
                       type="button"
                       className="linkish"
+                      disabled={off}
                       onClick={(e) => {
                         e.preventDefault();
                         p.onSvg?.(piece);
                       }}
-                      title="Save this piece's cutting diagram as an SVG drawing (1:1 in mm)"
+                      title={why("Save this piece's cutting diagram as an SVG drawing (1:1 in mm)")}
                     >
                       SVG
                     </button>
@@ -400,28 +426,28 @@ export function NestingSection(p: NestingSectionProps) {
         </div>
       )}
       {p.onSvg && p.onDxf && p.onPdf ? (
-        <div className="btnrow">
-          <button type="button" className="btn" disabled={!n || !n.pieces.length} onClick={() => p.onSvg?.(null)} title="Save every piece's cutting diagram as an SVG drawing (one file each, 1:1 in mm)">
+        <div className="btnrow" data-blocked={off ? "true" : undefined}>
+          <button type="button" className="btn" disabled={off || !n || !n.pieces.length} onClick={() => p.onSvg?.(null)} title={why("Save every piece's cutting diagram as an SVG drawing (one file each, 1:1 in mm)")}>
             SVG
           </button>
-          <button type="button" className="btn" disabled={!n || !n.pieces.length} onClick={() => p.onDxf?.("lwpolyline")} title="Save the layouts as a DXF for CNC and laser: a polyline per part, a layer per sheet or board (mm)">
+          <button type="button" className="btn" disabled={off || !n || !n.pieces.length} onClick={() => p.onDxf?.("lwpolyline")} title={why("Save the layouts as a DXF for CNC and laser: a polyline per part, a layer per sheet or board (mm)")}>
             DXF
           </button>
-          <button type="button" className="btn" disabled={!n || !n.pieces.length} onClick={() => p.onDxf?.("r12")} title="The same DXF in strict R12 form (POLYLINE) for older CAM programs">
+          <button type="button" className="btn" disabled={off || !n || !n.pieces.length} onClick={() => p.onDxf?.("r12")} title={why("The same DXF in strict R12 form (POLYLINE) for older CAM programs")}>
             DXF R12
           </button>
           {p.onCnc ? (
             <button
               type="button"
               className="btn"
-              disabled={!n || !n.pieces.length}
+              disabled={off || !n || !n.pieces.length}
               onClick={() => p.onCnc?.()}
-              title="One DXF per sheet, origin at the sheet's lower-left corner. Layers: PROFILE_THRU (outlines), POCKET_<depth> (dados, grooves), DRILL_<size>_<depth> (holes), CUTOUT_THRU (openings)."
+              title={why("One DXF per sheet, origin at the sheet's lower-left corner. Layers: PROFILE_THRU (outlines), POCKET_<depth> (dados, grooves), DRILL_<size>_<depth> (holes), CUTOUT_THRU (openings).")}
             >
               CNC files
             </button>
           ) : null}
-          <button type="button" className="btn" disabled={!n} onClick={() => p.onPdf?.()} title="Save a PDF booklet: what to buy, then a page per sheet or board with its diagram and cut sequence">
+          <button type="button" className="btn" disabled={off || !n} onClick={() => p.onPdf?.()} title={why("Save a PDF booklet: what to buy, then a page per sheet or board with its diagram and cut sequence")}>
             PDF
           </button>
         </div>

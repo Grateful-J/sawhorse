@@ -58,4 +58,26 @@ describe("nest problem dialog for cuts that would be wrong", () => {
     const second = render(<NestProblemDialog req={{ what: "the CNC files", problems: thick, onSave, onStock: () => {} }} onClose={() => {}} />);
     expect(within(second.container).getByRole("button", { name: "Open Stock..." })).toBeTruthy();
   });
+
+  it("counts parts only when every problem is one part: a sheet of another size, or a thickness beside a part on no stock, is 'Some parts'", () => {
+    const sheet = [{ kind: "footprint" as const, tag: "1a, 1b, 2", name: "4 x 8 sheet, 3/4", text: "a sheet 48 x 96 in, not the 48 x 48 in the router is set to" }];
+    const first = render(<NestProblemDialog req={{ what: "the CNC files", problems: sheet, onSave: () => {}, onStock: () => {} }} onClose={() => {}} />);
+    // One line, three parts on it: never "1 part".
+    expect(first.container.querySelector("header")?.textContent).toBe("Some parts will not be cut as drawn");
+    expect(within(first.container).getByRole("button", { name: "Open Stock..." })).toBeTruthy();
+    first.unmount();
+    const mixed = [
+      { kind: "unplaced" as const, tag: "3", name: "Top", text: "too large" },
+      { kind: "thickness" as const, tag: "", name: "Door, Left side", text: "drawn 3/4 in thick" },
+    ];
+    const second = render(<NestProblemDialog req={{ what: "the DXF", problems: mixed, onSave: () => {}, onStock: () => {} }} onClose={() => {}} />);
+    expect(second.container.querySelector("header")?.textContent).toBe("Some parts will not be cut as drawn");
+    second.unmount();
+    const parts = [
+      { kind: "unplaced" as const, tag: "3", name: "Top", text: "too large" },
+      { kind: "material" as const, tag: "4", name: "Back", text: "went on another sheet" },
+    ];
+    const third = render(<NestProblemDialog req={{ what: "the DXF", problems: parts, onSave: () => {}, onStock: () => {} }} onClose={() => {}} />);
+    expect(third.container.querySelector("header")?.textContent).toBe("2 parts will not be cut as drawn");
+  });
 });
