@@ -242,6 +242,9 @@ const PLATE_HOLE = { dia: 5, depth: 11.5 };
 const RELIEF = 0.5 * MM;
 /** Panels in grooves (backs, drawer bottoms) are this much smaller per edge than groove to groove. */
 const PANEL_GAP = (1 / 32) * IN;
+/** A shelf behind an inset door stops this far behind the door's back face: room for the
+ * door's bumpers, so the door closes on the cabinet and not on the shelf. */
+const DOOR_ROOM = 3 * MM;
 /** Shelf pin holes: 5 mm, 10 deep, on the System 32 grid (37 from the front, 32 apart). */
 const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
 /** Pin holes stop this far from the bottom and top of the space they serve. */
@@ -302,26 +305,30 @@ export const PRESETS = [
 ];
 
 /**
- * A starting point applied to the sizes: its style, sizes and name, the rest kept. The name
+ * A starting point applied to the sizes: its style, sizes and name. The stock, joinery,
+ * hardware, grain and CNC settings are kept. Whatever any starting point sets (the pulls'
+ * place, the nailers, the drawer pull, the bins, the drawer count) goes back to where a new
+ * cabinet starts unless this one names it, so a base picked after a tall pantry does not keep
+ * the pantry's pull 30 in up its door, nor one after a wall cabinet its nailers. The name
  * keeps its number ("Base 3" becomes "Sink base 3").
  * @param {Sizes} s @param {string} id @param {boolean} metric @returns {Sizes}
  */
 export function applyPreset(s, id, metric) {
   const p = PRESETS.find((x) => x.id === id);
   if (!p) return s;
-  const [w, h, d] = metric ? p.mm.map((v) => v * MM) : p.in.map((v) => v * IN);
+  const d = defaults(metric);
+  const [w, h, dp] = metric ? p.mm.map((v) => v * MM) : p.in.map((v) => v * IN);
   const n = /(\d+)$/.exec(s.name)?.[1] ?? "1";
   /** @type {Sizes} */
-  const out = { ...s, name: `${p.name} ${n}`, layout: p.layout, shelves: p.shelves, drawers: p.drawers || s.drawers, base: p.base, width: w, height: h, depth: d };
-  if (p.doorPullFrom) out.doorPullFrom = p.doorPullFrom;
-  if (p.doorPullEnd) out.doorPullEnd = metric ? p.doorPullEnd[1] * MM : p.doorPullEnd[0] * IN;
-  if (p.drawers) out.drawers = p.drawers;
-  if (p.nailers) out.nailers = p.nailers;
-  if (p.drawerPull) out.drawerPull = p.drawerPull;
+  const out = { ...s, name: `${p.name} ${n}`, layout: p.layout, shelves: p.shelves, drawers: p.drawers || d.drawers, base: p.base, width: w, height: h, depth: dp };
+  out.doorPullFrom = p.doorPullFrom ?? d.doorPullFrom;
+  out.doorPullEnd = p.doorPullEnd ? (metric ? p.doorPullEnd[1] * MM : p.doorPullEnd[0] * IN) : d.doorPullEnd;
+  out.nailers = p.nailers ?? d.nailers;
+  out.drawerPull = p.drawerPull ?? d.drawerPull;
   // A base cabinet's top is two stretchers under the countertop; a wall or tall cabinet's shows.
   out.top = p.top ?? "full";
-  if (p.trashBins) out.trashBins = p.trashBins;
-  if (p.bin) out.bin = p.bin;
+  out.trashBins = p.trashBins ?? d.trashBins;
+  out.bin = p.bin ?? d.bin;
   return out;
 }
 
@@ -592,7 +599,7 @@ function validate(s) {
   if (!(s.fit >= 0) || s.fit > 1 * MM) return "The fit must be 0 to 1 mm (0.04 in) over the stock.";
   if (!(s.bit > 0) || s.bit > 0.5 * IN) return "The bit diameter must be more than 0 and at most 1/2 in.";
   if (s.nailers !== "none") {
-    if (s.back && s.backMount !== "groove") return "Rear nailers sit behind the back: choose Back fits: in grooves, or no back.";
+    if (s.back && s.backMount !== "groove") return "Rear nailers sit behind the back: set Back to In a groove, or to None.";
     if (!(s.nailerHeight > 0) || !(s.nailerHeight < (s.height - 2 * t) / 3)) return "The nailer must be more than 0 tall, and under a third of the inside height.";
   }
   if (s.layout === "trash" && s.bin === "custom") {
@@ -821,12 +828,17 @@ function build(s, metric) {
   };
 
   // --- the carcass -------------------------------------------------------------------------
-  /** Rails the sides are grooved for. */
+  /** Rails the sides are grooved for; `front` is where a rail starts when it is not at the
+   * cabinet's front (a shelf behind an inset door), and its dado stops that much later.
+   * @type {{ z: number, name: string, front?: number }[]} */
   const rails = [{ z: kick, name: "Bottom" }, { z: s.height - t, name: "Top" }];
   const shelfZs = shelfHeights(s, floor, ceiling, bands);
   const fixedShelves = s.shelfType === "fixed";
+  // An inset door stands inside the opening, in the first thickness of its depth: the shelves
+  // behind it start behind the door. (An overlay door is in front of the cabinet.)
+  const shelfFront = !overlay && shelfZs.length && bands.some((x) => x.kind === "door") ? t + DOOR_ROOM : 0;
   // Fixed shelves sit in dados; adjustable ones sit on pins.
-  if (fixedShelves) shelfZs.forEach((z, i) => rails.push({ z, name: `Shelf ${i + 1}` }));
+  if (fixedShelves) shelfZs.forEach((z, i) => rails.push({ z, name: `Shelf ${i + 1}`, front: shelfFront }));
   const tongue = s.dados ? s.dadoDepth - RELIEF : 0;
   const notchLen = stop + s.bit;
   /** Rear nailers (hanging rails): under the top, and over the bottom, at the rear edge. */
@@ -837,6 +849,7 @@ function build(s, metric) {
   const backY = /** @type {[number, number]} */ ([yb0 - s.fit / 2, yb0 + bT + s.fit / 2]);
   /** A shelf stops at the back; with no back but nailers, at the nailers' face. */
   const shelfDepth = grooved ? yb0 - PANEL_GAP : !s.back && nailers.length ? s.depth - t - PANEL_GAP : innerD;
+  if (shelfFront && !(shelfDepth - shelfFront > 2 * t)) throw new Error("The shelves have no depth left behind the inset door. Make the cabinet deeper, or use overlay fronts.");
 
   const sideSize = /** @type {V3} */ ([t, s.depth, s.height]);
   /** Prisms of a side whose inner face is at x = `inner` (0 or t). @param {number} inner */
@@ -847,7 +860,7 @@ function build(s, metric) {
     const out = [];
     if (s.dados) {
       const [x0, x1] = xs(s.dadoDepth);
-      for (const r of rails) out.push({ min: [x0, stop, r.z - s.fit / 2], max: [x1, s.depth, r.z + t + s.fit / 2] });
+      for (const r of rails) out.push({ min: [x0, stop + (r.front ?? 0), r.z - s.fit / 2], max: [x1, s.depth, r.z + t + s.fit / 2] });
     }
     if (grooved) {
       const [x0, x1] = xs(bgd);
@@ -1277,11 +1290,11 @@ function build(s, metric) {
   /** @param {number} z @param {string} name @param {string} copyName @param {"top" | "bottom" | "shelf"} kind @param {[number, number]} [ys] its front and rear (a stretcher) */
   const addRail = (z, name, copyName, kind, ys) => {
     const len = innerW + 2 * tongue;
-    const [ya, yb] = ys ?? [0, kind === "shelf" ? shelfDepth : railEnd];
+    const [ya, yb] = ys ?? (kind === "shelf" ? [shelfFront, shelfDepth] : [0, railEnd]);
     /** @type {Prism[]} */
     const prisms = [];
-    // Only a rail at the front meets the dado's stop.
-    if (s.dados && ya === 0) {
+    // Only a rail at the front of its dado meets the dado's stop (a shelf's dado starts with it).
+    if (s.dados && (ya === 0 || kind === "shelf")) {
       prisms.push({ min: [0, 0, 0], max: [tongue, notchLen, t] }, { min: [len - tongue, 0, 0], max: [len, notchLen, t] });
     }
     if (grooved && kind !== "shelf" && backY[0] >= ya && backY[1] <= yb + 1e-9) {
@@ -1306,9 +1319,10 @@ function build(s, metric) {
     // on the pin hole nearest its place.
     shelfZs.forEach((z, i) => {
       const near = pinZs.length ? pinZs.reduce((a, b) => (Math.abs(b - z) < Math.abs(a - z) ? b : a)) + (PIN.dia * MM) / 2 : z;
-      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth, t], [], [], { at: [t + PANEL_GAP, 0, near], name: `Shelf ${i + 1}` });
+      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth - shelfFront, t], [], [], { at: [t + PANEL_GAP, shelfFront, near], name: `Shelf ${i + 1}` });
     });
   }
+  if (shelfFront) note(shelfZs.length === 1 ? "Shelf" : "Shelves", `Set back ${both(shelfFront)} from the cabinet's front: behind the inset door (${both(t)}) and its bumpers`, "-", "-", "CNC (profile)");
   if (s.dados) {
     note("Sides", `Blind dados ${both(t + s.fit)} wide, stop ${both(stop)} from the front`, "-", both(s.dadoDepth), "CNC (pocket)");
     note("Rails", `Tongues ${both(tongue)} long, front corners notched ${both(notchLen)} deep (stop + bit)`, "-", "through", "CNC (profile)");

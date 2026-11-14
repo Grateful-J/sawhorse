@@ -654,3 +654,61 @@ describe("grain, bins and placement", () => {
   });
 });
 
+describe("inset fronts", () => {
+  // An inset door stands inside the opening, in the first thickness of the cabinet's depth.
+  // Shelves that ran to the front would be in the door's way: it could not close.
+  const t = (23 / 32) * IN;
+  const room = t + 3 * MM;
+  it("adjustable shelves start behind the door and its bumpers, and are that much shorter", () => {
+    const over = ok(applyPreset(defaults(false), "base", false));
+    const inset = ok({ ...applyPreset(defaults(false), "base", false), front: "inset" });
+    const shelf = (p: typeof over) => p.parts.find((x) => x.name === "Shelf")!;
+    expect(shelf(over).copies[0].at[1]).toBe(0);
+    expect(shelf(inset).copies[0].at[1]).toBeCloseTo(room, 12);
+    // The same rear end, so the depth is less by what the front gave up.
+    expect(shelf(inset).blank[1]).toBeCloseTo(shelf(over).blank[1] - room, 12);
+    expect(shelf(inset).blank[0]).toBeCloseTo(shelf(over).blank[0], 12);
+    // The door is in the opening: its back face is one thickness in, 3 mm in front of the shelf.
+    const door = inset.parts.find((x) => x.name === "Door")!;
+    expect(door.copies[0].at[1]).toBe(0);
+    expect(door.blank[1]).toBeCloseTo(t, 12);
+    expect(inset.rows.some((r) => /Set back .* behind the inset door/.test(r[1]))).toBe(true);
+    expect(over.rows.some((r) => /behind the inset door/.test(r[1]))).toBe(false);
+  });
+
+  it("fixed shelves too: the shelf and its dados start behind the door, the top and bottom do not", () => {
+    const s = { ...applyPreset(imperial(), "base", false), front: "inset" as const, top: "full" as const };
+    const p = ok(s);
+    const shelf = p.parts.find((x) => x.name === "Shelf")!;
+    expect(shelf.copies[0].at[1]).toBeCloseTo(room, 12);
+    for (const name of ["Top", "Bottom"]) expect(p.parts.find((x) => x.name === name)!.copies[0].at[1]).toBe(0);
+    // In the side, the shelf's dado stops half an inch behind the shelf's front; the top's and
+    // the bottom's half an inch behind the cabinet's. A dado's floor is 1/4 in into the side.
+    const side = p.parts.find((x) => x.name === "Left side")!;
+    const floors = side.mesh.faces.map((rings) => rings[0].map((i) => side.mesh.positions[i])).filter((pts) => pts.every((q) => Math.abs(q[0] - (t - 0.25 * IN)) < 1e-9));
+    const frontOf = (name: string) => {
+      const z = p.parts.find((x) => x.name === name)!.copies[0].at[2];
+      const mine = floors.filter((pts) => pts.every((q) => q[2] > z - 1 * MM && q[2] < z + t + 1 * MM));
+      expect(mine.length, name).toBeGreaterThan(0);
+      return Math.min(...mine.flatMap((pts) => pts.map((q) => q[1])));
+    };
+    expect(frontOf("Bottom")).toBeCloseTo(0.5 * IN, 9);
+    expect(frontOf("Top")).toBeCloseTo(0.5 * IN, 9);
+    expect(frontOf("Shelf")).toBeCloseTo(room + 0.5 * IN, 9);
+  });
+
+  it("open shelves and overlay doors keep their shelves at the front; a cabinet too shallow for an inset door says so", () => {
+    const open = ok({ ...applyPreset(defaults(false), "open", false), front: "inset" });
+    expect(open.parts.find((x) => x.name === "Shelf")!.copies[0].at[1]).toBe(0);
+    // Whatever the depth, a shelf behind an inset door is never left a sliver: it is refused first.
+    for (const depth of [2.5, 3, 3.5, 4, 5, 8]) {
+      const shallow = plan({ ...applyPreset(defaults(false), "base", false), front: "inset", base: "none", top: "full", depth: depth * IN }, false);
+      if (shallow.error) expect(shallow.error.length).toBeGreaterThan(10);
+      else expect(shallow.parts.find((x) => x.name === "Shelf")!.blank[1]).toBeGreaterThan(2 * t);
+    }
+    const shallow = plan({ ...applyPreset(defaults(false), "base", false), front: "inset", base: "none", top: "full", hardware: false, depth: 3 * IN }, false);
+    if (shallow.error) expect(shallow.error).toMatch(/no depth left behind the inset door|depth|deep/i);
+    else expect(shallow.parts.find((x) => x.name === "Shelf")!.blank[1]).toBeGreaterThan(2 * t);
+  });
+});
+

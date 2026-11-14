@@ -380,7 +380,7 @@ function details() {
       out.push(pick("cupDistance", "Boring distance", k, (ks.includes(k) ? ks : [...ks, k]).map((x) => [x, `${x} mm${x === "5" ? " · 16 mm overlay" : ""}`])));
       out.push(help("The cup's edge to the door's edge. Cuts and holes compares the overlay it gives with your door's."));
     }
-    if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help("5 mm holes, 10 deep, in rows 37 mm from the front and the back, 32 mm apart: five around each shelf. Drilled whenever shelves are adjustable."));
+    if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help("5 mm holes, 10 deep, 32 mm apart, five around each shelf: a row 37 mm from the front and a rear row on the same 32 mm grid. Drilled whenever shelves are adjustable."));
   } else if (view === "secCnc") {
     out.push(len("bit", "Bit diameter", s.bit), len("fit", "Joint clearance", s.fit));
     out.push(help("Clearance is added to every dado and groove over the stock. Grooves and holes smaller than the bit are listed in Cuts and holes, for a smaller bit."));
