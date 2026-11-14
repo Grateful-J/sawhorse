@@ -21,7 +21,11 @@ describe("kept cabinets", () => {
   it("keeps only what differs from the baseline: about a fifth of the whole", () => {
     const s = applyPreset(defaults(false), "drawers", false);
     const packed = pack(s, false);
-    expect(Object.keys(packed.d).sort()).toEqual(Object.keys(packed.d).filter((k) => (BASELINE.in as Record<string, unknown>)[k] !== (s as unknown as Record<string, unknown>)[k]).sort());
+    // Exactly the settings that differ from the baseline, each with its value: none missing, none extra.
+    const differ = Object.fromEntries(Object.entries(s).filter(([k, v]) => (BASELINE.in as Record<string, unknown>)[k] !== v));
+    expect(packed.d).toEqual(differ);
+    expect(Object.keys(differ).length).toBeGreaterThan(0);
+    expect(Object.keys(differ).length).toBeLessThan(Object.keys(s).length / 3);
     expect(JSON.stringify({ ...packed, frame }).length).toBeLessThan(JSON.stringify({ sizes: s, frame }).length / 3);
     // A metric cabinet says so, and is read against the metric baseline.
     expect(pack(defaults(true), true)).toEqual({ d: {}, m: 1 });

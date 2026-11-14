@@ -247,8 +247,13 @@ run("a cabinet to the CNC router", () => {
     const work = handWork(n, sawn.features, "sixteenth");
     const side = work.find((w) => w.name === "Left side");
     expect(side).toBeDefined();
-    expect(side!.pockets).toBeGreaterThan(0);
-    expect(side!.holes).toBeGreaterThan(0);
+    // The back's groove and the top's and bottom's blind dados; 10 hinge-plate holes (five
+    // hinges on an 84 in door) and 40 shelf-pin holes; and its toe-kick notch.
+    expect([side!.pockets, side!.holes, side!.cutouts, side!.shaped]).toEqual([3, 50, 0, true]);
+    expect(side!.lines.filter((l) => l.includes("5 mm × 11.5 mm deep"))).toEqual([expect.stringMatching(/^10 holes /)]);
+    expect(side!.lines.filter((l) => l.includes("5 mm × 10 mm deep"))).toEqual([expect.stringMatching(/^40 holes /)]);
+    // The hinge plates are 37 mm (1 29/64 in) in from the front edge.
+    expect(side!.lines.find((l) => l.includes("11.5 mm"))).toMatch(/^10 holes 5 mm × 11\.5 mm deep at \(6 15\/16, 1 29\/64\)/);
     // Each line places its cut inside the part (84 x 23 1/4 in).
     for (const line of side!.lines.filter((l) => l.startsWith("Pocket"))) expect(line).toMatch(/from end A, .* from edge B$/);
     // Off again: the saw is gone and the long parts are on no stock, as before.

@@ -148,10 +148,18 @@ describe("base frame", () => {
   it("lays out each ladder: its extent, its sleepers, the rails' faces", () => {
     const p = planBase(row(24, 18, 36), b());
     const T = (23 / 32) * IN;
+    // A (24 + 18): both ends, one centred under the joint at 24, one in each 18-ish gap: 5.
+    // B (36, no joint): both ends and two between, at most 16 apart: 4.
     expect(p.layout.ladders.map((l) => [l.tag, inches(l.x0), inches(l.x1), l.sleepers.length])).toEqual([
-      ["A", 0, 42, p.layout.ladders[0].sleepers.length],
-      ["B", 42, 78, p.layout.ladders[1].sleepers.length],
+      ["A", 0, 42, 5],
+      ["B", 42, 78, 4],
     ]);
+    // Each ladder's end sleepers sit flush with its ends; none further apart than 16 in.
+    for (const l of p.layout.ladders) {
+      expect(inches(l.sleepers[0] - l.x0)).toBe(0);
+      expect(r6((l.x1 - l.sleepers[l.sleepers.length - 1] - T) / IN)).toBe(0);
+      for (let i = 1; i < l.sleepers.length; i++) expect(l.sleepers[i] - l.sleepers[i - 1]).toBeLessThanOrEqual(16 * IN + 1e-9);
+    }
     expect(p.layout.ladders.reduce((n, l) => n + l.sleepers.length, 0)).toBe(p.sleepers);
     expect(inches(p.layout.front)).toBe(3);
     expect(inches(p.layout.back)).toBe(23.25);
