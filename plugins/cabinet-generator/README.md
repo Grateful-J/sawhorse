@@ -1,34 +1,95 @@
 # Cabinet generator
 
-A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) cabinet from its sizes, with every part a named component, so the Outliner shows the parts and the Cut list reads them straight away.
+A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) cabinet for a CNC router from its sizes. Every part is a named component on a plywood material, so the Outliner shows the parts, the Cut list nests them as sheet goods, and the Nesting section's **CNC DXF** writes their dados and holes, a file per sheet named for the cabinet and the parts on it.
 
 ## Use it
 
 1. Open the Plugins pane (the puzzle-piece tab at the end of the side panel) and click **Enable…** beside Cabinet generator. The dialog lists what it asks for: read the model, change the model, add a panel and a command, keep settings.
-2. The **Cabinet** section appears at the top of the pane. Type the sizes in your document's units (`30`, `72`, `12` with inches; `600`, `720`, `560` with millimetres): width, height, depth, stock thickness, the layout, the number of shelves or drawers, the back panel and the toe kick height.
-3. Click **Generate cabinet** (or Plugins > Cabinet generator > Generate Cabinet, or Alt+Shift+C).
+2. The **Cabinet** section appears at the top of the pane, short like a cabinet shop's order form:
+   - **Start from** fills in a cabinet: Base (a door and a shelf), Drawer base (three drawers), Sink base, a drawer over a door, Wall (12 in deep, no toe kick, door pulls measured from the bottom), Tall pantry (84 in, too long for a 4 x 4 bed), or Open shelves. It sets the style, the usual sizes and the name, and keeps your stock, joints and hardware.
+   - **Name**, width, height and depth, the **style** and how many shelves or drawers.
+   - Two switches: **Hidden (blind) dado joints** and **Drill hardware holes**.
+   - **Generate cabinet**, with what it will add and one line on what it comes to: how many parts, from which stock thicknesses (exactly: 23/32 in, not 3/4), how many holes, and the runner's part number.
+3. **Details** opens one group at a time; a field shows only when it applies:
+   - **Construction:** base, back, joints and bit.
+   - **Stock thicknesses.**
+   - **Fronts, pulls and hinges.**
+   - **Drawer runners.**
+   - **Every cut and hole**, the table of each cut and how it is made.
 
-**Layout** is Shelves (the default, the same cabinet as before), Door and shelves, Drawers, or Drawers and a door. Fronts are overlay or inset, one door, not a pair. **Blind dados** (off until you tick it) cuts a stopped groove in each side for the top, the bottom and each shelf, one third of the side's thickness and stopping 1/2 in (12 mm) short of the front; those rails grow by the two tenons, and their front corners are notched so the groove does not show. Drawer bottoms get a through groove in the same way. The sides' blanks do not change: a groove does not shrink the piece you nest. **Hardware holes** (also off until you tick it) drills hinge cups, undermount-slide holes and pull holes. The table lists each hole before you generate. The numbers are starting points (35 mm cups, 21 mm slide clearance, 96 mm pull spacing); measure your hardware and edit them. Nothing is cut that the table does not list.
+## The details
 
-What the default shelf cabinet makes, x across the front, y front to back, z up:
+**Stock, measured.** Four thicknesses, and every joint is cut to them, so measure your sheets:
 
-| Part | Copies | Size |
+| Field | Starts at | Used for | Material |
+|---|---|---|---|
+| Cabinet and doors | 23/32 in ("3/4" ply) | sides, top, bottom, shelves, toe kick, doors | Cabinet plywood, Door plywood |
+| Drawer fronts | 15/32 in ("1/2" ply) | drawer fronts | Drawer front plywood |
+| Drawer boxes | 15/32 in | drawer sides, sub-fronts, backs | Drawer box plywood |
+| Back and drawer bottoms | 7/32 in ("1/4" ply) | the back, drawer bottoms | Back plywood |
+
+For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in 3/4, 1/2 and 1/4 and nests every sheet good on them, so each material finds its thickness by itself. Or give a material its own sheet in Stock...: it must be the material's thickness. The plugin defines a material only when the model does not have it, so the sheet you picked is kept when you generate again. The CNC export warns about any part drawn at a thickness its sheet is not.
+
+**Base and back.**
+- **Base:** a toe kick (4 x 3 in to start, with the sides notched for it), or none, for a row of cabinets set on a base you build.
+- **Back:** sits in grooves in the sides, the top and the bottom, 1/2 in in from the rear edge. The grooves are 5/16 in deep, and the back plus the fit wide. The top and bottom run to the rear edge to carry the groove; fixed shelves stop at the back. The back can also sit between the sides at the rear, as before. With blind dados, the back's groove must be a different depth from the dados, so each gets its own layer (and bit) in the DXF.
+
+**Fronts.**
+- **Full overlay** (default): the fronts tile the cabinet's face with the gap you set between them (1/8 in) and half of it at the edges.
+- **Inset:** fronts sit inside the opening, with half the gap all round.
+- A door wider than 24 in is a pair.
+
+**Joinery and bit.**
+- **Blind dados:** each side gets a groove for the top, the bottom and each fixed shelf. The groove is a dado depth deep (1/4 in), the stock plus the **fit** wide (0.008 in), and stops short of the front by the distance you set (1/2 in).
+- **Rails:** each rail's tongue is 0.5 mm shorter than its groove, so the shoulders close. Its front corners are notched the stop plus one **bit diameter** deep, so the round end the router leaves in the groove never meets the rail's square shoulder.
+- **Narrow grooves:** a groove narrower than the bit (the back and drawer-bottom grooves, about 7/32 in) is listed, to cut with a smaller bit on its own layer.
+
+**Drawer runners.** Drawers are sized for Blum runners from Blum's own tables (TANDEM plus BLUMOTION 563H, 2017 pp. 14-15; MOVENTO 763H, 2019 pp. 8-9; in `RUNNERS` in `cabinet.js`):
+
+| | TANDEM 563H | MOVENTO 763H |
 |---|---|---|
-| Side | Right side, and Left side as its mirror image | stock x depth x height, full height |
-| Top, Bottom | one each | between the sides, the depth less the back |
-| Shelf | Shelf 1 .. Shelf n | as the top, spaced so every opening is the same height |
-| Back | one (when ticked) | 1/4 in (6 mm in metric documents) sheet between the sides, from the toe kick up |
-| Toe kick | one (when the height is more than 0) | stock thick, set back 3 in (75 mm) from the front |
+| Drawer lengths | 229, 305, 381, 457, 533 mm (9 to 21 in) | 305, 381, 457, 533 mm (12 to 21 in) |
+| Inside of the box | opening - 42 mm | opening - 42 mm |
+| Box height | opening - 21 mm | opening - 23 mm |
+| Box bottom above the opening | 14 mm | 16 mm |
+| Bottom recess | 13 mm | 13 mm |
+| Runner screws above the opening | 37 mm | 38 mm |
+| Runner screws from the front | 37, A, B (Blum's table) | 37, A, B, or 3 mm less each with 1/2 in or thinner sides |
 
-The sides run to the floor; cut the toe notch in them yourself if you want one. The left side is the right side mirrored (the Cut list notes it as handed), so anything done inside one side, such as a column of shelf pin holes, appears inside the other. The whole cabinet is one undo step ("Generate cabinet").
+**Runner length** is the longest the inside depth allows, or the one you pick. Box sides are 12 to 16 mm.
 
-**Changing it.** Select the cabinet (a click on it selects the whole component) and the button reads **Update selected cabinet**: it replaces that cabinet in place with the new sizes, again as one undo step. With anything else selected, it adds a new cabinet beside the model.
+**Drawer box construction.**
+- The bottom slides in from the back, in grooves 13 mm up in the sides and the sub-front.
+- The box back sits on the bottom, so the runner passes under it: there is no runner notch to cut.
+- The bottom is 1/32 in short of the grooves' bottoms on each edge, and runs to the back of the box, where it is screwed up into the back.
 
-The last sizes are kept for next time (the plugin's own store), and which cabinet it made is kept in the document (saved inside the `.shz`).
+**Hardware.** Tick **Drill hardware holes** to drill what a flat-bed router can.
+- **Hinges:** a Blum CLIP top cup, 35 mm and 13 mm deep, in each door's back face. Its centre is 17.5 mm plus the **boring distance** (3 to 7 mm, 4.5 to start) from the hinge edge. Hinges sit **in from the door's top and bottom** by the distance you set; doors over 900 mm tall get three, then four and five. Each mounting plate gets two 5 mm holes 32 mm apart, 37 mm back. A plate that would sit on a shelf slides along the door, and the table says by how much.
+- **Door pull:** two through holes on the opening edge.
+  - Vertical or horizontal.
+  - Measured from the top (base cabinets) or the bottom (wall cabinets).
+  - Placed by how far the nearer hole is from that end, how far the holes are from the opening edge, and their spacing.
+  - A pull that would hit a hinge cup is refused.
+- **Drawer pull:**
+  - two through holes, centred or a set distance down from the top, at the spacing you set; or
+  - **no pull:** a finger notch in the front's top edge, its width and depth yours to set. The sub-front behind it is cut 25 mm lower, so fingers reach behind the front. The notch needs no hardware ticked.
+- **Pull hole diameter** is 5 mm to start.
+- **Runner screws:** 5 mm x 13 mm holes in both sides, for Blum system screws.
+
+The table lists every cut and how it is made. Two kinds are listed but not drilled:
+- The rear hook bore (6 x 10 mm in the end of each drawer side) is an edge bore, for a jig.
+- With inset fronts, the hinge plates and runner screws are left to Blum's inset tables.
+
+**Changing it.** Select the cabinet (a click on it selects the whole component) and the button reads **Update selected cabinet**: it replaces that cabinet in place with the new sizes, again as one undo step. With anything else selected, it adds a new cabinet beside the model. The whole cabinet is one undo step ("Generate cabinet").
+
+The last sizes are kept for next time (the plugin's own store), and which cabinet it made is kept in the document (saved inside the `.shz`). Sizes saved by an older version still load:
+- a centred pull stays centred;
+- an "undermount" pull (a hole in a front's bottom edge, which no router can drill) becomes no pull;
+- a toe kick of 0 becomes no toe kick.
 
 ## How it is built
 
-`main.js` is the panel. `cabinet.js` plans the parts. `mesh.js` builds a closed mesh for a box with grooves and holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
+`main.js` is the panel. `cabinet.js` plans the parts and holds the Blum tables. `mesh.js` builds a closed mesh for a box with grooves, notches, and blind or through holes. The cabinet is one `model.batch(...)` holding one import, so dados and holes are the same undo step as the boxes. Plain JavaScript with `// @ts-check`, checked against `packages/plugin-api/index.d.ts` by `npm run plugin:check`. Read it next to `docs/PLUGINS.md`.
 
 ## Licence
 

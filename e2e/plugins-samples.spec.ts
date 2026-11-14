@@ -72,7 +72,7 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await field(page, panel, "shelves", "3");
   await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds a cabinet: 30 x 72 x 12, 3 shelves, back, 4 toe kick");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet: Side x 2, Top, Bottom, Shelf x 3, Back, Toe kick");
+  await expect(page.locator("#hint")).toContainText("Made a cabinet: Left side, Right side, Top, Bottom, Shelf x 3, Back, Toe kick");
 
   // Nine parts, the whole cabinet 30 x 12 x 72 in.
   const s = await solids(page);
@@ -95,12 +95,16 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await expect(page.locator(".cutlist table")).toBeVisible();
   const rows = await page.locator(".cutlist table tbody tr").evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => ((td.querySelector(".name") ?? td).textContent ?? "").trim())));
   const byName = Object.fromEntries(rows.map((r) => [r[0], r.slice(1, 5)]));
-  expect(byName["Side"]).toEqual(["2", "3/4", "12", "72"]);
-  expect(byName["Top"]).toEqual(["1", "3/4", "11 3/4", "28 1/2"]);
-  expect(byName["Bottom"]).toEqual(["1", "3/4", "11 3/4", "28 1/2"]);
-  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 3/4", "28 1/2"]);
-  expect(byName["Back"]).toEqual(["1", "1/4", "28 1/2", "68"]);
-  expect(byName["Toe kick"]).toEqual(["1", "3/4", "4", "28 1/2"]);
+  // Drawn at the measured 23/32 in (the list shows its nominal 3/4); the rails are 30 - 2 x 23/32
+  // long. The back sits in grooves 1/2 in from the rear: the top and bottom run to the rear
+  // edge, a shelf stops at the back (12 - 1/2 - 7/32 - 1/32 = 11 1/4).
+  expect(byName["Left side"]).toEqual(["1", "3/4", "12", "72"]);
+  expect(byName["Right side"]).toEqual(["1", "3/4", "12", "72"]);
+  expect(byName["Top"]).toEqual(["1", "3/4", "12", "28 9/16"]);
+  expect(byName["Bottom"]).toEqual(["1", "3/4", "12", "28 9/16"]);
+  expect(byName["Shelf"]).toEqual(["3", "3/4", "11 1/4", "28 9/16"]);
+  expect(byName["Back"]).toEqual(["1", "1/4", "29 1/8", "67 1/8"]);
+  expect(byName["Toe kick"]).toEqual(["1", "3/4", "4", "28 9/16"]);
   // One undo step takes the whole cabinet back.
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await solids(page)).length).toBe(0);
@@ -258,9 +262,11 @@ test("model report: live counts that match the model, and an export as Markdown 
     const g = w.__sawhorse.graph();
     return { Solids: w.__sawhorse.solids().length, Groups: g.nodes.filter((n) => n.kind === "group").length, Components: g.definitions.length, Instances: g.nodes.filter((n) => n.kind === "instance").length };
   });
-  // The default cabinet: two sides, top, bottom, one shelf, back, toe kick.
-  expect(truth).toEqual({ Solids: 7, Groups: 0, Components: 7, Instances: 8 });
-  await expect.poll(counts).toMatchObject({ ...truth, Faces: 7 * 6, Edges: 7 * 12 });
+  // The default cabinet: a left and a right side (each its own part, notched for the toe kick
+  // and grooved for the back: 13 faces, 30 edges), a top and a bottom grooved through for the
+  // back (10 faces, 24 edges), one shelf, the back, the toe kick, and the cabinet.
+  expect(truth).toEqual({ Solids: 7, Groups: 0, Components: 8, Instances: 8 });
+  await expect.poll(counts).toMatchObject({ ...truth, Faces: 3 * 6 + 2 * 13 + 2 * 10, Edges: 3 * 12 + 2 * 30 + 2 * 24 });
   await expect(report.locator('[data-note="size"]')).toContainText("Overall 24 wide x 24 deep x 34 1/2 high");
   await expect(report.locator('[data-note="warnings"]')).toHaveText("No warnings.");
   // Units: millimetres, remembered by the plugin.
@@ -285,7 +291,8 @@ test("model report: live counts that match the model, and an export as Markdown 
   await expect.poll(() => downloads.length).toBe(2);
   const md = downloads.find((d) => d.startsWith("# Model report"))!;
   expect(md).toContain("| Solids | 7 |");
-  expect(md).toMatch(/\| Shelf \| 1 \| 19(\.1)? mm \|/);
+  // The cabinet is drawn at the measured 23/32 in (18.3 mm) of "3/4" ply.
+  expect(md).toMatch(/\| Shelf \| 1 \| 18\.3 mm \|/);
   const csv = downloads.find((d) => d.includes("Section,Item,Value"))!;
   expect(csv).toContain("Counts,Instances,8");
 });
