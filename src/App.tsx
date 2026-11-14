@@ -155,6 +155,7 @@ const UNITS_KEY = "sawhorse.units";
 const NEST_OPEN_KEY = "sawhorse.nestingOpen";
 /** Wait this long after the last edit before nesting again (typing a kerf, dragging). */
 const NEST_DEBOUNCE_MS = 200;
+const BY_ASSEMBLY_KEY = "sawhorse.cutlist.byAssembly";
 
 function loadNestOpen(): boolean {
   try {
@@ -388,6 +389,22 @@ export function App() {
   // The nesting writes lengths as the cut list does (lane 9).
   const nestUnits = useMemo(() => ({ r: cutRounding, style: cutStyle }), [cutRounding, cutStyle]);
   const [cutVisibleOnly, setCutVisibleOnly] = useState(false);
+  // By assembly: a heading per cabinet and base frame in the cut list (kept on this device).
+  const [cutByAssembly, setCutByAssemblyState] = useState(() => {
+    try {
+      return localStorage.getItem(BY_ASSEMBLY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setCutByAssembly = useCallback((on: boolean) => {
+    setCutByAssemblyState(on);
+    try {
+      localStorage.setItem(BY_ASSEMBLY_KEY, on ? "1" : "0");
+    } catch {
+      // Storage refused (a private window): it lasts for this session.
+    }
+  }, []);
   const [cutList, setCutList] = useState<CutList | null>(null);
   /** The cut list report is being printed (it is drawn only then). */
   const [printing, setPrinting] = useState(false);
@@ -2388,6 +2405,17 @@ export function App() {
     },
     [nesting, cutTitle, measureNesting],
   );
+  /** The assembly a piece is in: its outermost named group or component (a cabinet, a base
+   * frame), or null for a part on its own. Read from the model as it is now. */
+  const ownerOfItem = useCallback((item: Item): string | null => {
+    const graph = graphOf(live.current.scene?.state);
+    const nodes = new Map(graph.nodes.map((g) => [g.id, g]));
+    const start = "node" in item ? item.node : (graph.objects.find((o) => "object" in item && o.id === item.object)?.parent ?? null);
+    if (start === null) return null;
+    let top = nodes.get(start);
+    while (top && top.parent !== null && nodes.has(top.parent)) top = nodes.get(top.parent);
+    return top && top.id !== start ? (top.name ?? top.label) : null;
+  }, []);
   const saveNestCnc = useCallback(async () => {
     const all = nesting;
     if (!all) return;
@@ -2396,15 +2424,7 @@ export function App() {
     try {
       const features = await measureNesting(n);
       // The cabinet (the outermost named instance) each part is in, for the file names.
-      const graph = graphOf(live.current.scene?.state);
-      const nodes = new Map(graph.nodes.map((g) => [g.id, g]));
-      const ownerOf = (q: Placement): string | null => {
-        const start = "node" in q.item ? q.item.node : (graph.objects.find((o) => "object" in q.item && o.id === q.item.object)?.parent ?? null);
-        if (start === null) return null;
-        let top = nodes.get(start);
-        while (top && top.parent !== null && nodes.has(top.parent)) top = nodes.get(top.parent);
-        return top && top.id !== start ? (top.name ?? top.label) : null;
-      };
+      const ownerOf = (q: Placement) => ownerOfItem(q.item);
       let saved = 0;
       let stopped = false;
       for (let i = 0; i < n.pieces.length; i++) {
@@ -2434,7 +2454,7 @@ export function App() {
     } catch (e) {
       setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [nesting, cutTitle, nestUnits, measureNesting]);
+  }, [nesting, cutTitle, nestUnits, measureNesting, ownerOfItem]);
   const saveNestPdf = useCallback(async () => {
     const n = nesting;
     if (!n) return;
@@ -3204,6 +3224,9 @@ export function App() {
           onPin: pinRounding,
           visibleOnly: cutVisibleOnly,
           onVisibleOnly: setCutVisibleOnly,
+          byAssembly: cutByAssembly,
+          onByAssembly: setCutByAssembly,
+          ownerOf: ownerOfItem,
           selected: cutSelected,
           onSelectRows: selectCutRows,
           onGrain: setGrain,
