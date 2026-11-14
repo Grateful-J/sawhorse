@@ -522,6 +522,12 @@ impl DocCore {
         serde_json::to_string(&self.doc.model().nest(&opts)).map_err(|e| e.to_string())
     }
 
+    /// The document's stock library (its sheets and boards, per-material defaults and the
+    /// nesting settings), as JSON. Read-only, and cheap: the settings without a nesting.
+    pub fn stock_library_json(&self) -> Result<String, String> {
+        serde_json::to_string(&*self.doc.model().stock_library()).map_err(|e| e.to_string())
+    }
+
     /// The Paint tool's sample (Alt+click): the material face `face` of `object` shows, as
     /// JSON (`"White oak"` or `null`).
     pub fn sample_json(&self, object: u64, face: u64) -> Result<String, String> {
@@ -1200,6 +1206,11 @@ impl Doc {
     /// The nesting for JSON options `{visible_only?, algorithm?}`, as JSON (read-only).
     pub fn nest(&self, options_json: &str) -> Result<String, JsError> {
         self.core.nest_json(options_json).map_err(js)
+    }
+
+    /// The stock library and nesting settings, as JSON (read-only; no nesting is worked out).
+    pub fn stock_library(&self) -> Result<String, JsError> {
+        self.core.stock_library_json().map_err(js)
     }
 
     /// The material a face shows (the Paint tool's sample), as JSON: a name or `null`.
@@ -1909,6 +1920,31 @@ mod tests {
         op(&mut d, r#"{"op":"reset_stock_library"}"#);
         let n: serde_json::Value = serde_json::from_str(&d.nest_json("").unwrap()).unwrap();
         assert_eq!(n["algorithm"], "guillotine");
+    }
+
+    /// The stock library on its own (the app applies a settings change to it): the same
+    /// library and settings the nesting reports, the track saw included, with no nesting.
+    #[test]
+    fn the_stock_library_reads_without_a_nesting() {
+        let mut d = DocCore::default();
+        op(
+            &mut d,
+            r#"{"op":"set_nest_settings","settings":{"kerf":0.009525,"trim":0.0127,"algorithm":"maxrects","sheetSize":{"width":1.2192,"length":1.2192},"overflow":{"sheetSize":{"width":1.2192,"length":2.4384},"kerf":0.003175,"trim":0.00635}}}"#,
+        );
+        let lib: serde_json::Value =
+            serde_json::from_str(&d.stock_library_json().unwrap()).unwrap();
+        let n: serde_json::Value = serde_json::from_str(&d.nest_json("{}").unwrap()).unwrap();
+        assert_eq!(lib, n["library"]);
+        assert_eq!(lib["settings"]["overflow"]["kerf"], 0.003175);
+        assert_eq!(lib["settings"]["sheetSize"]["length"], 1.2192);
+        // A bad saw is refused, and the library is as it was.
+        assert!(
+            d.apply_json(r#"{"op":"set_nest_settings","settings":{"kerf":0.003,"trim":0,"algorithm":"guillotine","overflow":{"sheetSize":{"width":1,"length":1},"kerf":1,"trim":0}}}"#)
+                .is_err()
+        );
+        let after: serde_json::Value =
+            serde_json::from_str(&d.stock_library_json().unwrap()).unwrap();
+        assert_eq!(after, lib);
     }
 
     #[test]

@@ -841,6 +841,8 @@ export interface WasmDoc {
   cut_list(options: string): string;
   /** The nesting (lane 9) for NestOptions JSON, as JSON (crates/kernel/src/nesting.rs). */
   nest(options: string): string;
+  /** The stock library and nesting settings, as JSON, without working out a nesting. */
+  stock_library(): string;
   import_file(name: string, bytes: Uint8Array, options: string): string;
   /** Lane 11: a named batch whose ops may hold placeholders ({"$ref": i, "path": "..."}), applied as one op (crates/kernel/src/refbatch.rs). */
   apply_named_batch(json: string): string;
@@ -915,6 +917,7 @@ export type RequestBody =
   | { kind: "openShz"; bytes: Uint8Array }
   | { kind: "cutList"; options: CutOptions }
   | { kind: "nest"; options: NestOptions }
+  | { kind: "stockLibrary" }
   | { kind: "sample"; object: number; face: number }
   | { kind: "faceUvs"; object: number; face: number; uv: UvXform }
   | { kind: "library" }
@@ -993,6 +996,7 @@ export type WorkerResponse =
       emptySkp?: { units: string | null; unitsWord: string | null; style: { name: string; face: FaceStyle | null } | null };
       cutList?: CutList;
       nesting?: Nesting;
+      stockLibrary?: StockLibrary;
       /** A sampled material (null: the default look). */
       material?: string | null;
       uvs?: Float32Array;

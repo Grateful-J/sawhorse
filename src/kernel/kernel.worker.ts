@@ -223,6 +223,9 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       case "nest":
         res = { id: req.id, ok: true, nesting: JSON.parse(document(mod).nest(JSON.stringify(req.options))) };
         break;
+      case "stockLibrary":
+        res = { id: req.id, ok: true, stockLibrary: JSON.parse(document(mod).stock_library()) };
+        break;
       case "sample":
         res = { id: req.id, ok: true, material: JSON.parse(document(mod).sample(req.object, req.face)) as string | null };
         break;

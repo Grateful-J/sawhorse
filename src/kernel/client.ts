@@ -8,7 +8,7 @@
 // import), and when the person cancels a long request. The request that failed is refused
 // (KernelRestarted: it changed nothing), requests waiting behind it run on the new worker,
 // and `onRestart` tells the app (which says so).
-import type { FaceInfo, CutList, CutOptions, Nesting, NestOptions, ExportFormat, ExportOptions, ImportOptions, Inference, InferQuery, KernelOp, LibraryEntry, OffsetPreview, OffsetSource, OpOutcome, Picked, PickQuery, RequestBody, SceneData, SceneGraph, UvXform, V3, WorkerRequest, WorkerResponse } from "./types";
+import type { FaceInfo, CutList, CutOptions, Nesting, NestOptions, StockLibrary, ExportFormat, ExportOptions, ImportOptions, Inference, InferQuery, KernelOp, LibraryEntry, OffsetPreview, OffsetSource, OpOutcome, Picked, PickQuery, RequestBody, SceneData, SceneGraph, UvXform, V3, WorkerRequest, WorkerResponse } from "./types";
 
 export class KernelUnavailableError extends Error {
   constructor(message: string) {
@@ -371,6 +371,13 @@ export class KernelClient {
     const n = (await this.call({ kind: "nest", options })).nesting;
     if (!n) throw new Error("kernel returned no nesting");
     return n;
+  }
+
+  /** The stock library and nesting settings as they are now, without working out a nesting. */
+  async stockLibrary(): Promise<StockLibrary> {
+    const l = (await this.call({ kind: "stockLibrary" })).stockLibrary;
+    if (!l) throw new Error("kernel returned no stock library");
+    return l;
   }
 
   /** The material face `face` of `object` shows (the Paint tool's Alt+click sample). */

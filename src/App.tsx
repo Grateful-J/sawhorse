@@ -2244,7 +2244,7 @@ export function App() {
     const k = kernelRef.current;
     if (!k) return null;
     await queue.current;
-    return (await k.nest({})).library;
+    return k.stockLibrary();
   }, []);
   /** Change some nesting settings, the rest as the kernel has them now. */
   const patchNestSettings = useCallback(
@@ -2386,16 +2386,24 @@ export function App() {
   // The track saw's parts with cuts a router would have made, measured whenever the nesting
   // sends anything to the saw (only its sheets are measured).
   const [sawWork, setSawWork] = useState<HandWork[] | null>(null);
+  // What was measured last: the same nesting of the same model is not measured again (each
+  // part's faces are read from the kernel).
+  const sawKey = useRef("");
   useEffect(() => {
     const n = nesting;
     if (!n || !n.pieces.some((p) => p.saw)) {
+      sawKey.current = "";
       setSawWork(null);
       return;
     }
+    const key = `${n.hash}:${live.current.scene?.state.stats.hash ?? ""}:${JSON.stringify(nestUnits)}`;
+    if (key === sawKey.current) return;
     let stale = false;
     const saw = sawShare(n);
     void measureNesting(saw).then((m) => {
-      if (!stale) setSawWork(handWork(saw, m?.features, nestUnits));
+      if (stale) return;
+      sawKey.current = key;
+      setSawWork(handWork(saw, m?.features, nestUnits));
     });
     return () => {
       stale = true;
@@ -2425,14 +2433,27 @@ export function App() {
   );
   /** The assembly a piece is in: its outermost named group or component (a cabinet, a base
    * frame), or null for a part on its own. Read from the model as it is now. */
+  // Indexed once per model state: a cut list by assembly asks this for every piece, and a
+  // fresh scan of the nodes and objects each time made it quadratic in the model.
+  const ownerIndex = useRef<{ graph: ReturnType<typeof graphOf> | null; nodes: Map<number, ReturnType<typeof graphOf>["nodes"][number]>; parentOf: Map<number, number | null>; memo: Map<number, string | null> }>({ graph: null, nodes: new Map(), parentOf: new Map(), memo: new Map() });
   const ownerOfItem = useCallback((item: Item): string | null => {
     const graph = graphOf(live.current.scene?.state);
-    const nodes = new Map(graph.nodes.map((g) => [g.id, g]));
-    const start = "node" in item ? item.node : (graph.objects.find((o) => "object" in item && o.id === item.object)?.parent ?? null);
+    const ix = ownerIndex.current;
+    if (ix.graph !== graph) {
+      ix.graph = graph;
+      ix.nodes = new Map(graph.nodes.map((g) => [g.id, g]));
+      ix.parentOf = new Map(graph.objects.map((o) => [o.id, o.parent]));
+      ix.memo = new Map();
+    }
+    const start = "node" in item ? item.node : (ix.parentOf.get(item.object) ?? null);
     if (start === null) return null;
-    let top = nodes.get(start);
-    while (top && top.parent !== null && nodes.has(top.parent)) top = nodes.get(top.parent);
-    return top && top.id !== start ? (top.name ?? top.label) : null;
+    const hit = ix.memo.get(start);
+    if (hit !== undefined) return hit;
+    let top = ix.nodes.get(start);
+    while (top && top.parent !== null && ix.nodes.has(top.parent)) top = ix.nodes.get(top.parent);
+    const owner = top && top.id !== start ? (top.name ?? top.label) : null;
+    ix.memo.set(start, owner);
+    return owner;
   }, []);
   const saveNestCnc = useCallback(async () => {
     const all = nesting;
