@@ -17,6 +17,7 @@
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
 import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { apply, applyVector, BASE_LUMBER, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -35,14 +36,7 @@ let editing = /** @type {number | null} */ (null);
 /** Which group is open ("" for none). */
 let view = /** @type {string} */ ((await storage.app.get("view")) ?? "");
 
-/** @typedef {{ linear: number[][], translation: [number, number, number] }} Frame */
-/** @type {Frame} */
-const IDENTITY = { linear: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation: [0, 0, 0] };
-/** a after b. @param {Frame} a @param {Frame} b @returns {Frame} */
-const compose = (a, b) => ({
-  linear: a.linear.map((row) => [0, 1, 2].map((c) => row[0] * b.linear[0][c] + row[1] * b.linear[1][c] + row[2] * b.linear[2][c])),
-  translation: /** @type {[number, number, number]} */ ([0, 1, 2].map((r) => a.linear[r][0] * b.translation[0] + a.linear[r][1] * b.translation[1] + a.linear[r][2] * b.translation[2] + a.translation[r])),
-});
+/** @typedef {import("./row.js").Frame} Frame */
 
 /** Each cabinet's settings and frame (where its own origin is, in its component's
  * coordinates), by instance id ("n12"), in the document. Old ids stay, so an undone update
@@ -94,6 +88,49 @@ async function focused() {
   return hit ? { node: hit, sizes: all[`n${hit.id}`]?.sizes ?? null, frame: all[`n${hit.id}`]?.frame ?? IDENTITY } : null;
 }
 
+/** A node's frame in the model: its parents' transforms, outermost first, then its own.
+ * @param {Map<number, import("sawhorse").Node>} byId @param {number | null | undefined} id @returns {Frame} */
+function worldOf(byId, id) {
+  let m = IDENTITY;
+  for (let n = id == null ? undefined : byId.get(id); n; n = n.parent == null ? undefined : byId.get(n.parent)) m = compose(/** @type {Frame} */ (n.transform), m);
+  return m;
+}
+
+/** A cabinet of ours where it stands: its box and its own axes in the model (`world`), its
+ * node, settings, kept frame, and its parent's frame in the model.
+ * @typedef {import("./row.js").Cab & { node: import("sawhorse").Node, sizes: Sizes, frame: Frame, parent: Frame }} Placed */
+/** Every cabinet of ours in the model, and the nodes by id. */
+async function placed() {
+  const all = await cabinets();
+  const nodes = await model.nodes();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  /** @type {Placed[]} */
+  const list = [];
+  for (const [key, kept] of Object.entries(all)) {
+    const node = byId.get(Number(key.slice(1)));
+    if (!node || node.kind !== "instance" || !kept.sizes) continue;
+    const s = normalize(kept.sizes, metric());
+    const frame = kept.frame ?? IDENTITY;
+    const parent = worldOf(byId, node.parent);
+    const world = compose(compose(parent, /** @type {Frame} */ (node.transform)), frame);
+    list.push({ id: node.id, name: node.name ?? s.name, width: s.width, depth: s.depth, height: s.height, world, node, sizes: s, frame, parent });
+  }
+  return { list, byId };
+}
+
+/** The transform op that moves a cabinet to stand at `world` (in its parent's axes, as ops take it). @param {Placed} c @param {Frame} world */
+const moveTo = (c, world) => /** @type {import("sawhorse").Transform} */ (compose(compose(compose(invert(c.parent), world), invert(c.frame)), invert(/** @type {Frame} */ (c.node.transform))));
+/** The transform op that slides a node by `v` (model axes). @param {Frame} parent @param {[number, number, number]} v */
+const slide = (parent, v) => /** @type {import("sawhorse").Transform} */ (compose(compose(invert(parent), translation(v)), parent));
+
+/** Where a new cabinet goes: against the last cabinet worked on, or apart. Kept for next time.
+ * @typedef {import("./row.js").Place | "apart"} PlaceNew */
+let place = /** @type {PlaceNew} */ ((await storage.app.get("place")) ?? "right");
+let filler = /** @type {number} */ ((await storage.app.get("filler")) ?? (metric() ? 75 * MM : 3 * IN));
+/** The cabinet a new one goes against (the one edited, else the last made or edited), named. @type {{ id: number, name: string } | null} */
+let anchor = null;
+const LAST = "last";
+
 /** A drawer box of any kind (drawers, or the trash pull-out). */
 const hasDrawers = () => sizes.layout === "drawers" || sizes.layout === "mixed" || sizes.layout === "trash";
 const isTrash = () => sizes.layout === "trash";
@@ -117,7 +154,7 @@ const read = (values) => {
   if (v.joinery === "dado" || v.joinery === "butt") v.dados = v.joinery === "dado";
   if (v.backType === "groove" || v.backType === "butt") Object.assign(v, { back: true, backMount: v.backType });
   else if (v.backType === "none") v.back = false;
-  for (const k of ["preset", "view", "joinery", "backType", ...SECTIONS.map((x) => x.id)]) delete v[k];
+  for (const k of ["preset", "view", "joinery", "backType", "place", "filler", ...SECTIONS.map((x) => x.id)]) delete v[k];
   return normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (v) }, metric());
 };
 
@@ -306,6 +343,19 @@ function body() {
     },
     { type: "text", id: "name", label: "Name", value: sizes.name, placeholder: "Sink base 1" },
   ];
+  if (anchor) {
+    const by = anchor.name;
+    out.push(
+      pick("place", editing === null ? "Place" : "Place a copy", place, [
+        ["right", `Right of ${by}, at its row's end`],
+        ["left", `Left of ${by}, at its row's start`],
+        ["cornerRight", `Around the corner, right of ${by}'s row`],
+        ["cornerLeft", `Around the corner, left of ${by}'s row`],
+        ["apart", "Apart, beside the model"],
+      ]),
+    );
+    if (place === "cornerRight" || place === "cornerLeft") out.push(len("filler", "Corner filler", filler), help("From the corner cabinet's carcass front to the new one's side, for its doors and pulls to clear; a filler strip covers it."));
+  }
   for (const sec of SECTIONS) {
     if (!sec.applies()) continue;
     out.push({ type: "section", id: sec.id, label: sec.label, summary: sec.summary(), value: view === sec.id });
@@ -339,6 +389,14 @@ const panel = await ui.registerPanel({
     if (SECTIONS.some((x) => x.id === id)) {
       view = values[id] ? id : "";
       void storage.app.set("view", view);
+      return refresh();
+    }
+    // Where the next cabinet goes: not a setting of this one.
+    if (id === "place" || id === "filler") {
+      if (id === "place") place = /** @type {PlaceNew} */ (String(values.place));
+      else if (typeof values.filler === "number" && values.filler >= 0) filler = values.filler;
+      void storage.app.set(id, id === "place" ? place : filler);
+      shown = "";
       return refresh();
     }
     const before = sizes;
@@ -381,7 +439,7 @@ async function explain() {
     status: wrong
       ? { text: editing === null ? wrong : `${wrong} The cabinet keeps its last good build.`, tone: "warning" }
       : editing === null
-        ? { text: `Adds ${sizes.name}: ${what}.`, tone: "info" }
+        ? { text: `Adds ${sizes.name}: ${what}${anchor && place !== "apart" ? `, ${place === "right" ? "right of" : place === "left" ? "left of" : "around the corner from"} ${anchor.name}'s row` : ""}.`, tone: "info" }
         : { text: `Editing ${sizes.name}: changes apply as you make them (Ctrl+Z undoes each). Click empty space for a new cabinet.`, tone: "info" },
     summary: { text: planned ? summary(sizes, planned, metric()) : "" },
   };
@@ -395,13 +453,64 @@ async function explain() {
 async function sync() {
   const f = await focused();
   const id = f ? f.node.id : null;
+  // The cabinet a new one goes against: this one, else the last one made or edited.
+  if (id !== null && id !== editing) await storage.document.set(LAST, id);
+  const was = anchor;
+  anchor = await anchorCabinet(id);
+  if (was?.id !== anchor?.id || was?.name !== anchor?.name) shown = "";
   if (id !== editing) {
     editing = id;
     sizes = f ? normalize(f.sizes ?? sizes, metric()) : draft;
     if (!SECTIONS.some((x) => x.id === view && x.applies())) view = "";
     shown = "";
     await refresh();
-  } else await explain();
+  } else await refresh();
+  await rowsSync();
+}
+
+/** The cabinet a new one goes against, if it is still in the model. @param {number | null} editingId */
+async function anchorCabinet(editingId) {
+  const id = editingId ?? /** @type {number | null} */ (await storage.document.get(LAST));
+  if (id == null) return null;
+  const all = await cabinets();
+  if (!all[`n${id}`]) return null;
+  const n = (await model.nodes()).find((x) => x.id === id);
+  return n ? { id, name: n.name ?? normalize(all[`n${id}`].sizes, metric()).name } : null;
+}
+
+/** Each material a batch adds, once: those the model lacks (so a stock chosen for one is kept). */
+async function materialsToAdd() {
+  const have = new Set((await model.materials()).map((m) => m.name));
+  return (/** @type {{ name: string, color: [number, number, number, number] }[]} */ list) => {
+    const out = list.filter((m) => !have.has(m.name));
+    for (const m of out) have.add(m.name);
+    return out;
+  };
+}
+
+/** Add parts to a batch at `frame`, each part's grain set through its first copy; returns the
+ * copies, to wrap into a component. @param {import("sawhorse").Batch} batch
+ * @param {import("./cabinet.js").Part[]} parts @param {Frame} frame
+ * @param {{ name: string, color: [number, number, number, number] }[]} materials */
+function addParts(batch, parts, frame, materials) {
+  const imported = batch.op(flatImportOp(parts, frame, materials));
+  /** @type {import("sawhorse").Item[]} */
+  const items = [];
+  let k = 0;
+  for (const part of parts) {
+    const first = imported.get(`groups.${k}`);
+    for (let c = 0; c < part.copies.length; c++) items.push({ node: imported.get(`groups.${k++}`) });
+    // "length" is every part's grain until said otherwise.
+    if (part.grain !== "length") batch.op({ op: "set_grain", part: { node: first }, grain: part.grain });
+  }
+  return items;
+}
+
+/** The open group or component's frame in the model (where new parts are made). */
+async function contextFrame() {
+  const ctx = (await model.document()).context;
+  if (ctx == null) return IDENTITY;
+  return worldOf(new Map((await model.nodes()).map((n) => [n.id, n])), ctx);
 }
 
 let timer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
@@ -455,24 +564,38 @@ async function generate(mode = "new") {
   const batch = model.batch(own ? "Update cabinet" : "Generate cabinet");
   /** Where the cabinet's origin goes, in the coordinates the new parts are made in. @type {Frame} */
   let frame;
-  if (own && f0) frame = inside ? f0.frame : compose(/** @type {Frame} */ (own.transform), f0.frame);
-  else {
-    const b = await model.bounds();
-    frame = { ...IDENTITY, translation: b ? [b.max[0] + (metric() ? 50 * MM : 2 * IN), b.min[1], 0] : [0, 0, 0] };
+  /** Where a new cabinet went against another: the way its row goes on from there. @type {PlaceNew | null} */
+  let turned = null;
+  if (own && f0) {
+    frame = inside ? f0.frame : compose(/** @type {Frame} */ (own.transform), f0.frame);
+    const old = f0.sizes ? normalize(f0.sizes, metric()) : null;
+    if (old) {
+      // A deeper or shallower box keeps its back where it was: on the wall.
+      if (Math.abs(old.depth - made.depth) > 1e-9) frame = compose(frame, translation([0, old.depth - made.depth, 0]));
+      // A wider or narrower one moves the cabinets right of it in its row along with its side.
+      const dw = made.width - old.width;
+      if (Math.abs(dw) > 1e-9) {
+        const { list } = await placed();
+        const me = list.find((c) => c.id === own.id);
+        if (me) for (const c of rightOf(list, own.id)) batch.transform([{ node: c.id }], slide(c.parent, applyVector(me.world, [dw, 0, 0])));
+      }
+    }
+  } else {
+    const { list } = await placed();
+    const at = anchor && place !== "apart" ? list.find((c) => c.id === anchor?.id) : undefined;
+    if (at && place !== "apart") {
+      // Against the anchor's row, at the end the place names.
+      const row = rowOf(list, at.id);
+      const end = place === "right" || place === "cornerRight" ? row[row.length - 1] : row[0];
+      frame = compose(invert(await contextFrame()), placeNext(end, made, place, filler));
+      if (place === "cornerRight") turned = "right";
+      else if (place === "cornerLeft") turned = "left";
+    } else {
+      const b = await model.bounds();
+      frame = { ...IDENTITY, translation: b ? [b.max[0] + (metric() ? 50 * MM : 2 * IN), b.min[1], 0] : [0, 0, 0] };
+    }
   }
-  // Define only the materials the model lacks, so a stock chosen for one is kept.
-  const have = new Set((await model.materials()).map((m) => m.name));
-  const materials = Object.values(MATERIALS).filter((m) => !have.has(m.name));
-  const imported = batch.op(flatImportOp(planned.parts, frame, materials));
-  /** @type {import("sawhorse").Item[]} */
-  const items = [];
-  let k = 0;
-  for (const part of planned.parts) {
-    const first = imported.get(`groups.${k}`);
-    for (let c = 0; c < part.copies.length; c++) items.push({ node: imported.get(`groups.${k++}`) });
-    // "length" is every part's grain until said otherwise.
-    if (part.grain !== "length") batch.op({ op: "set_grain", part: { node: first }, grain: part.grain });
-  }
+  const items = addParts(batch, planned.parts, frame, (await materialsToAdd())(Object.values(MATERIALS)));
   // The old parts or the old cabinet go last: deleted first, their ids would be free for the
   // new parts, and the batch would number them differently from the same ops one by one.
   /** @type {import("sawhorse").Ref | null} */
@@ -497,16 +620,397 @@ async function generate(mode = "new") {
     await remember(id, made, frame);
     if (own) {
       editing = id;
+      // Rebuilt, it has a new id: new cabinets still go against it.
+      await storage.document.set(LAST, id);
     } else {
-      // The next new cabinet gets the next number ("Base 1", then "Base 2").
+      // The next new cabinet gets the next number ("Base 1", then "Base 2"), and goes against this one.
       draft = { ...made, name: nextName(name) };
       void storage.app.set("sizes", draft);
+      await storage.document.set(LAST, id);
+      // Around a corner, the row goes on down the new wall: right of a right turn, left of a left one.
+      if (turned) {
+        place = turned;
+        void storage.app.set("place", place);
+      }
       const list = planned.parts.map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ");
       await ui.notify(`Made ${name}: ${list}. It is selected, so changes now apply to it; click empty space for a new cabinet.`);
     }
     if (cabinet) await model.select([{ kind: "instance", id }]);
   } catch (e) {
     await ui.notify(`Could not ${own ? "update" : "make"} the cabinet: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+  }
+  await sync();
+}
+
+// --- rows and base frames -------------------------------------------------------------------
+//
+// A second panel. Select a cabinet: it names the row the cabinet stands in (cabinets side by
+// side, backs in line) and plans the base frame for it, with its cut list; select several to
+// line them up. Select a base frame: its own settings, every change rebuilding it in place.
+
+/** @typedef {import("./row.js").BaseSizes} BaseSizes */
+/** Each base frame's settings and frame (as a cabinet's), the row it was made for (its
+ * length, depth and fingerprint), by instance id, in the document.
+ * @typedef {{ sizes: Partial<BaseSizes>, frame: Frame, length: number, depth: number, fit: string }} KeptBase */
+const BASES = "bases";
+async function bases() {
+  return /** @type {Record<string, KeptBase>} */ ((await storage.document.get(BASES)) ?? {});
+}
+/** @param {number} id @param {KeptBase} kept */
+async function rememberBase(id, kept) {
+  const all = await bases();
+  delete all[`n${id}`];
+  all[`n${id}`] = kept;
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete all[k];
+  await storage.document.set(BASES, all);
+}
+
+/** A base frame of ours where it stands. @typedef {{ id: number, node: import("sawhorse").Node, sizes: BaseSizes, world: Frame, kept: KeptBase }} PlacedBase */
+/** @param {Map<number, import("sawhorse").Node>} byId */
+async function placedBases(byId) {
+  /** @type {PlacedBase[]} */
+  const out = [];
+  for (const [key, kept] of Object.entries(await bases())) {
+    const node = byId.get(Number(key.slice(1)));
+    if (!node || node.kind !== "instance") continue;
+    const world = compose(compose(worldOf(byId, node.parent), /** @type {Frame} */ (node.transform)), kept.frame);
+    out.push({ id: node.id, node, sizes: normalizeBase(kept.sizes, metric()), world, kept });
+  }
+  return out;
+}
+
+/** A cabinet stands on a base frame: turned its way, its bottom on the frame's top, its back
+ * on the frame's back line, and over the frame's length. @param {PlacedBase} base @param {Placed} c */
+function standsOn(base, c) {
+  const r = compose(invert(base.world), c.world);
+  if (!unturned(r)) return false;
+  const [x, y, z] = r.translation;
+  return Math.abs(z - base.sizes.height) < TOUCH && Math.abs(y + c.depth - base.kept.depth) < TOUCH && x < base.kept.length - TOUCH && x + c.width > TOUCH;
+}
+
+/** Where a row's joints are, its length and depth: to tell when it changed under its frame. @param {Placed[]} row */
+const fingerprint = (row) => {
+  const { starts, length, depth } = rowLayout(row);
+  return [...starts, length, depth].map((v) => Math.round(v / TOUCH)).join(",");
+};
+
+/** What the rows panel shows: nothing of ours; a row (from a selected cabinet); or a base frame.
+ * @typedef {{ kind: "none" } | { kind: "row", row: Placed[], selected: Placed[], base: PlacedBase | null } | { kind: "base", base: PlacedBase, row: Placed[] }} RowView */
+/** @type {RowView} */
+let rowView = { kind: "none" };
+/** The base frame settings for a new frame (kept for next time). */
+let baseDraft = normalizeBase(/** @type {Partial<BaseSizes> | null} */ (await storage.app.get("base")), metric());
+/** What the fields show: the draft, or the selected frame's settings. */
+let baseSizes = baseDraft;
+
+/** What the selection is, for the rows panel. @returns {Promise<RowView>} */
+async function rowFocus() {
+  const { list, byId } = await placed();
+  const frames = await placedBases(byId);
+  const ours = (/** @type {number} */ id) => list.some((c) => c.id === id) || frames.some((b) => b.id === id);
+  /** @param {number | null | undefined} id */
+  const climb = (id) => {
+    for (let n = id == null ? undefined : byId.get(id); n; n = n.parent == null ? undefined : byId.get(n.parent)) if (n.kind === "instance" && ours(n.id)) return n.id;
+    return null;
+  };
+  const ids = new Set();
+  const sel = await model.selection();
+  for (const it of sel) {
+    let start = /** @type {number | null} */ (null);
+    if (it.kind === "instance" || it.kind === "group") start = it.id;
+    else if (it.kind === "solid") start = (await model.solid(it.id))?.parent ?? null;
+    else if (it.kind === "face") start = (await model.solid(it.solid))?.parent ?? null;
+    const id = climb(start);
+    if (id == null) return { kind: "none" };
+    ids.add(id);
+  }
+  if (!sel.length) {
+    const id = climb((await model.document()).context);
+    if (id != null) ids.add(id);
+  }
+  const base = frames.find((b) => ids.has(b.id));
+  if (base) {
+    const on = list.find((c) => standsOn(base, c));
+    return { kind: "base", base, row: on ? rowOf(list, on.id) : [] };
+  }
+  const selected = list.filter((c) => ids.has(c.id));
+  if (!selected.length) return { kind: "none" };
+  const row = rowOf(list, selected[0].id);
+  return { kind: "row", row, selected, base: frames.find((b) => row.some((c) => standsOn(b, c))) ?? null };
+}
+
+/** The base frame's fields. @param {BaseSizes} b @returns {Field[]} */
+function baseFields(b) {
+  /** @type {Field[]} */
+  const out = [len("height", "Height", b.height), len("setback", "Toe setback", b.setback), len("backInset", "Back inset", b.backInset)];
+  out.push(pick("ends", "Ends", b.ends, [["none", "Against walls or cabinets"], ["left", "Left end shows"], ["right", "Right end shows"], ["both", "Both ends show"]]));
+  out.push(help("An end that shows is set back like the front, so the toe space turns the corner."));
+  out.push(pick("stock", "Stock", b.stock, [["plywood", "Plywood strips (CNC)"], ["lumber", "Lumber"]]), len("thickness", "Thickness", b.thickness));
+  out.push(pick("joints", "Sleepers", b.joints, [["dado", "In dados in the rails"], ["butt", "Butted between the rails"]]));
+  if (b.joints === "dado") out.push(len("dadoDepth", "Dado depth", b.dadoDepth));
+  out.push(len("spacing", "Sleepers at most", b.spacing), len("maxLength", "Longest piece", b.maxLength));
+  out.push(
+    help(
+      b.stock === "plywood"
+        ? `Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: ${f(metric() ? 1190 * MM : 47 * IN)} fits a 4 × 4 sheet inside the CNC trim; a longer row is split into ladders at the joints between cabinets. Plywood strips nest with the carcass.`
+        : "Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: the boards you buy; a longer row is split into ladders at the joints between cabinets.",
+    ),
+  );
+  return out;
+}
+
+/** The rows panel for what is selected. @returns {Field[]} */
+function rowsBody() {
+  const v = rowView;
+  /** @type {Field[]} */
+  const out = [];
+  if (v.kind === "none") {
+    out.push({ type: "note", id: "row", text: "Select a cabinet to see its row and plan the base frame it stands on. Select two or more to line them up.", tone: "info" });
+    out.push(help("Rows build themselves: Cabinet › Place puts each new cabinet against the last one, its back in line."));
+    return out;
+  }
+  out.push({ type: "note", id: "row", text: "", tone: "info" });
+  if (v.kind === "row" && v.selected.length > 1 && rowOf(v.selected, v.selected[0].id).length < v.selected.length) {
+    out.push({ type: "button", id: "lineUp", label: "Line up the selected cabinets" }, help("The longest row among them stays put; the others butt against its ends in the order they stand, backs in line, on its floor."));
+  }
+  if (v.kind === "row" && v.base) {
+    out.push({ type: "button", id: "selectBase", label: `Select ${v.base.node.name ?? "its base frame"}` });
+    return out;
+  }
+  out.push(heading("Base frame"), ...baseFields(baseSizes));
+  if (v.kind === "row") out.push({ type: "button", id: "makeBase", label: "Put the row on a base frame", primary: true });
+  else out.push({ type: "button", id: "refit", label: "Fit to the row again" });
+  out.push({ type: "note", id: "baseStatus", text: "" });
+  out.push(heading("Cut list"), { type: "table", id: "baseCuts", columns: ["Part", "Qty", "Length", "Width", "Thick"], rows: [], align: ["left", "right", "right", "right", "right"] });
+  out.push({ type: "note", id: "baseTotal", text: "" });
+  out.push({ type: "table", id: "baseNotes", columns: ["Step", "How"], rows: [], align: ["left", "left"] });
+  return out;
+}
+
+/** Each cabinet's top above the floor once on the frame (a toe kick comes off its box). @param {Placed[]} row @param {BaseSizes} b */
+const topsOnFrame = (row, b) => {
+  /** @type {Map<number, number>} the first exact top of each, by the half millimetre */
+  const tops = new Map();
+  for (const c of row) {
+    const top = b.height + c.sizes.height - (c.sizes.base === "toekick" ? c.sizes.toeKick : 0);
+    if (!tops.has(Math.round(top / TOUCH))) tops.set(Math.round(top / TOUCH), top);
+  }
+  return [...tops.values()];
+};
+
+/** Fill in the row line, the plan's status and its cut list. */
+async function explainRows() {
+  const v = rowView;
+  if (v.kind === "none") return;
+  /** @type {Record<string, Record<string, unknown>>} */
+  const fields = {};
+  const row = v.row;
+  if (!row.length) fields.row = { text: `No cabinets stand on ${v.kind === "base" ? (v.base.node.name ?? "this frame") : "it"} now.`, tone: "warning" };
+  else {
+    const lay = rowLayout(row);
+    const on = v.kind === "row" && v.base ? ` · on ${v.base.node.name ?? "a base frame"}` : "";
+    fields.row = { text: `Row of ${row.length}: ${row.map((c) => c.name).join(", ")} · ${f(lay.length)} long, ${f(lay.depth)} deep${on}`, tone: "info" };
+  }
+  if (!(v.kind === "row" && v.base)) {
+    const p = row.length ? planBase(row, baseSizes) : null;
+    /** @type {Record<string, unknown>} */
+    let status;
+    if (!p) status = { text: "Select the row's cabinets to make a frame for them.", tone: "warning" };
+    else if (p.error) status = { text: p.error, tone: "warning" };
+    else {
+      const kicks = row.filter((c) => c.sizes.base === "toekick");
+      const tops = topsOnFrame(row, baseSizes).map((t) => f(t));
+      const parts = [`${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers, ${f(baseSizes.height)} tall.`];
+      if (kicks.length) parts.push(`${kicks.length === row.length ? "The cabinets' toe kicks come off" : `${kicks.map((c) => c.name).join(", ")} ${kicks.length === 1 ? "loses its" : "lose their"} toe kick${kicks.length === 1 ? "" : "s"}`}: each box is its kick shorter and stays where it is.`);
+      parts.push(`Tops at ${tops.join(", ")} above the floor.`);
+      if (v.kind === "base") {
+        const stale = fingerprint(row) !== v.base.kept.fit;
+        fields.refit = { disabled: !stale };
+        status = stale ? { text: "The row has changed since this frame was made: Fit to the row again.", tone: "warning" } : { text: `${parts.join(" ")} Changes apply as you make them (Ctrl+Z undoes each).`, tone: "info" };
+      } else status = { text: parts.join(" "), tone: "info" };
+    }
+    if (v.kind === "row") fields.makeBase = { disabled: !p || !!p.error };
+    fields.baseStatus = status;
+    const cuts = p && !p.error ? cutRows(p.parts) : [];
+    fields.baseCuts = { rows: cuts.map((r) => [r.name, r.qty, f(r.length), f(r.width), stock(r.thickness)]) };
+    const pieces = cuts.reduce((n, r) => n + r.qty, 0);
+    const run = cuts.reduce((n, r) => n + r.qty * r.length, 0);
+    fields.baseTotal = { text: cuts.length ? `${pieces} pieces, ${f(run)} of ${f(baseSizes.height)} ${baseSizes.stock === "plywood" ? `strips of ${stock(baseSizes.thickness)} plywood` : `by ${stock(baseSizes.thickness)} lumber`}. They are in the Cut list too, as Base front rail, Base back rail and Base sleeper.` : "" };
+    fields.baseNotes = { rows: p && !p.error ? p.notes : [] };
+  }
+  await rowsPanel.update({ fields });
+}
+
+let rowsShown = "";
+async function rowsRefresh() {
+  const b = rowsBody();
+  const ids = idsOf(b);
+  if (ids !== rowsShown) {
+    rowsShown = ids;
+    await rowsPanel.setBody(b);
+  }
+  await explainRows();
+}
+
+/** The selection moved or the model changed: show the row or the base frame it is in. */
+async function rowsSync() {
+  const was = rowView;
+  rowView = await rowFocus();
+  const wasBase = was.kind === "base" ? was.base.id : null;
+  const isBase = rowView.kind === "base" ? rowView.base.id : null;
+  if (wasBase !== isBase) {
+    baseSizes = rowView.kind === "base" ? rowView.base.sizes : baseDraft;
+    rowsShown = "";
+  }
+  await rowsRefresh();
+}
+
+/** Panel values into base frame sizes; picking lumber or plywood starts its thickness, length and joints over. @param {string} id @param {Record<string, unknown>} values */
+function readBase(id, values) {
+  /** @type {Record<string, unknown>} */
+  const v = {};
+  for (const k of Object.keys(baseSizes)) if (k in values) v[k] = values[k];
+  let next = normalizeBase({ ...baseSizes, .../** @type {Partial<BaseSizes>} */ (v) }, metric());
+  if (id === "stock") {
+    const d = next.stock === "lumber" ? lumberDefaults(metric()) : normalizeBase(null, metric());
+    // Plywood starts at the row's carcass stock.
+    const carcass = rowView.kind !== "none" && rowView.row[0] ? rowView.row[0].sizes.thickness : d.thickness;
+    next = { ...next, thickness: next.stock === "plywood" ? carcass : d.thickness, maxLength: d.maxLength, joints: d.joints };
+  }
+  return next;
+}
+
+const rowsPanel = await ui.registerPanel({
+  id: "rows",
+  title: "Rows and base frames",
+  body: rowsBody(),
+  onChange: (id, values) => {
+    baseSizes = readBase(id, values);
+    if (["stock", "joints"].includes(id)) rowsShown = "";
+    if (rowView.kind === "base") liveBase();
+    else {
+      baseDraft = baseSizes;
+      void storage.app.set("base", baseDraft);
+    }
+    return rowsRefresh();
+  },
+  onAction: async (id) => {
+    const v = rowView;
+    if (id === "lineUp" && v.kind === "row") return lineUpCabinets(v.selected);
+    if (id === "selectBase" && v.kind === "row" && v.base) return model.select([{ kind: "instance", id: v.base.id }]);
+    if (id === "makeBase" && v.kind === "row") return buildBase(v.row, baseSizes, null);
+    if (id === "refit" && v.kind === "base") return buildBase(v.row, baseSizes, v.base);
+  },
+});
+rowsShown = idsOf(rowsBody());
+
+let baseTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+/** Rebuild the selected base frame a moment after the last change. */
+function liveBase() {
+  if (baseTimer) clearTimeout(baseTimer);
+  baseTimer = setTimeout(async () => {
+    baseTimer = null;
+    const v = rowView;
+    if (v.kind !== "base" || !v.row.length) return;
+    try {
+      await buildBase(v.row, baseSizes, v.base);
+    } catch (e) {
+      await ui.notify(`Could not update the base frame: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+    }
+  }, 250);
+}
+
+/** Butt the selected cabinets into one row: one undo step. @param {Placed[]} selected */
+async function lineUpCabinets(selected) {
+  const moved = lineUp(selected);
+  if (!moved.size) {
+    await ui.notify("They stand in one row already.");
+    return;
+  }
+  const batch = model.batch("Line up cabinets");
+  for (const c of selected) {
+    const world = moved.get(c.id);
+    if (world) batch.transform([{ node: c.id }], moveTo(c, world));
+  }
+  try {
+    await batch.commit();
+    await ui.notify(`Lined up ${selected.length} cabinets in one row, backs in line.`);
+  } catch (e) {
+    await ui.notify(`Could not line them up: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+  }
+  await sync();
+}
+
+/**
+ * Put a row on a base frame (or make its frame again): one batch, one undo step. Each cabinet
+ * with a toe kick is rebuilt without it, its box the kick shorter; every cabinet is lifted onto
+ * the frame's top; the frame's parts go under them, wrapped into its component.
+ * @param {Placed[]} row @param {BaseSizes} b @param {PlacedBase | null} old
+ */
+async function buildBase(row, b, old) {
+  if (!row.length) return;
+  const p = planBase(row, b);
+  if (p.error) {
+    await ui.notify(p.error, { kind: "warning" });
+    return;
+  }
+  const ctxId = (await model.document()).context;
+  const kicks = row.filter((c) => c.sizes.base === "toekick");
+  const nested = kicks.find((c) => c.node.parent !== ctxId);
+  if (nested) {
+    await ui.notify(`${nested.name} has a toe kick and is inside a group: open the group, or take it out, to rebuild it without its kick.`, { kind: "warning" });
+    return;
+  }
+  const ctx = await contextFrame();
+  const inv0 = invert(row[0].world);
+  const bottom = (/** @type {Placed} */ c) => apply(inv0, c.world.translation)[2];
+  // The floor, in the first cabinet's axes: under the old frame, else where the cabinets stand.
+  const floor = old ? apply(inv0, old.world.translation)[2] : Math.min(...row.map(bottom));
+  const baseWorld = compose(row[0].world, translation([p.at[0], p.at[1], floor]));
+  const batch = model.batch(old ? "Update base frame" : "Base frame");
+  const add = await materialsToAdd();
+  /** @type {{ c: Placed, s: Sizes, frame: Frame, ref: import("sawhorse").Ref }[]} */
+  const rebuilt = [];
+  for (const c of row) {
+    const up = applyVector(row[0].world, [0, 0, floor + b.height - bottom(c)]);
+    if (c.sizes.base === "toekick") {
+      const s = { ...c.sizes, name: c.name, base: /** @type {const} */ ("none"), height: c.sizes.height - c.sizes.toeKick };
+      const planned = plan(s, metric());
+      if (planned.error) {
+        await ui.notify(`${c.name} without its toe kick: ${planned.error}`, { kind: "warning" });
+        return;
+      }
+      // Its origin goes from the floor to the frame's top: the box stays put when the frame is its kick tall.
+      const frame = compose(invert(ctx), compose(translation(up), c.world));
+      const items = addParts(batch, planned.parts, frame, add(Object.values(MATERIALS)));
+      const ref = batch.makeComponent(items, `${s.name} ${f(s.width)} x ${f(s.height)} x ${f(s.depth)}`);
+      batch.rename({ node: ref.node }, c.name);
+      rebuilt.push({ c, s, frame, ref });
+    } else if (Math.abs(up[0]) + Math.abs(up[1]) + Math.abs(up[2]) > 1e-9) batch.transform([{ node: c.id }], slide(c.parent, up));
+  }
+  const name = old?.node.name ?? `Base frame ${Object.keys(await bases()).length + 1}`;
+  const frame = compose(invert(ctx), baseWorld);
+  const items = addParts(batch, p.parts, frame, add(b.stock === "lumber" ? [BASE_LUMBER] : [MATERIALS.carcass]));
+  const ref = batch.makeComponent(items, `${name} ${f(p.length)}`);
+  batch.rename({ node: ref.node }, name);
+  // The old frame and the old cabinets go last (as in generate).
+  if (old) batch.delete({ node: old.id });
+  for (const r of rebuilt) batch.delete({ node: r.c.id });
+  try {
+    const result = await batch.commit();
+    const last = await storage.document.get(LAST);
+    for (const r of rebuilt) {
+      const id = /** @type {number} */ (result.value(r.ref.node));
+      await remember(id, r.s, r.frame);
+      if (last === r.c.id) await storage.document.set(LAST, id);
+    }
+    const id = /** @type {number} */ (result.value(ref.node));
+    await rememberBase(id, { sizes: b, frame, length: p.length, depth: p.depth, fit: fingerprint(row) });
+    if (!old) await ui.notify(`Made ${name} under ${row.length} ${row.length === 1 ? "cabinet" : "cabinets"}: ${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers. It is selected: its cut list is in Rows and base frames, and changes apply to it.`);
+    await model.select([{ kind: "instance", id }]);
+  } catch (e) {
+    await ui.notify(`Could not ${old ? "update" : "make"} the base frame: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
   }
   await sync();
 }

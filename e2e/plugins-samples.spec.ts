@@ -189,6 +189,128 @@ test("cabinet generator: the selected cabinet changes as its settings do, in pla
   await expect(page.locator(`[data-panel="${panel}"] [data-field="shelves"]`)).toHaveValue("2");
 });
 
+test("cabinet generator: new cabinets stand in a row; the row goes on a base frame with its own cut list, toe kicks off", async ({ page }) => {
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  const rows = `${CABINET}/rows`;
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  const empty = async () => {
+    await page.keyboard.press("Escape");
+    await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+  };
+  const extent = (ss: Awaited<ReturnType<typeof solids>>) => [0, 1, 2].map((k) => Math.round((Math.max(...ss.map((x) => x.max[k])) - Math.min(...ss.map((x) => x.min[k]))) * 1e4) / 1e4);
+  // Three cabinets, 24, 18 and 36 in wide (open shelves, the toe kick on): each goes right of the last.
+  await field(page, panel, "width", "24");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
+  for (const [w, n] of [["18", 2], ["36", 3]] as const) {
+    await empty();
+    await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText(`Adds Cabinet ${n}`);
+    await expect(page.locator(`[data-panel="${panel}"] [data-field="place"]`)).toHaveValue("right");
+    await field(page, panel, "width", w);
+    await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+    await expect(page.locator("#hint")).toContainText(`Made Cabinet ${n}`);
+  }
+  // Side by side, backs in line: 78 x 23 1/4 x 34 1/2 in all told.
+  const cabinets = await solids(page);
+  expect(extent(cabinets)).toEqual([78, 23.25, 34.5]);
+
+  // The middle cabinet selected: the rows panel names its row and plans its frame.
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await page.locator('.outline li[data-kind="instance"]', { hasText: "Cabinet 2" }).first().locator(".label").first().click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="row"]`)).toContainText("Row of 3: Cabinet 1, Cabinet 2, Cabinet 3 · 78 long");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("2 ladders");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("toe kicks come off");
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("Tops at 34 1/2 above the floor");
+  // Ladders break at the joint between the 18 and the 36: 42 and 36 in, each inside a 4 x 4 sheet.
+  const cuts = page.locator(`[data-panel="${rows}"] [data-table="baseCuts"] tbody tr`);
+  await expect(cuts.first()).toContainText("Base back rail");
+  const table = await cuts.evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => (td.textContent ?? "").trim())));
+  expect(table.slice(0, 4).map((r) => [r[0], r[1], r[2], r[3]])).toEqual([
+    ["Base back rail", "1", "42", "4"],
+    ["Base front rail", "1", "42", "4"],
+    ["Base back rail", "1", "36", "4"],
+    ["Base front rail", "1", "36", "4"],
+  ]);
+  expect(table[4][0]).toBe("Base sleeper");
+
+  // On the frame: one undo step; the toe kicks are gone and the tops stay at 34 1/2.
+  await page.locator(`[data-panel="${rows}"] [data-action="makeBase"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Base frame 1 under 3 cabinets");
+  const after = await solids(page);
+  expect(extent(after)).toEqual([78, 23.25, 34.5]);
+  const sleepers = Number(table[4][1]);
+  // Each cabinet loses its toe kick; the frame adds 4 rails and the sleepers.
+  expect(after.length).toBe(cabinets.length - 3 + 4 + sleepers);
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("Changes apply as you make them");
+  // A taller frame lifts the row: the tops go up with it.
+  await page.locator(`[data-panel="${rows}"] [data-field="height"]`).fill("5");
+  await page.locator(`[data-panel="${rows}"] [data-field="height"]`).press("Enter");
+  await expect.poll(async () => extent(await solids(page))[2]).toBe(35.5);
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("#hint")).toContainText("Undone: Update base frame");
+  await expect.poll(async () => extent(await solids(page))[2]).toBe(34.5);
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("#hint")).toContainText("Undone: Base frame");
+  await expect.poll(async () => (await solids(page)).length).toBe(cabinets.length);
+});
+
+test("cabinet generator: a wider cabinet moves its row along; Line up butts cabinets together; a cabinet turns the corner", async ({ page }) => {
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  const rows = `${CABINET}/rows`;
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  const empty = async () => {
+    await page.keyboard.press("Escape");
+    await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+    await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds");
+  };
+  const make = async (n: number, width: string) => {
+    await field(page, panel, "width", width);
+    await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+    await expect(page.locator("#hint")).toContainText(`Made Cabinet ${n}`);
+  };
+  const outline = (name: string) => page.locator('.outline li[data-kind="instance"]', { hasText: name }).first().locator(".label").first();
+  const extent = async () => {
+    const ss = await solids(page);
+    return [0, 1, 2].map((k) => Math.round((Math.max(...ss.map((x) => x.max[k])) - Math.min(...ss.map((x) => x.min[k]))) * 1e4) / 1e4);
+  };
+  await make(1, "24");
+  await empty();
+  await make(2, "18");
+  expect((await extent())[0]).toBe(42);
+  // Cabinet 1 made 6 in wider: Cabinet 2 moves along with its side.
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await outline("Cabinet 1").click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Editing Cabinet 1");
+  await field(page, panel, "width", "30");
+  await expect.poll(async () => (await extent())[0]).toBe(48);
+  // One apart, 2 in off the end; then lined up against the row.
+  await empty();
+  await choose(page, panel, "place", "apart");
+  await make(3, "15");
+  expect((await extent())[0]).toBe(65);
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await outline("Cabinet 2").click();
+  await outline("Cabinet 3").click({ modifiers: ["Shift"] });
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await page.locator(`[data-panel="${rows}"] [data-action="lineUp"]`).click();
+  await expect(page.locator("#hint")).toContainText("Lined up 2 cabinets");
+  await expect.poll(async () => (await extent())[0]).toBe(63);
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="row"]`)).toContainText("Row of 3: Cabinet 1, Cabinet 2, Cabinet 3 · 63 long");
+  // Around the corner at the right end: its back on the next wall, 3 in in front of the row's carcass.
+  await empty();
+  await choose(page, panel, "place", "cornerRight");
+  await make(4, "24");
+  expect(await extent()).toEqual([63, 23.25 + 27, 34.5]);
+  // The row goes on down the new wall from there.
+  await expect(page.locator(`[data-panel="${panel}"] [data-field="place"]`)).toHaveValue("right");
+});
+
 // Lane 28 (#34, #21): Generate pressed again with the cabinet selected ("Update selected
 // cabinet") deletes the old cabinet and makes a new one in its slots, and Explode removes
 // the cabinet's instance; either left ids the file reader numbered afresh, so Ctrl+S said

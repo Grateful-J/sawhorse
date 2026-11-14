@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyPreset, defaults, flatImportOp, importOp, MATERIALS, plan } from "../../plugins/cabinet-generator/cabinet.js";
+import { baseDefaults, IDENTITY, placeNext, planBase, type Cab } from "../../plugins/cabinet-generator/row.js";
 import type { DocState, FaceInfo, Nesting, V3 } from "../kernel/types";
 import { cncSettings } from "../components/NestingSection";
 import { nestingDxf } from "./dxf";
@@ -134,6 +135,61 @@ run("a cabinet to the CNC router", () => {
     const pins = [...measured.features.values()].flatMap((f) => f.drills).filter((h) => Math.abs(h.depth - 0.01) < 1e-6 && h.diameter < 0.0055);
     expect(pins.length).toBeGreaterThan(0);
     for (const h of pins) expect(h.diameter).toBeCloseTo(0.005, 9);
+  }, 60_000);
+
+  it("a row's base frame: rails that fit a 4 x 4 sheet, a dado for every sleeper cut from one face, nothing left out", async () => {
+    const d = await doc();
+    const IN = 0.0254;
+    // 24, 18 and 36 in cabinets side by side: a 78 in row, two ladders (42 and 36 in).
+    const row: Cab[] = [];
+    for (const w of [24, 18, 36]) {
+      const size = { width: w * IN, depth: 23.25 * IN };
+      row.push({ id: row.length + 1, name: `Cab ${row.length + 1}`, ...size, height: 30.5 * IN, world: row.length ? placeNext(row[row.length - 1], size, "right") : IDENTITY });
+    }
+    const b = baseDefaults(false);
+    const p = planBase(row, b);
+    expect(p.error).toBeNull();
+    d.apply_named_batch(JSON.stringify({ name: "Base frame", ops: [importOp(p.parts, p.at, "Base frame 1", "Base frame 1", Object.values(MATERIALS))] }));
+    const lib = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify(sheetSetOps(lib, 48 * IN, 48 * IN).op));
+    const lib2 = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...lib2.settings, ...cncSettings(false) } }));
+    const n = JSON.parse(d.nest("{}")) as Nesting;
+    expect(n.unplaced).toEqual([]);
+    expect(thicknessMismatches(n)).toEqual([]);
+    expect(spacingProblem(n, "sixteenth")).toBeNull();
+    // Strips: one 4 x 4 sheet holds the whole frame.
+    expect(n.pieces).toHaveLength(1);
+    const st = JSON.parse(d.state_json()) as DocState;
+    const measured = await measureNest(
+      { faces: async (o) => JSON.parse(d.faces_json(o)) as FaceInfo[], outline: async (_k, owner, index) => JSON.parse(d.outline("face", owner, index)) as V3[][] },
+      st.graph.objects,
+      n,
+    );
+    expect(measured.skipped).toEqual([]);
+    expect(measured.flipped).toEqual([]);
+    const placements = n.pieces.flatMap((q) => q.placements);
+    // Every rail: a pocket per sleeper on the face up, 1/4 in deep, 23/32 + 0.008 wide; sleepers plain.
+    const sleepersIn = new Map<string, number>();
+    for (const q of placements) {
+      const f = measured.features.get(q.tag);
+      // A plain blank has nothing to measure beyond its profile.
+      if (q.name === "Base sleeper") {
+        expect(f?.pockets ?? []).toEqual([]);
+        continue;
+      }
+      expect(q.name).toMatch(/^Base (front|back) rail$/);
+      expect(f).toBeDefined();
+      if (!f) continue;
+      expect(f.flip.pockets).toEqual([]);
+      for (const k of f.pockets) expect(k.depth).toBeCloseTo(0.25 * IN, 9);
+      sleepersIn.set(q.name, (sleepersIn.get(q.name) ?? 0) + f.pockets.length);
+    }
+    expect(sleepersIn.get("Base front rail")).toBe(p.sleepers);
+    expect(sleepersIn.get("Base back rail")).toBe(p.sleepers);
+    const all = nestingDxf(n, "lwpolyline", measured.features, { piece: 0 });
+    expect(all).toContain("PROFILE_THRU");
+    expect(all).toMatch(/POCKET_6\.35MM/);
   }, 60_000);
 
   it("the generator's batch: parts imported flat, each one's grain set, wrapped in one cabinet; and rebuilt from inside it", async () => {
