@@ -849,13 +849,31 @@ fn settings() -> impl Strategy<Value = NestSettings> {
         1 => Just(0.0),
         1 => 0.0..(0.5 * IN)
     ];
-    (kerf, trim, alg, joint).prop_map(|(kerf, trim, algorithm, joint_loss)| NestSettings {
-        kerf,
-        trim,
-        algorithm,
-        joint_loss,
-        sheet_size: None,
-        overflow: None,
+    // Mixed, a third of the time: the router takes the 24 x 30 offcut (when the library has
+    // it), the saw a 4 x 8 with its own kerf and trim.
+    let mixed = prop_oneof![
+        2 => Just(None),
+        1 => (0.0..(0.25 * IN), 0.0..(1.0 * IN)).prop_map(|(kerf, trim)| Some((kerf, trim)))
+    ];
+    (kerf, trim, alg, joint, mixed).prop_map(|(kerf, trim, algorithm, joint_loss, mixed)| {
+        NestSettings {
+            kerf,
+            trim,
+            algorithm,
+            joint_loss,
+            sheet_size: mixed.map(|_| SheetSize {
+                width: 24.0 * IN,
+                length: 30.0 * IN,
+            }),
+            overflow: mixed.map(|(kerf, trim)| SawOverflow {
+                sheet_size: SheetSize {
+                    width: 48.0 * IN,
+                    length: 96.0 * IN,
+                },
+                kerf,
+                trim,
+            }),
+        }
     })
 }
 
@@ -1572,6 +1590,131 @@ fn what_does_not_fit_the_router_goes_to_the_saw() {
     // A bad saw is refused.
     let bad = NestSettings {
         overflow: Some(SawOverflow { kerf: IN, ..saw }),
+        ..router
+    };
+    assert!(bad.check().is_err());
+}
+
+/// The saw's edges: a part a hair too long for the router's sheet goes to the saw (where it
+/// fits with its grain along); one too large for the saw too stays on no stock, named
+/// against the router's sheet; a part whose material names a 4 × 8 is cut on the saw when
+/// one is set, and laid out as before when not; a library with a bad saw is refused.
+#[test]
+fn the_saw_takes_what_the_router_cannot_and_nothing_else() {
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
+    let saw = SawOverflow {
+        sheet_size: SheetSize {
+            width: 48.0 * IN,
+            length: 96.0 * IN,
+        },
+        kerf: IN / 8.0,
+        trim: 0.25 * IN,
+    };
+    let mut lib = StockLibrary::builtin();
+    lib.defaults.clear();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 sheet, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 23.0 / 32.0 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::Length,
+    });
+    let router = NestSettings {
+        kerf: 0.375 * IN,
+        trim: 0.5 * IN,
+        algorithm: NestAlgorithm::Maxrects,
+        sheet_size: Some(four),
+        ..NestSettings::default()
+    };
+    let mixed = NestSettings {
+        overflow: Some(saw),
+        ..router
+    };
+    // Rows: (thickness, width, length, qty, grain, sheet, material).
+    let t = 23.0 / 32.0;
+    let list = list_of(
+        &[
+            // Grain along a 47.25 in length on a 47 in usable 4 x 4: too large either way; the
+            // saw's 95 1/2 x 47 1/2 takes it with its grain along.
+            (t, 20.0, 47.25, 1, Grain::Length, true, 0),
+            // Larger than a 4 x 8 inside the saw's trim: on no stock.
+            (t, 30.0, 100.0, 1, Grain::Length, true, 0),
+            // Fits the 4 x 4: the router's.
+            (t, 20.0, 30.0, 2, Grain::Length, true, 0),
+        ],
+        0,
+    );
+    let n = nest_list(&list, &lib, mixed);
+    check_nesting_of(&list, &n).unwrap();
+    let on = |row: usize| -> Vec<bool> {
+        n.pieces
+            .iter()
+            .filter(|p| p.placements.iter().any(|q| q.row == row))
+            .map(|p| p.saw)
+            .collect()
+    };
+    assert_eq!(on(0), vec![true]);
+    assert_eq!(on(2), vec![false]);
+    let big = n.unplaced.iter().find(|u| u.row == 1).unwrap();
+    assert_eq!(big.reason, UnplacedReason::TooLarge);
+    assert_eq!(big.stock.as_deref(), Some("4 x 4 sheet, 3/4"));
+    // Without the saw: the 47 1/4 part is on no stock as before.
+    let n0 = nest_list(&list, &lib, router);
+    check_nesting_of(&list, &n0).unwrap();
+    assert!(n0.unplaced.iter().any(|u| u.row == 0));
+    assert!(n0.pieces.iter().all(|p| !p.saw));
+
+    // A material whose default is the 4 x 8: the saw cuts it when set; the router's settings
+    // lay it out when not (as before the saw existed).
+    let mut lib2 = lib.clone();
+    lib2.defaults
+        .insert("Long ply".into(), "4 x 8 sheet, 3/4".into());
+    let list2 = list_of(&[(t, 20.0, 30.0, 1, Grain::Length, true, 1)], 0);
+    let rows2: Vec<_> = list2
+        .rows
+        .iter()
+        .cloned()
+        .map(|mut r| {
+            r.material = Some("Long ply".into());
+            r
+        })
+        .collect();
+    let list2 = sawhorse_kernel::cutlist::CutList {
+        rows: rows2,
+        ..list2
+    };
+    let n2 = nest_list(&list2, &lib2, mixed);
+    check_nesting_of(&list2, &n2).unwrap();
+    assert_eq!(n2.pieces.len(), 1);
+    assert!(n2.pieces[0].saw && n2.pieces[0].stock == "4 x 8 sheet, 3/4");
+    let n3 = nest_list(&list2, &lib2, router);
+    check_nesting_of(&list2, &n3).unwrap();
+    assert!(!n3.pieces[0].saw);
+    assert_eq!(n3.pieces[0].kerf, 0.375 * IN);
+
+    // A library carrying a bad saw is refused, as a file holding one would be.
+    let mut bad = lib.clone();
+    bad.settings = NestSettings {
+        overflow: Some(SawOverflow {
+            trim: 5.0 * IN,
+            ..saw
+        }),
+        ..router
+    };
+    assert!(bad.check().is_err());
+    bad.settings = NestSettings {
+        overflow: Some(SawOverflow {
+            sheet_size: SheetSize {
+                width: f64::NAN,
+                length: 1.0,
+            },
+            ..saw
+        }),
         ..router
     };
     assert!(bad.check().is_err());
