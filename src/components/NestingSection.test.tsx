@@ -87,19 +87,19 @@ describe("Nesting section", () => {
     expect(kerf.value).toBe("1/8 in");
     fireEvent.change(kerf, { target: { value: "3/32" } });
     fireEvent.keyDown(kerf, { key: "Enter" });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: (3 / 32) * IN, trim: 0, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: (3 / 32) * IN, trim: 0, algorithm: "guillotine" }, { kerf: (3 / 32) * IN });
     // A pause after typing commits too.
     const trim = screen.getByLabelText("Trim") as HTMLInputElement;
     fireEvent.change(trim, { target: { value: "1/4" } });
     vi.advanceTimersByTime(800);
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: IN / 4, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: IN / 4, algorithm: "guillotine" }, { trim: IN / 4 });
     const calls = (p.onSettings as ReturnType<typeof vi.fn>).mock.calls.length;
     fireEvent.change(kerf, { target: { value: "2 in" } });
     fireEvent.keyDown(kerf, { key: "Enter" });
     expect((p.onSettings as ReturnType<typeof vi.fn>).mock.calls.length).toBe(calls);
     expect(kerf.closest("label")!.getAttribute("title")).toContain("0 to 1/2 in");
     fireEvent.change(screen.getByLabelText("Nesting algorithm"), { target: { value: "maxrects" } });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "maxrects" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "maxrects" }, { algorithm: "maxrects" });
     vi.useRealTimers();
   });
 
@@ -111,7 +111,7 @@ describe("Nesting section", () => {
     expect(joint.value).toBe("1/8 in");
     fireEvent.change(joint, { target: { value: "1/16" } });
     fireEvent.keyDown(joint, { key: "Enter" });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "guillotine", jointLoss: IN / 16 });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "guillotine", jointLoss: IN / 16 }, { jointLoss: IN / 16 });
     fireEvent.change(joint, { target: { value: "1 in" } });
     fireEvent.keyDown(joint, { key: "Enter" });
     expect(p.onSettings).toHaveBeenCalledTimes(1);
@@ -176,7 +176,7 @@ describe("Nesting section", () => {
     // Typing after that commits against the settings as they are now.
     fireEvent.change(kerf, { target: { value: "1/16" } });
     vi.advanceTimersByTime(800);
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 16, trim: IN / 4, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 16, trim: IN / 4, algorithm: "guillotine" }, { kerf: IN / 16 });
     expect(p.onSettings).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -395,7 +395,9 @@ describe("Nesting section: the track saw for what the CNC cannot take", () => {
     expect(kerf.value).toBe("1/8 in");
     fireEvent.change(kerf, { target: { value: "3/32" } });
     fireEvent.keyDown(kerf, { key: "Enter" });
-    expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ overflow: { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: (3 / 32) * IN, trim: IN / 4 } }));
+    // The change goes with the settings as a patch, for the app to apply to the settings as they are now.
+    const saw = { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: (3 / 32) * IN, trim: IN / 4 };
+    expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ overflow: saw }), { overflow: saw });
     fireEvent.click(document.querySelector('[data-field="overflow"]') as HTMLInputElement);
     expect(onOverflow).toHaveBeenLastCalledWith(false);
   });

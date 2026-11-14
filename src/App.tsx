@@ -2237,15 +2237,33 @@ export function App() {
       void apply({ op: "set_nest_settings", settings: s }, () => `Nesting: kerf ${fineU(s.kerf, nestUnits)}, trim ${s.trim > 0 ? `${fineU(s.trim, nestUnits)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, nestUnits)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), nestUnits)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), nestUnits)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`),
     [apply, nestUnits],
   );
+  /** The stock library as the kernel has it now. The nesting on screen can be a moment old (it
+   * is worked out again after a pause), and a setting built on it would put back a change made
+   * in that moment (CNC spacing, then the track saw at once, kept the old kerf). */
+  const freshLibrary = useCallback(async () => {
+    const k = kernelRef.current;
+    if (!k) return null;
+    await queue.current;
+    return (await k.nest({})).library;
+  }, []);
+  /** Change some nesting settings, the rest as the kernel has them now. */
+  const patchNestSettings = useCallback(
+    async (patch: Partial<NestSettings>) => {
+      const lib = await freshLibrary();
+      if (lib) setNestSettings({ ...lib.settings, ...patch });
+    },
+    [freshLibrary, setNestSettings],
+  );
   /** Mixed: the track saw takes what does not fit the CNC's sheet (or no longer does). */
   const setOverflow = useCallback(
-    (on: boolean) => {
-      if (!nesting) return;
+    async (on: boolean) => {
+      const lib = await freshLibrary();
+      if (!lib) return;
       const metric = units === "mm" || units === "cm" || units === "m";
-      const { op, added } = overflowOps(nesting.library, on, metric);
+      const { op, added } = overflowOps(lib, on, metric);
       void apply(op, () => (on ? `${added.length ? `Added ${added.join(", ")}; p` : "P"}arts too large for the CNC's sheet are cut on the track saw from 4 x 8 sheets, in straight cuts.` : "Every part is on the CNC's sheets again; those too large for them are on no stock."));
     },
-    [apply, nesting, units],
+    [apply, freshLibrary, units],
   );
   const defineStock = useCallback(
     (stock: StockDef, replace: string | null) =>
@@ -2331,10 +2349,10 @@ export function App() {
       if (spacing) problems.unshift(spacing);
       if (!problems.length) return save();
       const metric = units === "mm" || units === "cm" || units === "m";
-      const fix = spacing ? { label: "Use CNC spacing", run: () => setNestSettings({ ...n.library.settings, ...cncSettings(metric) }) } : undefined;
+      const fix = spacing ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
       setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true), fix });
     },
-    [nesting, nestUnits, units, setNestSettings],
+    [nesting, nestUnits, units, patchNestSettings],
   );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
@@ -3130,11 +3148,14 @@ export function App() {
           onDelete={deleteStock}
           onDefault={setMaterialStock}
           onReset={resetStock}
-          onSheetSize={(sheetSize) => setNestSettings({ ...nesting.library.settings, sheetSize })}
-          onSheetSet={(size) => {
-            const { op, added } = sheetSetOps(nesting.library, size.width, size.length);
-            void apply(op, () => `${added.length ? `Added ${added.join(", ")}; ` : "The sheets were already in the library; "}sheet goods nest on ${lenU(Math.min(size.width, size.length), nestUnits)} x ${lenU(Math.max(size.width, size.length), nestUnits)}.`);
-          }}
+          onSheetSize={(sheetSize) => void patchNestSettings({ sheetSize })}
+          onSheetSet={(size) =>
+            void freshLibrary().then((lib) => {
+              if (!lib) return;
+              const { op, added } = sheetSetOps(lib, size.width, size.length);
+              return apply(op, () => `${added.length ? `Added ${added.join(", ")}; ` : "The sheets were already in the library; "}sheet goods nest on ${lenU(Math.min(size.width, size.length), nestUnits)} x ${lenU(Math.max(size.width, size.length), nestUnits)}.`);
+            })
+          }
           onClose={() => setStockOpen(false)}
         />
       ) : null}
@@ -3247,7 +3268,7 @@ export function App() {
               busy={nestBusy}
               rounding={nestUnits}
               units={units}
-              onSettings={setNestSettings}
+              onSettings={(s, patch) => (patch ? void patchNestSettings(patch) : setNestSettings(s))}
               onStock={() => setStockOpen(true)}
               onHover={hoverPlacement}
               onSelect={selectPlacement}
@@ -3257,7 +3278,7 @@ export function App() {
               onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), true)}
               onPdf={() => guardNest("the PDF", () => void saveNestPdf())}
               lit={nestLit}
-              onOverflow={setOverflow}
+              onOverflow={(on) => void setOverflow(on)}
               handWork={sawWork}
             />
           ) : null,

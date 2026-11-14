@@ -20,7 +20,9 @@ export interface NestingSectionProps {
   rounding: Units;
   /** How typed kerf and trim are read (a bare number is in these units). */
   units: UnitSystem;
-  onSettings: (s: NestSettings) => void;
+  /** New settings; `patch` is what changed (the rest may be a moment old: apply the patch to the
+   * settings as they are now). */
+  onSettings: (s: NestSettings, patch?: Partial<NestSettings>) => void;
   onStock: () => void;
   /** The pointer is over a part's rectangle (null: over none). */
   onHover: (p: Placement | null) => void;
@@ -185,7 +187,7 @@ export function NestingSection(p: NestingSectionProps) {
   const r = p.rounding;
   const s = n ? nestSummary(n, r) : null;
   const settings = n?.settings;
-  const set = (patch: Partial<NestSettings>) => settings && p.onSettings({ ...settings, ...patch });
+  const set = (patch: Partial<NestSettings>) => settings && p.onSettings({ ...settings, ...patch }, patch);
   const saw = settings?.overflow ?? null;
   // Parts the CNC's sheet cannot take, that the track saw could.
   const tooBig = n && settings?.sheetSize && !saw ? n.unplaced.filter((u) => u.sheet && (u.reason === "too_large" || u.reason === "grain" || u.reason === "no_stock")) : [];
