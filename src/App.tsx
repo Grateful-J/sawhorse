@@ -15,6 +15,7 @@ import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle } from "./nesting/format";
 import { measureNest } from "./nesting/measure";
 import { cncFileName, cncNotes, thicknessMismatches } from "./nesting/cnc";
+import { sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
@@ -3037,6 +3038,10 @@ export function App() {
           onDefault={setMaterialStock}
           onReset={resetStock}
           onSheetSize={(sheetSize) => setNestSettings({ ...nesting.library.settings, sheetSize })}
+          onSheetSet={(size) => {
+            const { op, added } = sheetSetOps(nesting.library, size.width, size.length);
+            void apply(op, () => `${added.length ? `Added ${added.join(", ")}; ` : "The sheets were already in the library; "}sheet goods nest on ${lenU(Math.min(size.width, size.length), nestUnits)} x ${lenU(Math.max(size.width, size.length), nestUnits)}.`);
+          }}
           onClose={() => setStockOpen(false)}
         />
       ) : null}
