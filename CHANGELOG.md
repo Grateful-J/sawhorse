@@ -6,6 +6,18 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ### Added (CNC cabinets, 2026-11-13)
 
+- **The cabinet panel reads like a shop's order form, and builds what shops build.**
+  - **The panel:** Start from and a name, then eight numbered groups (Size, Layout, Fronts and pulls, Materials, Construction, Hardware, CNC, Cuts and holes). Each shows one line on what is in it while closed ("24 × 34 1/2 × 23 1/4 · 4 toe kick") and opens on a click. Labels are short ("Reveal gap", "Hinge side", "Boring distance"), with one line of help under a field where it needs it. Blum's boring distance is picked in millimetres in any document. The two switches went into their groups: joinery under Construction, drilling under Hardware. Plugins get the same: a new **section** panel field, a heading that opens and closes with a summary line (`docs/PLUGINS.md`).
+  - **Stretchers:** a base cabinet's top can be two stretchers (the base presets' choice), front and rear, 4 in (100 mm) wide, open for a sink. The rear one carries the back's groove.
+  - **Adjustable shelves**, now the default: loose shelves 1/32 in short of each side on 5 mm pins. The pin holes are 10 mm deep, in rows 37 mm from the front and on the 32 mm grid, five around each shelf. Holes that would meet a hinge plate, a runner screw or a joint are left out, and none goes under a plate. Fixed shelves in dados are still there.
+  - **Graduated drawers:** a short top drawer and the rest equal.
+  - **Blum's European runners:** TANDEM 560H and MOVENTO 760H, 250 to 600 mm (TD-127/3, TD-132/1). The box is 10 mm shorter than the runner, the least inside depth is the runner + 3, and the screw holes follow those sheets. This is the default in metric documents: a 560 mm box now takes a 520 mm runner, not a 457 mm US one. Blum Inc.'s US catalogue stays the default in inch documents, and either can be picked.
+  - **Hinges by weight too:** never fewer than Blum's weight bands (2 under 15 lb, 3 to 30, 4 to 45, 5 to 60), one more over 600 mm wide with the European catalogue, and a warning when the top and bottom hinges are closer together than the door is wide.
+  - **The trash pull-out's back is cut from one face.** The bin frame's tongue goes through a slot in the back instead of a dado in its front face, opposite the hook holes, so the back needs no second setup.
+  - **The Nesting buttons say what they do:** **CNC spacing** (was "CNC router") and **CNC files** (was "CNC DXF"), with shorter tips and messages.
+
+  How: `plugins/cabinet-generator/cabinet.js` (`RUNNERS_EU`, `runnerLine`, stretchers, pins, graduated fronts, hinge rules, the trash slot), `main.js` (the panel); `src/plugins/panel.ts`, `manager.ts`, `src/components/PluginPanel.tsx`, `packages/plugin-api/index.d.ts` (the section field); `src/components/NestingSection.tsx`, `src/App.tsx`, `src/nesting/cnc.ts`, `NestProblemDialog.tsx`. Pin holes are eight-sided rings (the DXF still writes true circles) and drilled in bands: a full-height column of 16-sided holes made one cabinet take 13.6 s to build, now 1.1 s. Tests: `src/plugins/cabinet.test.ts`, `src/nesting/cabinet-cnc.wasm.test.ts` (a sink base, a trash pull-out and a base through the WASM kernel: stretchers, pins, no part cut from both faces), `src/plugins/parts.test.ts` and `src/components/PluginPanel.test.tsx` (the section field), `e2e/plugins-samples.spec.ts`.
+
 - **Doors hinged where you want them, rear nailers, and a trash pull-out.** The cabinet generator can make:
   - one door or two, whatever the width, a single door hinged on the side you pick (its pull on the other edge), and doors with no shelves;
   - rear nailers, top or top and bottom, behind the back (which moves in to clear them), in dados with blind dados on;
