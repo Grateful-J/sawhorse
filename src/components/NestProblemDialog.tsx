@@ -26,7 +26,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>{req.problems.some((p) => p.kind === "spacing") ? "These cuts will not come out as drawn" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : `${n} part${n === 1 ? "" : "s"} will not be cut as drawn`}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (

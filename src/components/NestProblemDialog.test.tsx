@@ -29,13 +29,13 @@ describe("nest problem dialog with a fix", () => {
     const onSave = vi.fn();
     const { container } = render(
       <NestProblemDialog
-        req={{ what: "the CNC files", problems: [{ kind: "spacing", tag: "", name: "Every sheet", text: "parts are 1/8 in apart" }], onSave, onStock: () => {}, fix: { label: "Space the parts for the router", run } }}
+        req={{ what: "the CNC files", problems: [{ kind: "spacing", tag: "", name: "Every sheet", text: "parts are 1/8 in apart" }], onSave, onStock: () => {}, fix: { label: "Use CNC spacing", run } }}
         onClose={() => {}}
       />,
     );
     const mine = within(container);
     expect(mine.queryByRole("button", { name: "Open Stock..." })).toBeNull();
-    fireEvent.click(mine.getByRole("button", { name: "Space the parts for the router" }));
+    fireEvent.click(mine.getByRole("button", { name: "Use CNC spacing" }));
     expect(run).toHaveBeenCalledTimes(1);
     expect(onSave).not.toHaveBeenCalled();
   });

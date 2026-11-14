@@ -191,9 +191,9 @@ export function NestingSection(p: NestingSectionProps) {
             type="button"
             className="btn"
             onClick={() => set(cncSettings(p.units === "mm" || p.units === "cm" || p.units === "m"))}
-            title="For a CNC router with a 1/4 in (6 mm) bit: the tightest layout, parts 3/8 in (10 mm) apart (Kerf), and a 1/2 in (12 mm) margin at every sheet edge (Trim). A wider bit needs more: Kerf must be more than the bit."
+            title="Set up for a 1/4 in (6 mm) bit: tightest layout, parts 3/8 in (10 mm) apart, 1/2 in (12 mm) margin at the sheet edges. For a bigger bit, set Kerf larger than the bit."
           >
-            CNC router
+            CNC spacing
           </button>
         </div>
       ) : null}
@@ -327,9 +327,9 @@ export function NestingSection(p: NestingSectionProps) {
               className="btn"
               disabled={!n || !n.pieces.length}
               onClick={() => p.onCnc?.()}
-              title="One DXF per sheet for a CNC router: the sheet's lower-left corner at 0,0, part outlines on PROFILE_THRU, and each pocket depth and hole size on its own layer (POCKET_6.35MM, DRILL_D35MM_13MM, DRILL_D5MM_THRU), measured from the parts"
+              title="One DXF per sheet, origin at the sheet's lower-left corner. Layers: PROFILE_THRU (outlines), POCKET_<depth> (dados, grooves), DRILL_<size>_<depth> (holes), CUTOUT_THRU (openings)."
             >
-              CNC DXF
+              CNC files
             </button>
           ) : null}
           <button type="button" className="btn" disabled={!n} onClick={() => p.onPdf?.()} title="Save a PDF booklet: what to buy, then a page per sheet or board with its diagram and cut sequence">

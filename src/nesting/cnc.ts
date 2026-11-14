@@ -46,8 +46,8 @@ export function cncNotes(n: Nesting, measured: MeasuredNest | null, units: Units
     if (measured.flipped.length) notes.push(`${measured.flipped.join(", ")} ${measured.flipped.length === 1 ? "has" : "have"} cuts in both faces: those on FLIP_ layers are cut after turning the part over.`);
   }
   const kerf = n.settings.kerf;
-  notes.push(`Parts are ${fineU(kerf, units)} apart: use a bit narrower than that, or one part's cut reaches the next.`);
-  if (!(n.settings.trim > 0)) notes.push("No margin at the sheet edge (Trim is 0): parts touch the edge of the sheet.");
+  notes.push(`Parts are ${fineU(kerf, units)} apart: use a smaller bit than that.`);
+  if (!(n.settings.trim > 0)) notes.push("No margin at the sheet edges (Trim is 0).");
   return notes;
 }
 
@@ -161,6 +161,6 @@ export function spacingProblem(n: Nesting, units: Units, bit = CNC_BIT): NestPro
     kind: "spacing",
     tag: "",
     name: "Every sheet",
-    text: `parts are ${fineU(gap, units)} apart (Kerf), too close for a ${fineU(bit, units)} bit: the outside cuts of neighbouring parts meet, and the CAM program cuts around the group, not between its parts. Space them for the router (3/8 in), or set Kerf to more than your bit.`,
+    text: `parts are ${fineU(gap, units)} apart (Kerf), too close for a ${fineU(bit, units)} bit: the outside cuts of neighbouring parts meet, and the CAM program cuts around the group, not between its parts. Use CNC spacing (3/8 in apart), or set Kerf larger than your bit.`,
   };
 }

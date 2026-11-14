@@ -2296,7 +2296,7 @@ export function App() {
       if (spacing) problems.unshift(spacing);
       if (!problems.length) return save();
       const metric = units === "mm" || units === "cm" || units === "m";
-      const fix = spacing ? { label: "Space the parts for the router", run: () => setNestSettings({ ...n.library.settings, ...cncSettings(metric) }) } : undefined;
+      const fix = spacing ? { label: "Use CNC spacing", run: () => setNestSettings({ ...n.library.settings, ...cncSettings(metric) }) } : undefined;
       setProblemRequest({ what, problems, onSave: save, onStock: () => setStockOpen(true), fix });
     },
     [nesting, nestUnits, units, setNestSettings],
@@ -2376,7 +2376,7 @@ export function App() {
       }
       if (saved) {
         const notes = cncNotes(n, features, nestUnits);
-        setMessage({ text: `Saved ${saved} CNC ${saved === 1 ? "file" : "files"}, one per sheet or board, the corner at 0,0, in millimetres: outlines on PROFILE_THRU, each pocket depth and hole size on its own layer. ${notes.join(" ")}`, error: thicknessMismatches(n).length > 0 });
+        setMessage({ text: `Saved ${saved} CNC ${saved === 1 ? "file" : "files"} (one per sheet, millimetres, origin at the lower-left corner). ${notes.join(" ")}`, error: thicknessMismatches(n).length > 0 });
       }
     } catch (e) {
       setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
