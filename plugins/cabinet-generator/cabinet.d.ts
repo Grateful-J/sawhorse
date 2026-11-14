@@ -5,6 +5,8 @@ export type DoorCount = "auto" | "one" | "two";
 export type HingeSide = "left" | "right";
 export type Nailers = "none" | "top" | "both";
 export type TrashBins = "one" | "side" | "deep";
+/** A Rev-A-Shelf bin (sized from its drawing), or one measured by hand. */
+export type Bin = "rv35" | "rv50" | "rv27" | "custom";
 export type Front = "overlay" | "inset";
 export type Base = "toekick" | "none";
 export type Slides = "tandem" | "movento";
@@ -17,6 +19,11 @@ export type ShelfType = "fixed" | "adjustable";
 export type DrawerFronts = "equal" | "graduated";
 /** Blum Inc. (US, inch lengths) or Blum's European catalogue (metric lengths). */
 export type Catalog = "us" | "eu";
+export type Run = "vertical" | "horizontal";
+export type SideGrain = "vertical" | "any";
+export type HiddenGrain = "any" | "length";
+/** The cut list's grain: along a part's length or width, or none (free to turn on the sheet). */
+export type Grain = "length" | "width" | "none";
 export interface Sizes {
   /** The cabinet's name: its instance in the model, and its files. */
   name: string;
@@ -39,6 +46,11 @@ export interface Sizes {
   top: Top;
   /** Each stretcher's width, front to back. */
   stretcher: number;
+  /** Which way the grain runs: doors, drawer faces, sides; the hidden parts free to turn or along their length. */
+  grainDoors: Run;
+  grainFronts: Run;
+  grainSides: SideGrain;
+  grainHidden: HiddenGrain;
   /** Drawers over a door: each drawer front's height (metres). A drawer cabinet's fronts are all one height. */
   drawerFront: number;
   base: Base;
@@ -80,6 +92,7 @@ export interface Sizes {
   nailers: Nailers;
   nailerHeight: number;
   trashBins: TrashBins;
+  bin: Bin;
   /** A bin's cutout across the cabinet, and front to back. */
   binWidth: number;
   binLength: number;
@@ -93,6 +106,7 @@ export interface Part {
   blank: V3;
   copies: { at: V3; name?: string }[];
   mesh: Mesh;
+  grain: Grain;
 }
 export interface RunnerLength {
   nl: number;
@@ -118,6 +132,7 @@ export interface Runner {
   extra?: string;
 }
 export const RUNNERS: Record<Slides, Runner>;
+export const BINS: Record<Exclude<Bin, "custom">, { label: string; rim: [number, number]; height: number; drop: number; cut: [number, number] }>;
 export const RUNNERS_EU: Record<Slides, Runner>;
 export function runnerLine(s: { slides: Slides; catalog: Catalog }): Runner;
 export const MATERIALS: Record<"carcass" | "back" | "box" | "doors" | "drawerFronts", { name: string; color: [number, number, number, number] }>;
@@ -136,6 +151,8 @@ export interface Preset {
   nailers?: Nailers;
   drawerPull?: DrawerPull;
   top?: Top;
+  trashBins?: TrashBins;
+  bin?: Bin;
 }
 export const PRESETS: Preset[];
 export function applyPreset(s: Sizes, id: string, metric: boolean): Sizes;
@@ -147,7 +164,14 @@ export function defaults(metric: boolean): Sizes;
 export function normalize(saved: (Partial<Sizes> & Record<string, unknown>) | null | undefined, metric: boolean): Sizes;
 export function phrase(s: Sizes, format: (m: number) => string, metric: boolean): string;
 export function issue(s: Sizes, metric: boolean): string | null;
-export function plan(s: Sizes, metric: boolean): { error: string | null; parts: Part[]; rows: string[][]; runner: RunnerLength | null; holes: number };
+export interface BinRoom {
+  across: number;
+  deep: number;
+}
+export function plan(s: Sizes, metric: boolean): { error: string | null; parts: Part[]; rows: string[][]; runner: RunnerLength | null; holes: number; room: BinRoom | null };
+export function binRoom(s: Sizes, metric: boolean): BinRoom | null;
+export function grainFor(s: Sizes, name: string, blank: V3): Grain;
+export function flatImportOp(parts: Part[], at: V3 | { linear: number[][]; translation: V3 } | undefined, materials?: { name: string; color: [number, number, number, number] }[]): { op: string; [field: string]: unknown };
 export function importOp(
   parts: Part[],
   at: V3 | { linear: number[][]; translation: V3 } | undefined,

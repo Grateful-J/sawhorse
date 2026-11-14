@@ -27,12 +27,18 @@ const MM = 0.001;
 /** @typedef {"left" | "right"} HingeSide */
 /** @typedef {"none" | "top" | "both"} Nailers */
 /** @typedef {"one" | "side" | "deep"} TrashBins */
+/** @typedef {"rv35" | "rv50" | "rv27" | "custom"} Bin */
 /** @typedef {"overlay" | "inset"} Front */
 /** @typedef {"toekick" | "none"} Base */
 /** @typedef {"tandem" | "movento"} Slides */
 /** @typedef {"full" | "stretchers"} Top */
 /** @typedef {"fixed" | "adjustable"} ShelfType */
 /** @typedef {"equal" | "graduated"} DrawerFronts */
+/** @typedef {"vertical" | "horizontal"} Run */
+/** @typedef {"vertical" | "any"} SideGrain */
+/** @typedef {"any" | "length"} HiddenGrain */
+/** The cut list's grain: along a part's length or width, or none (it may turn on the sheet).
+ * @typedef {"length" | "width" | "none"} Grain */
 /** @typedef {"groove" | "butt"} BackMount */
 /** @typedef {"center" | "top" | "notch" | "none"} DrawerPull */
 /** @typedef {"vertical" | "horizontal" | "none"} DoorPull */
@@ -44,6 +50,7 @@ const MM = 0.001;
  *   thickness: number, frontThickness: number, drawerThickness: number, backThickness: number,
  *   layout: Layout, shelves: number, shelfType: ShelfType, drawers: number, drawerFronts: DrawerFronts, drawerFront: number,
  *   top: Top, stretcher: number,
+ *   grainDoors: Run, grainFronts: Run, grainSides: SideGrain, grainHidden: HiddenGrain,
  *   base: Base, toeKick: number, toeSetback: number,
  *   back: boolean, backMount: BackMount, backInset: number, backGrooveDepth: number,
  *   front: Front, gap: number,
@@ -54,7 +61,7 @@ const MM = 0.001;
  *   doorPull: DoorPull, doorPullFrom: DoorPullFrom, doorPullEnd: number, doorPullEdge: number, doorPullSpacing: number,
  *   pullHole: number,
  *   doors: DoorCount, hingeSide: HingeSide, nailers: Nailers, nailerHeight: number,
- *   trashBins: TrashBins, binWidth: number, binLength: number, binHeight: number, trayHeight: number,
+ *   trashBins: TrashBins, bin: Bin, binWidth: number, binLength: number, binHeight: number, trayHeight: number,
  * }} Sizes
  */
 /** @typedef {import("./mesh.js").Prism} Prism */
@@ -67,6 +74,7 @@ const MM = 0.001;
  *   blank: V3,
  *   copies: { at: V3, name?: string }[],
  *   mesh: import("./mesh.js").Mesh,
+ *   grain: Grain,
  * }} Part
  */
 
@@ -242,6 +250,24 @@ const PIN_END = 64 * MM;
 const PIN_REACH = 2;
 /** A door wider than this is a pair. */
 const MAX_DOOR = 24 * IN;
+/**
+ * Waste bins that hang by their rim in a frame, from Rev-A-Shelf's own drawings (inches):
+ * the rim, the height, how far the frame's top is below the rim's top, and the frame's
+ * "MINIMUM OPENING" ("CUT OUT DIMENSIONS", at the top of the frame). RV-1024 27 QUART, RV-35
+ * 35 QUART and RV-50 50 QUART WASTE CAN customer drawings. Other makers' bins differ (Knape &
+ * Vogt's 35 qt is 9 3/16 in deep at the rim, Rev-A-Shelf's 10.46): measure those.
+ * @type {Record<Exclude<Bin, "custom">, { label: string, rim: [number, number], height: number, drop: number, cut: [number, number] }>}
+ */
+export const BINS = {
+  rv35: { label: "Rev-A-Shelf 35 qt (RV-35)", rim: [14.21, 10.46], height: 17.85, drop: 1.63, cut: [13.16, 9.56] },
+  rv50: { label: "Rev-A-Shelf 50 qt (RV-50)", rim: [14.75, 10.67], height: 21.75, drop: 1.75, cut: [13.59, 9.8] },
+  rv27: { label: "Rev-A-Shelf 27 qt (RV-1024)", rim: [10.96, 10.96], height: 17.75, drop: 1.8, cut: [10.1, 10.1] },
+};
+/** A cutout is the bin's minimum opening plus this all round (a rim overhangs it by about 0.45 in). */
+const CUT_CLEAR = (1 / 32) * IN;
+/** A hanging bin's bottom clears the tray floor by this. */
+const BIN_FLOOR = 0.25 * IN;
+
 /** Room for fingers behind a finger notch: the sub-front is cut this far below the notch. */
 const FINGER_ROOM = 25 * MM;
 
@@ -259,7 +285,7 @@ export const MATERIALS = {
  * and leaves the stock, joinery and hardware as they were. Inches, then millimetres.
  * @typedef {{ id: string, label: string, name: string, layout: Layout, shelves: number, drawers: number, base: Base,
  *   in: [number, number, number], mm: [number, number, number], doorPullFrom?: DoorPullFrom, doorPullEnd?: [number, number],
- *   nailers?: Nailers, drawerPull?: DrawerPull, top?: Top }} Preset
+ *   nailers?: Nailers, drawerPull?: DrawerPull, top?: Top, trashBins?: TrashBins, bin?: Bin }} Preset
  * @type {Preset[]}
  */
 export const PRESETS = [
@@ -267,7 +293,9 @@ export const PRESETS = [
   { id: "drawers", label: "Drawer base · 3 drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], top: "stretchers" },
   { id: "sink", label: "Sink base · 2 doors, open top", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 23.25], mm: [900, 870, 560], doorPullFrom: "top", top: "stretchers" },
   { id: "mixed", label: "Base · drawer over door", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 23.25], mm: [600, 870, 560], doorPullFrom: "top", top: "stretchers" },
-  { id: "trash", label: "Trash pull-out · 2 bins", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], drawerPull: "top", top: "stretchers" },
+  // One bin: two Rev-A-Shelf bins need 27 in side by side, and front to back more depth than
+  // a 21 in runner's box (their own double units ride 22 in slides).
+  { id: "trash", label: "Trash pull-out · one 50 qt bin", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], drawerPull: "top", top: "stretchers", trashBins: "one", bin: "rv50" },
   { id: "wall", label: "Wall cabinet · doors, nailers", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12], mm: [600, 720, 300], doorPullFrom: "bottom", doorPullEnd: [2.5, 64], nailers: "both" },
   { id: "tall", label: "Tall pantry · needs sheets over 4 ft", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 23.25], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
   { id: "open", label: "Open shelves · no doors", name: "Shelves", layout: "shelves", shelves: 2, drawers: 0, base: "toekick", in: [30, 34.5, 12], mm: [600, 870, 300] },
@@ -292,6 +320,8 @@ export function applyPreset(s, id, metric) {
   if (p.drawerPull) out.drawerPull = p.drawerPull;
   // A base cabinet's top is two stretchers under the countertop; a wall or tall cabinet's shows.
   out.top = p.top ?? "full";
+  if (p.trashBins) out.trashBins = p.trashBins;
+  if (p.bin) out.bin = p.bin;
   return out;
 }
 
@@ -342,6 +372,7 @@ export function defaults(metric) {
         thickness: 18 * MM, frontThickness: 18 * MM, drawerThickness: 12 * MM, backThickness: 6 * MM,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 150 * MM,
         top: "full", stretcher: 100 * MM,
+        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any",
         base: "toekick", toeKick: 100 * MM, toeSetback: 75 * MM,
         back: true, backMount: "groove", backInset: 12 * MM, backGrooveDepth: 8 * MM,
         front: "overlay", gap: 3 * MM,
@@ -354,7 +385,7 @@ export function defaults(metric) {
         doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 75 * MM,
         // Placeholders (measure your bins): two 180 mm cutouts front to back fit the 457 mm runner
         // a 560 mm box takes.
-        trashBins: "deep", binWidth: 280 * MM, binLength: 180 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
+        trashBins: "deep", bin: "rv35", binWidth: 280 * MM, binLength: 180 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
       }
     : {
         name: "Cabinet 1",
@@ -366,6 +397,7 @@ export function defaults(metric) {
         thickness: (23 / 32) * IN, frontThickness: (23 / 32) * IN, drawerThickness: (15 / 32) * IN, backThickness: (7 / 32) * IN,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 6 * IN,
         top: "full", stretcher: 4 * IN,
+        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any",
         base: "toekick", toeKick: 4 * IN, toeSetback: 3 * IN,
         back: true, backMount: "groove", backInset: 0.5 * IN, backGrooveDepth: (5 / 16) * IN,
         front: "overlay", gap: 0.125 * IN,
@@ -378,7 +410,7 @@ export function defaults(metric) {
         pullHole: (3 / 16) * IN,
         doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 3 * IN,
         // Bin cutouts are placeholders: measure your bins just under the lip.
-        trashBins: "deep", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN,
+        trashBins: "deep", bin: "rv35", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN,
       };
 }
 
@@ -448,10 +480,15 @@ export function normalize(saved, metric) {
     nailers: pick("nailers", /** @type {const} */ (["none", "top", "both"])),
     nailerHeight: num("nailerHeight"),
     trashBins: pick("trashBins", /** @type {const} */ (["one", "side", "deep"])),
+    bin: pick("bin", /** @type {const} */ (["rv35", "rv50", "rv27", "custom"])),
     shelfType: pick("shelfType", /** @type {const} */ (["fixed", "adjustable"])),
     drawerFronts: pick("drawerFronts", /** @type {const} */ (["equal", "graduated"])),
     top: pick("top", /** @type {const} */ (["full", "stretchers"])),
     stretcher: num("stretcher"),
+    grainDoors: pick("grainDoors", /** @type {const} */ (["vertical", "horizontal"])),
+    grainFronts: pick("grainFronts", /** @type {const} */ (["horizontal", "vertical"])),
+    grainSides: pick("grainSides", /** @type {const} */ (["vertical", "any"])),
+    grainHidden: pick("grainHidden", /** @type {const} */ (["any", "length"])),
     binWidth: num("binWidth"),
     binLength: num("binLength"),
     binHeight: num("binHeight"),
@@ -506,14 +543,25 @@ export function issue(s, metric) {
 /**
  * @param {Sizes} s
  * @param {boolean} metric
- * @returns {{ error: string | null, parts: Part[], rows: string[][], runner: RunnerLength | null, holes: number }}
+ * @returns {{ error: string | null, parts: Part[], rows: string[][], runner: RunnerLength | null, holes: number, room: BinRoom | null }}
  */
 export function plan(s, metric) {
   try {
     return { error: null, ...build(s, metric) };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e), parts: [], rows: [], runner: null, holes: 0 };
+    return { error: e instanceof Error ? e.message : String(e), parts: [], rows: [], runner: null, holes: 0, room: null };
   }
+}
+
+/**
+ * The largest bin cutout a trash pull-out of these sizes takes, for its bin layout (3/4 in of
+ * wood kept round each cutout), or null when it is not a trash pull-out or cannot be built.
+ * @typedef {{ across: number, deep: number }} BinRoom
+ * @param {Sizes} s @param {boolean} metric @returns {BinRoom | null}
+ */
+export function binRoom(s, metric) {
+  if (s.layout !== "trash") return null;
+  return plan({ ...s, binWidth: 1 * MM, binLength: 1 * MM }, metric).room;
 }
 
 /** @param {Sizes} s */
@@ -547,7 +595,7 @@ function validate(s) {
     if (s.back && s.backMount !== "groove") return "Rear nailers sit behind the back: choose Back fits: in grooves, or no back.";
     if (!(s.nailerHeight > 0) || !(s.nailerHeight < (s.height - 2 * t) / 3)) return "The nailer must be more than 0 tall, and under a third of the inside height.";
   }
-  if (s.layout === "trash") {
+  if (s.layout === "trash" && s.bin === "custom") {
     for (const [v, what] of /** @type {[number, string][]} */ ([[s.binWidth, "bin cutout width"], [s.binLength, "bin cutout length"], [s.binHeight, "bin height"], [s.trayHeight, "tray height"]])) {
       if (!(v > 0)) return `The ${what} must be more than 0.`;
     }
@@ -659,9 +707,64 @@ function holeClear(size, prisms, hole) {
 }
 
 /**
+ * Which way a part's grain runs, as the cut list says it (along its length or its width, or
+ * none, free to turn on the sheet), from the way it should run in the cabinet:
+ * - doors and drawer faces as asked (vertical or across); a trash pull-out's front as a door;
+ * - sides vertical, or free when they never show;
+ * - shelves across the cabinet, along their span, where plywood is stiffest;
+ * - everything else (the box's insides, the back, the toe kick, drawer boxes) free to turn,
+ *   so the nester packs them tighter, or along their length if asked.
+ * @param {Sizes} s @param {string} name @param {V3} blank @returns {Grain}
+ */
+export function grainFor(s, name, blank) {
+  /** @type {"vertical" | "horizontal" | "any" | "length"} */
+  const want = /door$/i.test(name)
+    ? s.grainDoors
+    : name === "Drawer front"
+      ? // A trash pull-out's front is door-sized and reads as a door: it follows the doors.
+        s.layout === "trash" ? s.grainDoors : s.grainFronts
+      : name === "Left side" || name === "Right side"
+        ? s.grainSides
+        : name === "Shelf"
+          ? "horizontal"
+          : s.grainHidden;
+  if (want === "any") return "none";
+  if (want === "length") return "length";
+  // The face's two directions (the thinnest is the thickness); the longer is the cut list's length.
+  const t = blank.indexOf(Math.min(...blank));
+  const [a, b] = [0, 1, 2].filter((k) => k !== t);
+  const long = blank[a] >= blank[b] ? a : b;
+  const axis = want === "vertical" ? 2 : 0;
+  return axis === long || ![a, b].includes(axis) ? "length" : "width";
+}
+
+/**
+ * The parts as one import with every copy at the top level, placed at `at`, so a batch can
+ * set each part's grain through the instance it makes (its `groups`, in part order) and then
+ * wrap them into the cabinet's component (makeComponent). One undo step either way.
+ * @param {Part[]} parts @param {V3 | { linear: number[][], translation: V3 } | undefined} at
+ * @param {{ name: string, color: [number, number, number, number] }[]} [materials]
+ */
+export function flatImportOp(parts, at, materials = []) {
+  const place = at && typeof at === "object" && "linear" in at ? at : { linear: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation: /** @type {V3} */ (at ?? [0, 0, 0]) };
+  const L = place.linear;
+  /** @param {V3} p @returns {V3} */
+  const apply = (p) => /** @type {V3} */ ([0, 1, 2].map((r) => L[r][0] * p[0] + L[r][1] * p[1] + L[r][2] * p[2] + place.translation[r]));
+  /** @type {Record<string, unknown>[]} */
+  const nodes = [];
+  parts.forEach((p, i) => {
+    for (const c of p.copies) nodes.push({ kind: "instance", definition: i, ...(c.name ? { name: c.name } : {}), xform: { linear: L, translation: apply(c.at) } });
+  });
+  /** @type {Record<string, unknown>} */
+  const op = { op: "import", definitions: parts.map((p) => ({ name: p.name, items: [{ ...p.mesh, material: p.material }] })), nodes };
+  if (materials.length) op.materials = materials.map((m) => ({ name: m.name, color: m.color }));
+  return op;
+}
+
+/**
  * @param {Sizes} s
  * @param {boolean} metric
- * @returns {{ parts: Part[], rows: string[][], runner: RunnerLength | null, holes: number }}
+ * @returns {{ parts: Part[], rows: string[][], runner: RunnerLength | null, holes: number, room: BinRoom | null }}
  */
 function build(s, metric) {
   const wrong = validate(s);
@@ -701,7 +804,7 @@ function build(s, metric) {
       } catch (e) {
         throw new Error(`${name}: ${e instanceof Error ? e.message : String(e)}`);
       }
-      part = { name, material, blank, copies: [], mesh };
+      part = { name, material, blank, copies: [], mesh, grain: grainFor(s, name, blank) };
       Object.defineProperty(part, "key", { value: key, enumerable: false });
       parts.push(part);
     }
@@ -913,6 +1016,8 @@ function build(s, metric) {
   const drawerBands = bands.filter((x) => x.kind === "drawer");
   /** @type {RunnerLength | null} */
   let runner = null;
+  /** @type {BinRoom | null} */
+  let room = null;
   if (drawerBands.length) {
     const R = runnerLine(s);
     const ds = s.drawerThickness;
@@ -1015,9 +1120,13 @@ function build(s, metric) {
       /** @type {Prism[]} */
       const backFrame = [];
       if (trash) {
-        const fz1 = gz[1] + s.binHeight;
+        // The bin: one of Rev-A-Shelf's (its drawing's opening and heights), or measured.
+        const spec = s.bin === "custom" ? null : BINS[s.bin];
+        const frameTop = spec ? (spec.height - spec.drop) * IN + BIN_FLOOR : s.binHeight;
+        const fz1 = gz[1] + frameTop;
         const fz0 = fz1 - ds;
-        if (!(fz1 + s.fit / 2 + 10 * MM <= boxH)) throw new Error(`Bins ${both(s.binHeight)} tall do not fit: the pull-out is ${both(boxH - gz[1] - 10 * MM)} tall inside. Make the cabinet taller or the bins shorter.`);
+        if (!(fz1 + s.fit / 2 + 10 * MM <= boxH)) throw new Error(`The bins do not fit in height: their frame's top is ${both(frameTop)} above the tray floor, and the pull-out is ${both(boxH - gz[1] - 10 * MM)} tall inside. Make the cabinet taller or pick a shorter bin.`);
+        if (spec && !(z0 + fz1 + spec.drop * IN + 3 * MM <= ceiling)) throw new Error(`The bins' rims would reach the cabinet's top: pick a shorter bin.`);
         subFrame.push({ min: [0, ds - gd, fz0 - s.fit / 2], max: [inside, ds, fz1 + s.fit / 2] });
         // At the back the frame's tongue goes through a slot, not into a dado: the back's rear
         // face has the hook holes, and a dado in its front face would need a second setup. The
@@ -1030,21 +1139,45 @@ function build(s, metric) {
         const open0 = gd - PANEL_GAP;
         const span = nl - 2 * ds;
         const fl = open0 + span + ds;
-        const W = s.binWidth;
-        const L = s.binLength;
         const webMin = 0.75 * IN;
+        /**
+         * The cutouts laid out one way: `turn` puts a bin's long side front to back. Two bins
+         * keep enough wood between them that their rims do not meet (1/8 in apart), and every
+         * cutout keeps 3/4 in to the frame's edges.
+         * @param {boolean} turn
+         */
+        const layout = (turn) => {
+          /** @param {[number, number]} v @returns {[number, number]} */
+          const along = (v) => (turn ? [v[1], v[0]] : v);
+          const [W, L] = spec ? along(spec.cut).map((v) => v * IN + 2 * CUT_CLEAR) : [s.binWidth, s.binLength];
+          const [rimW, rimL] = spec ? along(spec.rim).map((v) => v * IN) : [W, L];
+          const middleX = Math.max(webMin, rimW - W + (1 / 8) * IN, (inside - 2 * W) / 3);
+          const middleY = Math.max(webMin, rimL - L + (1 / 8) * IN, (span - 2 * L) / 3);
+          const edgeX = s.trashBins === "side" ? (inside - 2 * W - middleX) / 2 : (inside - W) / 2;
+          const edgeY = s.trashBins === "deep" ? (span - 2 * L - middleY) / 2 : (span - L) / 2;
+          return { turn, W, L, cut: spec ? along(spec.cut) : null, middleX, middleY, edgeX, edgeY, fits: edgeX >= webMin - 1e-9 && edgeY >= webMin - 1e-9 };
+        };
+        // Side by side, bins go long side front to back first; one, or front to back, across.
+        // A bin is turned the other way when that is what fits.
+        const first = layout(s.trashBins === "side" && !!spec);
+        const lay = first.fits || !spec ? first : layout(!first.turn).fits ? layout(!first.turn) : first;
+        const { W, L, middleX, middleY, edgeX, edgeY } = lay;
         const mid = open0 + span / 2;
         /** @type {[number, number][]} */
         const centres =
           s.trashBins === "one"
             ? [[inside / 2, mid]]
             : s.trashBins === "side"
-              ? [[(inside - 2 * W) / 3 + W / 2, mid], [inside - (inside - 2 * W) / 3 - W / 2, mid]]
-              : [[inside / 2, open0 + (span - 2 * L) / 3 + L / 2], [inside / 2, open0 + span - (span - 2 * L) / 3 - L / 2]];
-        const webX = s.trashBins === "side" ? (inside - 2 * W) / 3 : (inside - W) / 2;
-        const webY = s.trashBins === "deep" ? (span - 2 * L) / 3 : (span - L) / 2;
-        if (!(webX >= webMin && webY >= webMin)) {
-          throw new Error(`The bins do not fit: the frame is ${both(inside)} across and ${both(span)} front to back between the uprights, and needs 3/4 in of wood around each ${both(W)} x ${both(L)} cutout. Change the bins or the cabinet.`);
+              ? [[edgeX + W / 2, mid], [edgeX + W + middleX + W / 2, mid]]
+              : [[inside / 2, open0 + edgeY + L / 2], [inside / 2, open0 + edgeY + L + middleY + L / 2]];
+        room = {
+          across: s.trashBins === "side" ? (inside - 3 * webMin) / 2 : inside - 2 * webMin,
+          deep: s.trashBins === "deep" ? (span - 3 * webMin) / 2 : span - 2 * webMin,
+        };
+        if (!lay.fits) {
+          throw new Error(spec
+            ? `${s.trashBins === "one" ? `A ${spec.label} bin does` : `Two ${spec.label} bins do`} not fit${s.trashBins === "one" ? "" : s.trashBins === "side" ? " side by side" : " front to back"}, either way round: the frame is ${both(inside)} across and ${both(span)} front to back between the box's uprights, and each rim (${spec.rim[0]} x ${spec.rim[1]} in) needs wood all round. ${s.trashBins === "deep" ? "Two bins front to back need a deeper box than a 533 mm (21 in) runner gives: try them side by side in a wider cabinet, or one bin." : "Pick a smaller bin, one bin, or a wider cabinet."}`
+            : `The bins do not fit: each cutout can be at most ${both(room.across)} side to side and ${both(room.deep)} front to back here (3/4 in of wood round each). Change the bins or the cabinet.`);
         }
         const yBack = open0 + span;
         /** @type {Prism[]} */
@@ -1054,7 +1187,8 @@ function build(s, metric) {
           { min: [inside - margin, yBack, 0], max: [inside, fl, ds] },
         ];
         add("Bin frame", MATERIALS.box.name, [inside, fl, ds], prisms, [], { at: [x0 + ds, y0 + ds - gd + PANEL_GAP, z0 + fz0], name: `Drawer ${n} bin frame` });
-        note("Bin frame", `${centres.length} bin cutout${centres.length === 1 ? "" : "s"} ${both(W)} x ${both(L)}, ${both(s.binHeight)} above the tray's bottom: in a dado in the sub-front, its tongue through a slot in the back (so the back is cut from one face)`, "-", "through", "CNC (inside profile)");
+        const which = spec && lay.cut ? ` for ${spec.label} bins, long side ${lay.turn ? "front to back" : "across"} (the drawing's minimum opening ${lay.cut.join(" x ")} in, plus 1/32 in each side)` : "";
+        note("Bin frame", `${centres.length} bin cutout${centres.length === 1 ? "" : "s"} ${both(W)} x ${both(L)}${which}; the frame's top ${both(frameTop)} above the tray floor${spec ? ` (the rim sits ${spec.drop} in above it, the bin 1/4 in off the floor)` : ""}: in a dado in the sub-front, its tongue through a slot in the back (so the back is cut from one face)`, "-", "through", "CNC (inside profile)");
       }
       add("Drawer sub-front", MATERIALS.box.name, [inside, ds, boxH], [{ min: [0, ds - gd, gz[0]], max: [inside, ds, gz[1]] }, ...subFrame, ...subNotch], [], { at: [x0 + ds, y0, z0], name: `Drawer ${n} sub-front` });
       const backH = boxH - gz[1];
@@ -1163,7 +1297,7 @@ function build(s, metric) {
     if (grooved && !(backY[0] - (railEnd - sw) >= 6 * MM)) throw new Error(`The rear stretcher is too narrow to carry the back's groove ${both(backInsetOf(s))} in from the rear: make it wider.`);
     addRail(s.height - t, "Front stretcher", "Front stretcher", "top", [0, sw]);
     addRail(s.height - t, "Rear stretcher", "Rear stretcher", "top", [railEnd - sw, railEnd]);
-    note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ", in the sides' top rabbets" : ""}`, "-", "-", "CNC (profile)");
+    note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ": in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove" : ", butted between the sides"}`, "-", "-", "CNC (profile)");
   } else addRail(s.height - t, "Top", "Top", "top");
   addRail(kick, "Bottom", "Bottom", "bottom");
   if (fixedShelves) shelfZs.forEach((z, i) => addRail(z, "Shelf", `Shelf ${i + 1}`, "shelf"));
@@ -1194,6 +1328,10 @@ function build(s, metric) {
   }
   if (s.base === "toekick") add("Toe kick", MATERIALS.carcass.name, [innerW, t, kick], [], [], { at: [t, s.toeSetback, 0], name: "Toe kick" });
 
+  // How the box comes out square.
+  const squares = [s.dados ? "the bottom in its dados" : "the bottom", ...(s.back && grooved ? ["the back in its grooves"] : [])].join(" and ");
+  note("Assembly", `${squares[0].toUpperCase()}${squares.slice(1)} hold the box square${s.top === "stretchers" ? "; the stretchers add little on their own" : ""}. Glue it up with the back in place and check the diagonals (equal within 1/32 in, 1 mm) before the glue sets.`, "-", "-", "Hand");
+
   // A groove narrower than the bit cannot be cut with it.
   const narrow = (s.back && grooved) || drawerBands.length ? bT + s.fit : Infinity;
   if (narrow < s.bit) note("Grooves", `Back and drawer-bottom grooves are ${both(narrow)} wide, narrower than the ${both(s.bit)} bit: cut their layers with a smaller bit (1/8 in or 3 mm)`, "-", "-", "Change bit");
@@ -1204,7 +1342,7 @@ function build(s, metric) {
     note("Holes", `The ${sizes} holes are smaller than the ${both(s.bit)} bit: drill their DRILL_ layers with ${small.length > 1 && new Set(small).size > 1 ? `${sizes} drill bits` : `a ${sizes} drill bit`} (or bore them with a 1/8 in or 3 mm bit)`, "-", "-", "Change bit");
   }
 
-  return { parts, rows, runner, holes: drilled };
+  return { parts, rows, runner, holes: drilled, room };
 }
 
 /** @param {Sizes} s @param {number} floor @param {number} ceiling @param {{ z0: number, z1: number, kind: string }[]} bands */

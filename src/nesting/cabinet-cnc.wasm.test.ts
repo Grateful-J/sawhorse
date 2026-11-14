@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyPreset, defaults, importOp, MATERIALS, plan } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, defaults, flatImportOp, importOp, MATERIALS, plan } from "../../plugins/cabinet-generator/cabinet.js";
 import type { DocState, FaceInfo, Nesting, V3 } from "../kernel/types";
 import { cncSettings } from "../components/NestingSection";
 import { nestingDxf } from "./dxf";
@@ -22,6 +22,8 @@ const run = built || process.env.REQUIRE_KERNEL ? describe : describe.skip;
 
 type Doc = {
   apply_op(json: string): string;
+  cut_list(o: string): string;
+  undo(): void;
   apply_named_batch(json: string): string;
   nest(o: string): string;
   state_json(): string;
@@ -132,6 +134,50 @@ run("a cabinet to the CNC router", () => {
     const pins = [...measured.features.values()].flatMap((f) => f.drills).filter((h) => Math.abs(h.depth - 0.01) < 1e-6 && h.diameter < 0.0055);
     expect(pins.length).toBeGreaterThan(0);
     for (const h of pins) expect(h.diameter).toBeCloseTo(0.005, 9);
+  }, 60_000);
+
+  it("the generator's batch: parts imported flat, each one's grain set, wrapped in one cabinet; and rebuilt from inside it", async () => {
+    const d = await doc();
+    const ref = (k: number) => ({ $ref: 0, path: `groups.${k}` });
+    /** The ops main.js sends (with the kernel's placeholders): import, grains, component, name. */
+    const ops = (parts: ReturnType<typeof plan>["parts"], inside: number[] | null) => {
+      const out: Record<string, unknown>[] = [flatImportOp(parts, [0, 0, 0], inside ? [] : Object.values(MATERIALS))];
+      let k = 0;
+      const items: unknown[] = [];
+      for (const part of parts) {
+        if (part.grain !== "length") out.push({ op: "set_grain", part: { node: ref(k) }, grain: part.grain });
+        for (let c = 0; c < part.copies.length; c++) items.push({ node: ref(k++) });
+      }
+      if (inside) {
+        out.push({ op: "make_group", items: inside.map((node) => ({ node })) });
+        out.push({ op: "delete_node", node: { $ref: out.length - 1, path: "group" } });
+      } else out.push({ op: "make_component", items, name: "Base 1" });
+      return out;
+    };
+    const s = applyPreset(defaults(false), "mixed", false);
+    const p = plan(s, false);
+    const made = JSON.parse(d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: ops(p.parts, null) })));
+    const cab = made.outcomes[made.outcomes.length - 1].instance as number;
+    const rows = () => (JSON.parse(d.cut_list("{}")) as { rows: { name: string; grain: string }[] }).rows;
+    const grain = (name: string) => rows().find((r) => r.name === name)?.grain;
+    expect(grain("Door")).toBe("length");
+    expect(grain("Drawer front")).toBe("length");
+    expect(grain("Left side")).toBe("length");
+    for (const n of ["Bottom", "Toe kick", "Back", "Front stretcher", "Rear stretcher", "Drawer side", "Drawer bottom"]) expect(grain(n)).toBe("none");
+    const st = JSON.parse(d.state_json()) as DocState;
+    expect(st.undo_depth).toBe(1);
+    expect(st.graph.nodes.filter((n) => n.parent === null).map((n) => n.id)).toEqual([cab]);
+
+    // Opened (double-clicked) and rebuilt with two shelves from inside: the same cabinet.
+    d.apply_op(JSON.stringify({ op: "set_context", node: cab }));
+    const kids = st.graph.nodes.filter((n) => n.parent === cab).map((n) => n.id);
+    const p2 = plan({ ...s, shelves: 2 }, false);
+    d.apply_named_batch(JSON.stringify({ name: "Update cabinet", ops: ops(p2.parts, kids) }));
+    const st2 = JSON.parse(d.state_json()) as DocState;
+    expect(st2.graph.nodes.filter((n) => n.parent === null).map((n) => n.id)).toEqual([cab]);
+    expect(st2.graph.objects.length).toBe(st.graph.objects.length + 1);
+    expect(grain("Toe kick")).toBe("none");
+    expect(st2.undo_depth).toBe(2);
   }, 60_000);
 });
 

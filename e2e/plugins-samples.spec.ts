@@ -89,7 +89,7 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   await field(page, panel, "shelves", "3");
   await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Adds Cabinet 1: 30 × 72 × 12, open, 3 adjustable shelves");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet: Left side, Right side, Top, Bottom, Shelf x 3, Back, Toe kick");
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1: Left side, Right side, Top, Bottom, Shelf x 3, Back, Toe kick");
 
   // Nine parts, the whole cabinet 30 x 12 x 72 in.
   const s = await solids(page);
@@ -97,8 +97,9 @@ test("cabinet generator: a 30 x 72 x 12 in cabinet with 3 shelves; the Outliner 
   const lo = [0, 1, 2].map((k) => Math.min(...s.map((x) => x.min[k])));
   const hi = [0, 1, 2].map((k) => Math.max(...s.map((x) => x.max[k])));
   expect(hi.map((h, k) => h - lo[k]).map((d) => Math.round(d * 1e6) / 1e6)).toEqual([30, 12, 72]);
-  // It is selected, so the button now updates it.
-  await expect(page.locator(`[data-panel="${panel}"] [data-action="generate"]`)).toHaveText("Update selected cabinet");
+  // It is selected, so the panel edits it (changes apply as they are made); the button adds another.
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Editing Cabinet 1");
+  await expect(page.locator(`[data-panel="${panel}"] [data-action="generate"]`)).toHaveText("Add another like this");
 
   // The Outliner: the cabinet, unfolded, shows its named parts.
   await page.getByRole("tab", { name: "Outliner" }).click();
@@ -149,8 +150,7 @@ test("cabinet generator: a drawer cabinet and a door cabinet", async ({ page }) 
   await page.getByRole("tab", { name: "Plugins" }).click();
   await choose(page, panel, "layout", "doors");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet");
-  await expect(page.locator("#hint")).toContainText("Door");
+  await expect(page.locator("#hint")).toContainText(/Made Cabinet \d: Door/);
   await page.getByRole("tab", { name: "Cut list" }).click();
   await expect(page.locator(".cutlist table")).toBeVisible();
   const doorNames = await names();
@@ -158,21 +158,35 @@ test("cabinet generator: a drawer cabinet and a door cabinet", async ({ page }) 
   expect(doorNames).not.toContain("Drawer front");
 });
 
-test("cabinet generator: Update replaces the selected cabinet in place", async ({ page }) => {
+test("cabinet generator: the selected cabinet changes as its settings do, in place, one undo step each; empty space starts a new one", async ({ page }) => {
   await start(page);
   await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
   const panel = `${CABINET}/cabinet`;
+  const status = page.locator(`[data-panel="${panel}"] [data-note="status"]`);
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet");
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
   const first = await solids(page);
+  // No Update button: the change is the update.
   await field(page, panel, "shelves", "2");
-  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Updated the cabinet");
+  await expect.poll(async () => (await solids(page)).length).toBe(first.length + 1);
   const second = await solids(page);
-  expect(second).toHaveLength(first.length + 1);
   // Same place: the same overall box.
-  const box = (ss: typeof first) => [0, 1, 2].map((k) => [Math.min(...ss.map((x) => x.min[k])), Math.max(...ss.map((x) => x.max[k]))]);
+  const box = (ss: typeof first) => [0, 1, 2].map((k) => [Math.min(...ss.map((x) => x.min[k])), Math.max(...ss.map((x) => x.max[k]))].map((v) => Math.round(v * 1e6) / 1e6));
   expect(box(second)).toEqual(box(first));
+  await expect(status).toContainText("Editing Cabinet 1");
+  // Empty space: a new cabinet, numbered on, beside the first.
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  await page.keyboard.press("Escape");
+  await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+  await expect(status).toContainText("Adds Cabinet 2");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 2");
+  // Clicking the first cabinet again shows its own settings: two shelves.
+  await page.getByRole("tab", { name: "Outliner" }).click();
+  await page.locator('.outline li[data-kind="instance"]', { hasText: "Cabinet 1" }).first().locator(".label").first().click();
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await expect(status).toContainText("Editing Cabinet 1");
+  await expect(page.locator(`[data-panel="${panel}"] [data-field="shelves"]`)).toHaveValue("2");
 });
 
 // Lane 28 (#34, #21): Generate pressed again with the cabinet selected ("Update selected
@@ -201,21 +215,19 @@ test("cabinet generator: a cabinet updated in place saves and opens as the same 
   const panel = `${CABINET}/cabinet`;
   const generate = page.locator(`[data-panel="${panel}"] [data-action="generate"]`);
   await generate.click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet");
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
   await field(page, panel, "shelves", "2");
-  await generate.click();
-  await expect(page.locator("#hint")).toContainText("Updated the cabinet");
+  await expect.poll(async () => (await solids(page)).length).toBe(8);
   await saveAndReopen(page);
   expect(await solids(page)).toHaveLength(8);
-  // The plugin's stored id names the reopened cabinet: selected, the button updates it.
+  // The plugin's settings kept in the document name the reopened cabinet: selected, the panel
+  // shows its settings and edits it.
   await page.getByRole("tab", { name: "Outliner" }).click();
   await page.locator('.outline li[data-kind="instance"]', { hasText: "Cabinet" }).first().locator(".label").first().click();
   await page.getByRole("tab", { name: "Plugins" }).click();
-  await expect(generate).toHaveText("Update selected cabinet");
+  await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText("Editing Cabinet 1");
   await field(page, panel, "shelves", "3");
-  await generate.click();
-  await expect(page.locator("#hint")).toContainText("Updated the cabinet");
-  expect(await solids(page)).toHaveLength(9);
+  await expect.poll(async () => (await solids(page)).length).toBe(9);
   // And the model saves again.
   await saveAndReopen(page);
 });
@@ -224,7 +236,7 @@ test("cabinet generator: a cabinet exploded and its parts grouped saves and open
   await start(page);
   await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
   await page.locator(`[data-panel="${CABINET}/cabinet"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet");
+  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
   // The new cabinet is selected: Ctrl+Shift+G explodes it into its parts.
   await page.keyboard.press("Control+Shift+g");
   await expect(page.locator("#hint")).toContainText("Exploded");
@@ -279,7 +291,7 @@ test("model report: live counts that match the model, and an export as Markdown 
   await choose(page, `${CABINET}/cabinet`, "shelfType", "fixed");
   await expect(page.locator(`[data-panel="${CABINET}/cabinet"] [data-section="secBuild"]`)).toContainText("Butt joints");
   await page.locator(`[data-panel="${CABINET}/cabinet"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made a cabinet");
+  await expect(page.locator("#hint")).toContainText("Made Cabinet");
   // The report follows the edit; its counts are the model's.
   const truth = await page.evaluate(() => {
     const w = window as unknown as { __sawhorse: { graph(): { nodes: { kind: string }[]; definitions: unknown[] }; solids(): unknown[] } };

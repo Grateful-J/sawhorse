@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { applyPreset, backInsetOf, defaults, importOp, normalize, phrase, plan, PRESETS, RUNNERS, RUNNERS_EU, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, backInsetOf, BINS, binRoom, defaults, flatImportOp, grainFor, importOp, normalize, phrase, plan, PRESETS, RUNNERS, RUNNERS_EU, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -462,7 +462,8 @@ describe("doors, nailers and the trash pull-out", () => {
   });
 
   it("a trash pull-out: one tall front, a low tray, tall uprights and a frame cut for the bins", () => {
-    const s = imperial({ layout: "trash", width: 18 * IN, trashBins: "deep", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN });
+    // Bins measured by hand, two front to back in a deep EU-runner box.
+    const s = imperial({ layout: "trash", width: 18 * IN, depth: 26 * IN, catalog: "eu", trashBins: "deep", bin: "custom", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN });
     const p = ok(s);
     expect(named(p.parts, "Drawer front")).toHaveLength(1);
     expect(named(p.parts, "Drawer front")[0].blank[2]).toBeCloseTo(34.5 * IN - 4 * IN - IN / 8, 9);
@@ -582,6 +583,74 @@ describe("tops, shelves, drawer heights and catalogues", () => {
     const tall = imperial({ layout: "doors", shelves: 0, hardware: true, height: 84 * IN });
     expect(cups(ok(tall))).toBe(5);
     expect(ok(tall).rows.some((r) => /5 hinges \(.*kg/.test(r[1]))).toBe(true);
+  });
+});
+
+describe("grain, bins and placement", () => {
+  it("each part's grain: doors vertical, drawer faces across, sides vertical, shelves along their span, the rest free to turn", () => {
+    const s = imperial({});
+    expect(grainFor(s, "Door", [0.6, 0.018, 0.77])).toBe("length");
+    expect(grainFor(s, "Left door", [0.3, 0.018, 0.77])).toBe("length");
+    // A wide, short door: vertical runs along its width.
+    expect(grainFor(s, "Door", [0.9, 0.018, 0.3])).toBe("width");
+    expect(grainFor(s, "Drawer front", [0.6, 0.018, 0.25])).toBe("length");
+    // A tall front, grain across: along its width; a trash pull-out's front follows the doors.
+    expect(grainFor(s, "Drawer front", [0.45, 0.018, 0.77])).toBe("width");
+    expect(grainFor({ ...s, layout: "trash" }, "Drawer front", [0.45, 0.018, 0.77])).toBe("length");
+    expect(grainFor(s, "Left side", [0.018, 0.59, 0.87])).toBe("length");
+    // A shelf in a narrow, deep cabinet: across the cabinet is its width.
+    expect(grainFor(s, "Shelf", [0.27, 0.56, 0.018])).toBe("width");
+    for (const n of ["Bottom", "Toe kick", "Back", "Front stretcher", "Drawer side", "Drawer bottom", "Top nailer"]) expect(grainFor(s, n, [0.5, 0.3, 0.018])).toBe("none");
+    expect(grainFor({ ...s, grainHidden: "length" }, "Bottom", [0.5, 0.3, 0.018])).toBe("length");
+    expect(grainFor({ ...s, grainSides: "any" }, "Right side", [0.018, 0.59, 0.87])).toBe("none");
+    expect(grainFor({ ...s, grainFronts: "vertical" }, "Drawer front", [0.6, 0.018, 0.25])).toBe("width");
+    const p = ok(imperial({ layout: "mixed", drawers: 1 }));
+    expect(named(p.parts, "Toe kick")[0].grain).toBe("none");
+    expect(named(p.parts, "Door")[0].grain).toBe("length");
+  });
+
+  it("Rev-A-Shelf bins: the drawing's minimum opening plus 1/32 in a side, hung 1/4 in off the floor; a 50 qt in a 24 in cabinet", () => {
+    const s = imperial({ layout: "trash", width: 24 * IN, trashBins: "one", bin: "rv50" });
+    const p = ok(s);
+    const frame = named(p.parts, "Bin frame")[0];
+    const [fw, fl, ft] = frame.blank;
+    const cut = (13.59 + 1 / 16) * (9.8 + 1 / 16) * IN * IN;
+    // The cutout and the two corner notches beside the tongue.
+    expect(audit(frame.mesh).volume).toBeCloseTo(fw * fl * ft - cut * ft - 2 * IN * s.drawerThickness * ft, 12);
+    const row = p.rows.find((r) => r[0] === "Bin frame")![1];
+    expect(row).toContain("Rev-A-Shelf 50 qt (RV-50)");
+    expect(row).toContain("13.59 x 9.8 in");
+    // Frame top: the bin's height less the rim's drop, plus 1/4 in off the floor.
+    expect(row).toContain(`${((21.75 - 1.75 + 0.25) * 25.4).toFixed(1)} mm`);
+    expect(BINS.rv35.cut).toEqual([13.16, 9.56]);
+  });
+
+  it("bins that cannot fit say why; one turns to fit; two side by side keep their rims apart", () => {
+    // Two 35 qt front to back: 20.92 in of rims, 20.05 in between the box's uprights on 21 in runners.
+    expect(plan(imperial({ layout: "trash", width: 18 * IN, trashBins: "deep", bin: "rv35" }), false).error).toMatch(/deeper box than a 533 mm/);
+    // A 35 qt in a 450 mm cabinet fits only turned, long side front to back.
+    const m = normalize({ ...defaults(true), layout: "trash", width: 450 * MM, trashBins: "one", bin: "rv35" }, true);
+    expect(plan(m, true).rows.find((r) => r[0] === "Bin frame")?.[1]).toContain("long side front to back");
+    // Two side by side in a 30 in cabinet: the web between them is at least the rims' overhang plus 1/8 in.
+    const p = ok(imperial({ layout: "trash", width: 30 * IN, trashBins: "side", bin: "rv35" }));
+    expect(p.rows.find((r) => r[0] === "Bin frame")?.[1]).toContain("2 bin cutouts");
+    expect(plan(imperial({ layout: "trash", width: 24 * IN, trashBins: "side", bin: "rv35" }), false).error).toMatch(/side by side/);
+    // A measured bin: the panel says how big a cutout fits.
+    const room = binRoom(imperial({ layout: "trash", width: 24 * IN, trashBins: "one", bin: "custom" }), false)!;
+    expect(room.across).toBeGreaterThan(18 * IN);
+  });
+
+  it("the flat import places every copy at the top level, moved and turned by the cabinet's frame", () => {
+    const p = ok(imperial({ layout: "doors", shelves: 1 }));
+    const turn = { linear: [[0, -1, 0], [1, 0, 0], [0, 0, 1]], translation: [1, 2, 3] as [number, number, number] };
+    const op = flatImportOp(p.parts, turn) as unknown as { nodes: { definition: number; xform: { linear: number[][]; translation: number[] } }[] };
+    expect(op.nodes).toHaveLength(p.parts.reduce((n, x) => n + x.copies.length, 0));
+    const side = p.parts.findIndex((x) => x.name === "Right side");
+    const at = p.parts[side].copies[0].at;
+    const node = op.nodes.find((n) => n.definition === side)!;
+    expect(node.xform.translation[0]).toBeCloseTo(1 - at[1], 12);
+    expect(node.xform.translation[1]).toBeCloseTo(2 + at[0], 12);
+    expect(node.xform.linear).toEqual(turn.linear);
   });
 });
 
