@@ -16,6 +16,7 @@ A sample Sawhorse plugin (plugin API 1). It builds a frameless (European-style) 
    - **7 · CNC:** the bit's diameter and the joint clearance.
    - **8 · Cuts and holes:** every cut and hole, and how it is made.
    - **Generate cabinet**, with what it will add and one line on what it comes to: parts, thicknesses, holes, and the runner's part number.
+3. **Editing a cabinet.** The new cabinet is selected, and the panel now edits it: every change rebuilds it in place, one undo step each, with no button to press. Select any cabinet the generator made (a click, a click in the Outliner, or a double-click into it) and the panel shows that cabinet's own settings, kept in the document by cabinet. Click empty space and the panel is back to a new cabinet, numbered on (Base 2); **Add another like this** makes a copy of the one being edited beside the model.
 
 ## The details
 
@@ -50,7 +51,10 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 - **Rails:** each rail's tongue is 0.5 mm shorter than its groove, so the shoulders close. Its front corners are notched the stop plus one **bit diameter** deep, so the round end the router leaves in the groove never meets the rail's square shoulder.
 - **Narrow grooves:** a groove narrower than the bit (the back and drawer-bottom grooves, about 7/32 in) is listed, to cut with a smaller bit on its own layer.
 
-**Trash pull-out.** One full-height drawer front on Blum runners. The box is a low tray (6 in sides to start); its sub-front and back run full height as uprights, and a bin frame spans between them at the bins' lip height, in a dado in the sub-front and with a tongue through a slot in the back (a dado there would be in the face opposite the hook holes, a second setup), with a cutout for each bin: one, two side by side, or two front to back. Set the cutout (measured just under the lip) and the lip's height above the tray's bottom from your own bins; the starting numbers are only placeholders. The frame needs 3/4 in of wood around each cutout; the cutouts go on CUTOUT_THRU in the DXF.
+**Trash pull-out.** One full-height drawer front on Blum runners. The box is a low tray (6 in sides to start); its sub-front and back run full height as uprights, and a bin frame spans between them, in a dado in the sub-front and with a tongue through a slot in the back (a dado there would be in the face opposite the hook holes, a second setup), with a cutout for each bin to hang in by its rim: one, two side by side, or two front to back.
+- **Bins** are Rev-A-Shelf's, sized from their customer drawings: 27 qt (RV-1024: rim 10.96 x 10.96 in, 17.75 tall, opening 10.10 x 10.10), 35 qt (RV-35: rim 14.21 x 10.46, 17.85 tall, opening 13.16 x 9.56) and 50 qt (RV-50: rim 14.75 x 10.67, 21.75 tall, opening 13.59 x 9.80). Each cutout is the drawing's minimum opening plus 1/32 in a side; the frame's top is the rim's drop below the rim (1.80, 1.63, 1.75 in), with the bin 1/4 in off the tray floor. Two bins keep their rims 1/8 in apart; every cutout keeps 3/4 in of wood to the frame's edges; a bin turns its long side front to back when that is what fits. **Other: measure it** takes your own cutout and frame height (Knape & Vogt's 35 qt is 9 3/16 in deep at the rim, not Rev-A-Shelf's 10.46), and says the largest cutout the cabinet takes.
+- **What fits:** one bin, any of the three, from a 15 in cabinet; two side by side from 27 in. Two front to back need more than the 20 in between a 21 in (533 mm) runner box's uprights (two 35 qt rims are 20.92 in): Rev-A-Shelf's own doubles ride 22 in slides. They fit a deeper cabinet on Blum's European 600 mm runners. The Trash preset is one 50 qt in an 18 in cabinet.
+- The cutouts go on CUTOUT_THRU in the DXF.
 
 **Drawer runners.** Drawers are sized for Blum runners from Blum's own tables, in two catalogues (in `RUNNERS` and `RUNNERS_EU` in `cabinet.js`): **Blum Inc.** (US, inch lengths: TANDEM plus BLUMOTION 563H, 2021 catalog pp. 11-15; MOVENTO 763H, 2026 catalog pp. 9-13), the default in inch documents, and **Blum Europe** (mm lengths: TANDEM 560H, TD-127/3; MOVENTO 760H, TD-132/1), the default in metric ones.
 
@@ -93,7 +97,11 @@ Only the System 32 screw holes are drilled; Blum's chipboard-only holes (4 x 15 
 
 The table lists every cut and how it is made. With inset fronts, the hinge plates and runner screws are listed but not drilled: they are left to Blum's inset tables.
 
-**Changing it.** Select the cabinet (a click on it selects the whole component) and the button reads **Update selected cabinet**: it replaces that cabinet in place with the new sizes, again as one undo step. With anything else selected, it adds a new cabinet beside the model. The whole cabinet is one undo step ("Generate cabinet").
+**Changing it.** Select the cabinet, or double-click into it, and change anything: it is rebuilt in place, where it stands (moved or turned), one undo step ("Update cabinet") per change. A cabinet open for editing is rebuilt from inside: new parts in, old ones out, the same cabinet. The whole cabinet is one undo step ("Generate cabinet") when it is made.
+
+**Grain.** Each part's grain is set as it is made, so nesting knows which parts may turn: doors vertical (or across), drawer faces across (or vertical), sides vertical (or free when they never show), shelves along their span (where plywood is stiffest), and the inside parts (bottom, top or stretchers, back, toe kick, nailers, drawer boxes and bottoms, bin frame) **free to turn**, so the nester can rotate them to save plywood, or along their length if you ask (Materials > Grain). A grain set by hand in the Cut list or under a Nesting diagram is replaced when the cabinet is rebuilt.
+
+**Square on assembly.** The bottom in its dados and the back in its grooves hold the box square; with stretchers for a top, those two do the work (the stretchers sit in the sides' top rabbet, stopped at the front, but add little on their own). Glue it up with the back in place and check the diagonals (equal within 1/32 in, 1 mm) before the glue sets; Cuts and holes says the same.
 
 The last sizes are kept for next time (the plugin's own store), and which cabinet it made is kept in the document (saved inside the `.shz`). Sizes saved by an older version still load:
 - a centred pull stays centred;
