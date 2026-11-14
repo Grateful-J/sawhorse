@@ -2242,6 +2242,14 @@ export function App() {
     },
     [cutList, selectCutRows, select],
   );
+  /** A nested part's grain, set from its diagram: its whole cut list row (every copy). */
+  const grainPlacement = useCallback(
+    (p: Placement, grain: Grain) => {
+      const row = cutList?.rows.find((r) => r.occurrences.some((o) => sameItem(o.item, p.item)));
+      if (row) setGrain([row], grain);
+    },
+    [cutList, setGrain],
+  );
   // The part under the pointer in the viewport lights up in its diagram.
   const nestLit = useMemo(() => {
     if (!nesting || !hover || !nestShown) return null;
@@ -3175,6 +3183,7 @@ export function App() {
               onStock={() => setStockOpen(true)}
               onHover={hoverPlacement}
               onSelect={selectPlacement}
+              onGrain={grainPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
               onDxf={(f) => guardNest("the DXF", () => void saveNestDxf(f))}
               onCnc={() => guardNest("the CNC files", () => void saveNestCnc(), true)}

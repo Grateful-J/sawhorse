@@ -60,6 +60,25 @@ describe("Nesting section", () => {
     expect(document.querySelector('g.part[data-tag="2"]')!.getAttribute("class")).toContain("on");
   });
 
+  it("a part clicked in a diagram shows its grain, and picking Free to turn sets it (every copy)", () => {
+    const onGrain = vi.fn();
+    render(<NestingSection {...props({ onGrain })} />);
+    expect(screen.queryByTestId("nest-pick")).toBeNull();
+    fireEvent.click(document.querySelector('g.part[data-tag="1b"]')!);
+    const bar = screen.getByTestId("nest-pick");
+    expect(bar.textContent).toContain("1b");
+    const select = bar.querySelector("select")!;
+    expect(select.value).toBe("length");
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Along its length", "Across its width", "Free to turn"]);
+    fireEvent.change(select, { target: { value: "none" } });
+    expect(onGrain).toHaveBeenCalledWith(expect.objectContaining({ tag: "1b" }), "none");
+    // Without the handler there is no bar.
+    cleanup();
+    render(<NestingSection {...props()} />);
+    fireEvent.click(document.querySelector('g.part[data-tag="1b"]')!);
+    expect(screen.queryByTestId("nest-pick")).toBeNull();
+  });
+
   it("kerf and trim take typed lengths, the saw switches, and bad input says why", () => {
     vi.useFakeTimers();
     const p = props();

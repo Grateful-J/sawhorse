@@ -5,7 +5,7 @@
 // labelled with its tag (hover: its name and size, and the part lights up in the model;
 // click: select it), the cuts in order underneath; and the SVG, DXF and PDF exports.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
+import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
 import { nestProblems } from "../nesting/cnc";
@@ -25,6 +25,8 @@ export interface NestingSectionProps {
   /** The pointer is over a part's rectangle (null: over none). */
   onHover: (p: Placement | null) => void;
   onSelect: (p: Placement) => void;
+  /** Set the grain of a nested part's row (one undo step): "none" lets the nester turn it. */
+  onGrain?: (p: Placement, grain: Grain) => void;
   /** Save SVG drawings (one piece, or every piece); without it there are no file buttons. */
   onSvg?: (piece: StockPiece | null) => void;
   onDxf?: (flavour: "lwpolyline" | "r12") => void;
@@ -141,7 +143,7 @@ function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: Stoc
             }}
             onClick={() => onSelect(q.p)}
           >
-            <title>{`${q.p.tag} ${q.p.name}${stripText(q.p)}: ${dims(...placedSize(q.p), rounding)}${q.p.turned ? " (turned)" : ""}. Click to select it in the model.`}</title>
+            <title>{`${q.p.tag} ${q.p.name}${stripText(q.p)}: ${dims(...placedSize(q.p), rounding)}${q.p.turned ? " (turned)" : ""}. Click to select it and set its grain.`}</title>
             <rect x={q.x * S} y={q.y * S} width={q.w * S} height={q.h * S} />
             {fs > font * 0.18 ? (
               <text x={(q.x + q.w / 2) * S} y={(q.y + q.h / 2) * S + fs * 0.35} fontSize={fs}>
@@ -158,8 +160,17 @@ function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: Stoc
   );
 }
 
+/** The grain choices for a nested part, as the nester reads them. */
+const GRAIN_OPTIONS: [Grain, string][] = [
+  ["length", "Along its length"],
+  ["width", "Across its width"],
+  ["none", "Free to turn"],
+];
+
 export function NestingSection(p: NestingSectionProps) {
   const n = p.nesting;
+  // The part last clicked in a diagram: its grain can be set under that diagram.
+  const [picked, setPicked] = useState<string | null>(null);
   const r = p.rounding;
   const s = n ? nestSummary(n, r) : null;
   const settings = n?.settings;
@@ -271,7 +282,37 @@ export function NestingSection(p: NestingSectionProps) {
                   {piece.guillotine ? "" : " · not all straight cuts"}
                 </small>
               </figcaption>
-              <PieceDiagram piece={piece} rounding={r} lit={p.lit} onHover={p.onHover} onSelect={p.onSelect} />
+              <PieceDiagram
+                piece={piece}
+                rounding={r}
+                lit={p.lit}
+                onHover={p.onHover}
+                onSelect={(q) => {
+                  setPicked(q.tag);
+                  p.onSelect(q);
+                }}
+              />
+              {(() => {
+                const q = p.onGrain ? piece.placements.find((x) => x.tag === picked) : undefined;
+                return q ? (
+                  <div className="nest-pick" data-testid="nest-pick">
+                    <span>
+                      <span className="tag">{q.tag}</span> {q.name}
+                    </span>
+                    <label>
+                      Grain{" "}
+                      <select value={q.grain} onChange={(e) => p.onGrain?.(q, e.currentTarget.value as Grain)} data-field="grain">
+                        {GRAIN_OPTIONS.map(([g, label]) => (
+                          <option key={g} value={g}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <small>Free to turn lets nesting rotate it to save sheet: for parts whose grain never shows. Every copy of the part follows.</small>
+                  </div>
+                ) : null;
+              })()}
               <details>
                 <summary>
                   {piece.cuts.length} cut{piece.cuts.length === 1 ? "" : "s"}, {piece.placements.length} part{piece.placements.length === 1 ? "" : "s"}
