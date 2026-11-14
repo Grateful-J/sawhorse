@@ -1,18 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatFractionalInches,
-  formatLength,
-  formatVolume,
-  nextUnitSystem,
-  UNIT_CHOICES,
-  UNIT_SYSTEMS,
-  unitInfo,
-  parseDimensions,
-  parseLength,
-  parseNumber,
-  M_PER_IN,
-  type UnitSystem,
-} from "./units";
+import { formatFractionalInches, formatLength, formatVolume, nextUnitSystem, UNIT_CHOICES, UNIT_SYSTEMS, unitInfo, parseDimensions, parseLength, parseNumber, M_PER_IN, type UnitSystem, formatLengthExact } from "./units";
 
 const IN = M_PER_IN;
 const ok = (text: string, system: UnitSystem = "frac-in") => {
@@ -278,5 +265,28 @@ describe("the unit picker's choices (lane 24)", () => {
 
   it("names each in words", () => {
     expect(UNIT_CHOICES.map((id) => unitInfo(id).name)).toEqual(["millimetres", "centimetres", "metres", "decimal inches", "feet and inches", "fractional inches"]);
+  });
+});
+
+describe("formatLengthExact", () => {
+  it("shows what the display would round, and reads back to the same length", () => {
+    expect(formatLengthExact((23 / 32) * M_PER_IN, "frac-in")).toBe("23/32");
+    expect(formatLengthExact((23 / 32) * M_PER_IN, "ft-in")).toBe('23/32"');
+    expect(formatLengthExact(0.008 * M_PER_IN, "frac-in")).toBe("0.008");
+    expect(formatLengthExact(0.0045, "frac-in")).toBe("0.17717");
+    expect(formatLengthExact(0.0045, "mm")).toBe("4.5");
+    expect(formatLengthExact(0.0002, "mm")).toBe("0.2");
+    // Exact at the display's precision: as displayed.
+    expect(formatLengthExact(34.5 * M_PER_IN, "frac-in")).toBe(formatLength(34.5 * M_PER_IN, "frac-in"));
+    const systems: UnitSystem[] = ["mm", "cm", "m", "in", "ft-in", "frac-in"];
+    const lengths = [(23 / 32) * M_PER_IN, (15 / 32) * M_PER_IN, (7 / 32) * M_PER_IN, 0.008 * M_PER_IN, 0.0045, 0.0002, 0.012, (5 / 16) * M_PER_IN, 34.5 * M_PER_IN, 0.533, 1.2192, 0.123456];
+    for (const sys of systems) {
+      for (const m of lengths) {
+        const text = formatLengthExact(m, sys);
+        const r = parseLength(text, sys);
+        expect(r.ok, `${sys} ${text}`).toBe(true);
+        if (r.ok) expect(Math.abs(r.metres - m), `${sys} ${m} -> ${text}`).toBeLessThan(1e-6);
+      }
+    }
   });
 });

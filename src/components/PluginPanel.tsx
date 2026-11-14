@@ -3,7 +3,7 @@
 // table, note, image. No plugin markup reaches the page.
 import { memo, useEffect, useRef, useState } from "react";
 import type { FieldValue, PanelField } from "../plugins/panel";
-import { formatLength, parseLength, type UnitSystem } from "../lib/units";
+import { formatLength, formatLengthExact, parseLength, type UnitSystem } from "../lib/units";
 
 export interface PluginPanelProps {
   /** For ids: pane-unique prefix. */
@@ -21,7 +21,9 @@ export interface PluginPanelProps {
  * cannot be read keeps the focus, with its error, to be fixed.
  */
 function NumberField({ f, units, onChange, domId }: { f: Extract<PanelField, { type: "number" }>; units: UnitSystem; onChange: (v: number | null) => void; domId: string }) {
-  const show = (v: number | null) => (v === null ? "" : f.unit === "length" ? formatLength(v, units).replace(/^~ /, "") : String(v));
+  // Exact: a length the document's precision would round (23/32 in at 1/16) shows in full,
+  // so committing the field untouched never changes it.
+  const show = (v: number | null) => (v === null ? "" : f.unit === "length" ? formatLengthExact(v, units) : String(v));
   const [text, setText] = useState(show(f.value));
   const [error, setError] = useState<string | null>(null);
   /** Set while Enter's own commit blurs the field, so the blur does not commit again. */
@@ -35,7 +37,8 @@ function NumberField({ f, units, onChange, domId }: { f: Extract<PanelField, { t
   const commit = (): boolean => {
     const fail = (why: string) => (setError(why), false);
     const t = text.trim();
-    if (t === "") return (setText(show(f.value)), true);
+    // Left as shown (or emptied): nothing to commit, so nothing is rounded on the way back.
+    if (t === "" || t === show(f.value)) return (setText(show(f.value)), true);
     let v: number;
     if (f.unit === "length") {
       const r = parseLength(t, units);

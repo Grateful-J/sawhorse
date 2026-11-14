@@ -232,6 +232,37 @@ export function formatLength(metres: number, system: UnitSystem): string {
 }
 
 /**
+ * A length to show in a field someone may commit again: exact, never rounded to the
+ * document's display precision (a plugin's 23/32 in stock must not read, and so be saved, as
+ * 3/4). The display format when it is exact; else 1/64 in fractions, else decimal inches (with
+ * an inch mark in feet-and-inches, where a bare number is feet), or more decimals in metric.
+ * Every result reads back through `parseLength` to the same length within a micrometre.
+ */
+export function formatLengthExact(metres: number, system: UnitSystem): string {
+  const shown = formatLength(metres, system);
+  if (!shown.startsWith("~ ")) return shown;
+  const inches = metres / M_PER_IN;
+  switch (system) {
+    case "frac-in":
+    case "ft-in": {
+      const mark = system === "ft-in" ? '"' : "";
+      const [frac, approx] = formatFractionalInches(inches, 64);
+      if (!approx) return `${frac}${mark}`;
+      return `${trimDecimals(inches, 5)[0]}${mark}`;
+    }
+    case "in":
+      return trimDecimals(inches, 5)[0];
+    case "mm":
+      return trimDecimals(metres * 1000, 4)[0];
+    case "cm":
+      return trimDecimals(metres * 100, 5)[0];
+    case "m":
+      return trimDecimals(metres, 7)[0];
+  }
+  return shown.replace(/^~ /, "");
+}
+
+/**
  * A volume for the viewport's badge, with its unit (#26): cubic inches to one decimal in the
  * inch systems, as the badge always read, and cubic metres in the metric ones, to six
  * decimals (a cubic centimetre) with trailing zeros dropped. A solid too small for the step
