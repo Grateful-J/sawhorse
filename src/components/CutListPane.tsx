@@ -63,9 +63,16 @@ export interface CutListPaneProps {
   onByAssembly?: (on: boolean) => void;
   /** The assembly a piece is in (its outermost named group or component), or null. */
   ownerOf?: (item: Item) => string | null;
+  /** That assembly's identity, when names are not enough: two cabinets both named "Base 1"
+   * are two headings. Without it, assemblies are told apart by name. */
+  ownerKeyOf?: (item: Item) => string | null;
+  /** Whether a piece is selected in the model (itself, or something that holds it). By
+   * assembly, a row is lit when its own pieces are: the same part under another cabinet is
+   * another row. Without it, rows are lit by `selected` (the whole part). */
+  pieceSelected?: (item: Item) => boolean;
 }
 
-type Entry = { kind: "head"; owner: string | null; pieces: number } | { kind: "row"; row: CutRow; gk: string };
+type Entry = { kind: "head"; owner: string | null; gk: string; pieces: number } | { kind: "row"; row: CutRow; gk: string };
 
 /** The entries up to the `n`th row (headings ride along with their rows). */
 function upTo(entries: Entry[], n: number): Entry[] {
@@ -84,34 +91,41 @@ function upTo(entries: Entry[], n: number): Entry[] {
  * The rows by assembly: each piece goes under the assembly it is in, in the order assemblies
  * first appear; a part with pieces in two assemblies is a row under each, its quantity,
  * hidden count, board feet and area those pieces' share. Pieces in no assembly come last.
+ * `keyOf` tells assemblies apart (default: by name), so two cabinets with one name are two
+ * headings. With Visible only, a part with no drawn piece in an assembly has no row there
+ * (as the flat list has none for a part with no drawn piece at all).
  */
-export function groupRows(rows: CutRow[], ownerOf: (item: Item) => string | null, visibleOnly: boolean): { owner: string | null; rows: CutRow[] }[] {
+export function groupRows(rows: CutRow[], ownerOf: (item: Item) => string | null, visibleOnly: boolean, keyOf: (item: Item) => string | null = ownerOf): { owner: string | null; key: string | null; rows: CutRow[] }[] {
   const order: (string | null)[] = [];
-  const by = new Map<string | null, CutRow[]>();
+  const by = new Map<string | null, { owner: string | null; rows: CutRow[] }>();
   for (const row of rows) {
-    const split = new Map<string | null, CutRow["occurrences"]>();
+    const split = new Map<string | null, { owner: string | null; occ: CutRow["occurrences"] }>();
     for (const o of row.occurrences) {
       const owner = ownerOf(o.item);
-      const list = split.get(owner) ?? [];
-      list.push(o);
-      split.set(owner, list);
+      // A piece in no assembly has no key, whatever `keyOf` says.
+      const key = owner === null ? null : keyOf(o.item);
+      const part = split.get(key) ?? { owner, occ: [] };
+      part.occ.push(o);
+      split.set(key, part);
     }
     // A part with no pieces listed (dropped, or none drawn) stays under no assembly.
-    if (!split.size) split.set(null, []);
-    for (const [owner, occ] of split) {
-      if (!by.has(owner)) {
-        by.set(owner, []);
-        order.push(owner);
-      }
+    if (!split.size) split.set(null, { owner: null, occ: [] });
+    for (const [key, { owner, occ }] of split) {
       const total = occ.length;
       const hidden = occ.filter((o) => !o.visible).length;
       const qty = split.size === 1 ? row.qty : visibleOnly ? total - hidden : total;
+      // Nothing of it is drawn in this assembly: no row here.
+      if (split.size > 1 && visibleOnly && qty === 0) continue;
+      if (!by.has(key)) {
+        by.set(key, { owner, rows: [] });
+        order.push(key);
+      }
       const share = row.qty > 0 ? qty / row.qty : 0;
-      by.get(owner)!.push(split.size === 1 ? row : { ...row, occurrences: occ, qty, total, hidden, handed: occ.filter((o) => o.handed).length, board_feet: row.board_feet * share, area_m2: row.area_m2 * share });
+      by.get(key)!.rows.push(split.size === 1 ? row : { ...row, occurrences: occ, qty, total, hidden, handed: occ.filter((o) => o.handed).length, board_feet: row.board_feet * share, area_m2: row.area_m2 * share });
     }
   }
   const named = order.filter((o) => o !== null);
-  return [...named, ...(order.includes(null) ? [null] : [])].map((owner) => ({ owner, rows: by.get(owner)! }));
+  return [...named, ...(order.includes(null) ? [null] : [])].map((key) => ({ owner: by.get(key)!.owner, key, rows: by.get(key)!.rows }));
 }
 
 /** A stable key for a row (its part and its size). */
@@ -137,10 +151,11 @@ function common<T>(rows: CutRow[], f: (r: CutRow) => T): T | undefined {
 }
 
 /** The rows a click picks: plain replaces, Ctrl toggles one, Shift picks the range from the
- * anchor (Ctrl+Shift adds the range). In list order. */
-export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow, anchor: string | null, mods: { shift: boolean; toggle: boolean }): CutRow[] {
-  const keys = rows.map(rowKey);
-  const k = rowKey(clicked);
+ * anchor (Ctrl+Shift adds the range). In list order: `rows` are the rows as they are drawn,
+ * and `keyOf` names each (by assembly, the same part under two cabinets is two rows). */
+export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow, anchor: string | null, mods: { shift: boolean; toggle: boolean }, keyOf: (row: CutRow) => string = rowKey): CutRow[] {
+  const keys = rows.map(keyOf);
+  const k = keyOf(clicked);
   const at = keys.indexOf(k);
   const from = anchor === null ? -1 : keys.indexOf(anchor);
   let next: Set<string>;
@@ -152,7 +167,7 @@ export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow,
     if (next.has(k)) next.delete(k);
     else next.add(k);
   } else next = new Set([k]);
-  return rows.filter((r) => next.has(rowKey(r)));
+  return rows.filter((r) => next.has(keyOf(r)));
 }
 
 /** Widest a size column grows (characters) before a longer size wraps between its whole
@@ -302,15 +317,20 @@ export function CutListPane(p: CutListPaneProps) {
   const empty = !!list && list.rows.length === 0;
   const openMenu = (e: ReactMouseEvent, row: CutRow) => {
     e.preventDefault();
-    const k = rowKey(row);
-    const picked = p.selected.has(k) && p.selected.size > 1 && list ? list.rows.filter((x) => p.selected.has(rowKey(x))) : [row];
+    const k = drawnKey(row);
+    // The menu acts on parts (their grain, their stock): a part picked under two assemblies is
+    // one part.
+    const parts = new Set<string>();
+    const picked = lit.has(k) && lit.size > 1 ? drawn.filter((x) => lit.has(drawnKey(x)) && !parts.has(rowKey(x)) && parts.add(rowKey(x))) : [row];
     setMenu({ x: e.clientX, y: e.clientY, rows: picked });
   };
   const clickRow = (e: ReactMouseEvent, row: CutRow) => {
     if (!list) return;
     const toggle = e.ctrlKey || e.metaKey;
-    p.onSelectRows(pickRows(list.rows, p.selected, row, anchor, { shift: e.shiftKey, toggle }));
-    if (!e.shiftKey) setAnchor(rowKey(row));
+    // Over the rows as they are drawn: by assembly, a row is one assembly's pieces of a part,
+    // and a Shift range runs down the list as it is on screen.
+    p.onSelectRows(pickRows(drawn, lit, row, anchor, { shift: e.shiftKey, toggle }, drawnKey));
+    if (!e.shiftKey) setAnchor(drawnKey(row));
   };
   const menuKeys = new Set(menu?.rows.map(rowKey) ?? []);
   // Lane 16: a long list draws its first rows, and more on request; the totals, the
@@ -318,7 +338,36 @@ export function CutListPane(p: CutListPaneProps) {
   // drawn as part of the page, and a model of 100,000 loose solids is 100,000 rows.)
   const [shown, setShown] = useState(CUT_ROWS_SHOWN);
   // By assembly: a heading per cabinet or base frame, each part's pieces under the one they are in.
-  const groups = useMemo(() => (p.byAssembly && p.ownerOf && list ? groupRows(list.rows, p.ownerOf, list.visible_only) : null), [p.byAssembly, p.ownerOf, list]);
+  const groups = useMemo(() => (p.byAssembly && p.ownerOf && list ? groupRows(list.rows, p.ownerOf, list.visible_only, p.ownerKeyOf) : null), [p.byAssembly, p.ownerOf, p.ownerKeyOf, list]);
+  // The rows as they are drawn, each with its own key: by assembly, a part's row under one
+  // cabinet is not its row under another.
+  const { drawn, drawnKeys } = useMemo(() => {
+    const drawnKeys = new Map<CutRow, string>();
+    if (!groups) return { drawn: list?.rows ?? [], drawnKeys };
+    const drawn: CutRow[] = [];
+    groups.forEach((g, i) => {
+      for (const row of g.rows) {
+        drawn.push(row);
+        drawnKeys.set(row, `${i}:${g.key ?? ""}|${rowKey(row)}`);
+      }
+    });
+    return { drawn, drawnKeys };
+  }, [groups, list]);
+  const drawnKey = (row: CutRow) => drawnKeys.get(row) ?? rowKey(row);
+  // The rows lit: by assembly, those whose own drawn pieces are all selected.
+  const pieceSelected = p.pieceSelected;
+  const lit = useMemo(() => {
+    if (!groups || !pieceSelected) {
+      if (!groups) return p.selected;
+      return new Set(drawn.filter((row) => p.selected.has(rowKey(row))).map((row) => drawnKeys.get(row)!));
+    }
+    const out = new Set<string>();
+    for (const row of drawn) {
+      const vis = row.occurrences.filter((o) => o.visible);
+      if (vis.length && vis.every((o) => pieceSelected(o.item))) out.add(drawnKeys.get(row)!);
+    }
+    return out;
+  }, [groups, drawn, drawnKeys, pieceSelected, p.selected]);
   const rowCount = groups ? groups.reduce((n, g) => n + g.rows.length, 0) : (list?.rows.length ?? 0);
   const widths = useMemo(() => (list ? columnWidths(list, style) : []), [list, style]);
   // Lane 20b: how the table is laid out, from the panel's width as laid out (and again
@@ -403,7 +452,7 @@ export function CutListPane(p: CutListPaneProps) {
     const why = row.uncounted ? UNCOUNTED_NOTES[row.uncounted] : null;
     const notes = rowNotes(row).map((x) => (x === why ? "not counted" : x));
     if (row.sheet) notes.unshift("sheet");
-    const sel = p.selected.has(k);
+    const sel = lit.has(drawnKey(row));
     const mark = (axis: 1 | 2) => (row.grain === (axis === 2 ? "length" : "width") ? <i className="grain" title={`Grain runs along ${axis === 2 ? "the length" : "the width"}`} aria-label="grain" /> : null);
     const rowClass = `${sel ? "sel" : ""}${row.hidden === row.total && row.total ? " dim" : ""}${row.included === false || row.uncounted ? " out" : ""}${menuKeys.has(k) ? " menu" : ""}`;
     return (
@@ -479,7 +528,9 @@ export function CutListPane(p: CutListPaneProps) {
     );
   };
 
-  const entries: Entry[] = groups ? groups.flatMap((g) => [{ kind: "head" as const, owner: g.owner, pieces: g.rows.reduce((n, x) => n + x.qty, 0) }, ...g.rows.map((row) => ({ kind: "row" as const, row, gk: `${g.owner ?? ""}|` }))]) : (list?.rows ?? []).map((row) => ({ kind: "row" as const, row, gk: "" }));
+  // A heading counts the pieces that count: not those of a part left out of the totals.
+  const counted = (x: CutRow) => (x.included === false || x.uncounted ? 0 : x.qty);
+  const entries: Entry[] = groups ? groups.flatMap((g, i) => [{ kind: "head" as const, owner: g.owner, gk: `${i}:${g.key ?? ""}|`, pieces: g.rows.reduce((n, x) => n + counted(x), 0) }, ...g.rows.map((row) => ({ kind: "row" as const, row, gk: `${i}:${g.key ?? ""}|` }))]) : (list?.rows ?? []).map((row) => ({ kind: "row" as const, row, gk: "" }));
   const visible = upTo(entries, shown);
 
   return (
@@ -598,7 +649,7 @@ export function CutListPane(p: CutListPaneProps) {
               <tbody role="rowgroup">
                 {visible.map((e) =>
                   e.kind === "head" ? (
-                    <tr key={`group:${e.owner ?? ""}`} role="row" className="group" data-group={e.owner ?? ""}>
+                    <tr key={`group:${e.gk}`} role="row" className="group" data-group={e.owner ?? ""}>
                       <td role="cell" colSpan={6}>
                         <b>{e.owner ?? "Not in an assembly"}</b> <small>· {e.pieces} {e.pieces === 1 ? "piece" : "pieces"}</small>
                       </td>
