@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Download, type Page } from "@playwright/test";
 import { box, hover, at, IN, solids, type V3 } from "./helpers";
 
 // The three sample plugins (plugins/), driven through the UI as a person would (lane 11):
@@ -255,6 +255,123 @@ test("cabinet generator: new cabinets stand in a row; the row goes on a base fra
   await page.keyboard.press("Control+z");
   await expect(page.locator("#hint")).toContainText("Undone: Base frame");
   await expect.poll(async () => (await solids(page)).length).toBe(cabinets.length);
+});
+
+/** Files the page downloads while `click` runs (io=basic saves are downloads). */
+async function downloads(page: Page, count: number, click: () => Promise<void>): Promise<{ name: string; text: string }[]> {
+  const got: Download[] = [];
+  const done = new Promise<void>((resolve) => {
+    const on = (d: Download) => {
+      got.push(d);
+      if (got.length === count) {
+        page.off("download", on);
+        resolve();
+      }
+    };
+    page.on("download", on);
+  });
+  await click();
+  await done;
+  return Promise.all(got.map(async (d) => ({ name: d.suggestedFilename(), text: readFileSync((await d.path())!, "utf8") })));
+}
+
+test("mixed CNC and track saw: a pantry too tall for a 4 x 4 goes to the saw, the CNC files are the router's, its dados are hand work", async ({ page }) => {
+  test.setTimeout(120_000);
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  await page.locator(`[data-panel="${panel}"] [data-field="preset"]`).selectOption("tall");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(page.locator("#hint")).toContainText("Made Pantry");
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await page.getByRole("button", { name: "Nesting ›" }).click();
+  const section = page.getByTestId("nesting");
+  await section.getByRole("button", { name: "Stock…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Stock" });
+  await dlg.getByRole("button", { name: /Use 4 × 4 plywood/ }).click();
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await section.getByRole("button", { name: "CNC spacing" }).click();
+  // 84 in sides and back: on no stock, with the offer to cut them on the track saw.
+  await expect(page.getByTestId("nest-unplaced")).toContainText("Left side");
+  await page.getByTestId("nest-unplaced").getByRole("button", { name: /on the track saw/ }).click();
+  await expect(page.getByTestId("nest-unplaced")).toHaveCount(0);
+  await expect(section.locator('[data-field="overflow"]')).toBeChecked();
+  const saw = section.locator('figure.nest-piece[data-saw="true"]');
+  await expect(saw.first()).toBeVisible();
+  await expect(saw.first().locator(".via")).toHaveText("Track saw");
+  await expect(section.locator("figure.nest-piece:not([data-saw]) .via").first()).toHaveText("CNC");
+  const n = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { saw?: boolean; stock: string; placements: { name: string }[] }[] };
+  const sawn = n.pieces.filter((p) => p.saw);
+  expect(sawn.every((p) => p.stock.startsWith("4 x 8"))).toBe(true);
+  expect(sawn.flatMap((p) => p.placements.map((q) => q.name))).toEqual(expect.arrayContaining(["Left side", "Right side"]));
+  // The sides' shelf-pin and hinge-plate holes and back groove: hand work.
+  await expect(page.getByTestId("nest-handwork")).toContainText("Left side");
+  // CNC files: one per router sheet, and the hand work list.
+  const router = n.pieces.filter((p) => !p.saw).length;
+  const files = await downloads(page, router + 1, () => section.getByRole("button", { name: "CNC files" }).click());
+  const dxfs = files.filter((f) => f.name.endsWith(".dxf"));
+  expect(dxfs).toHaveLength(router);
+  expect(dxfs.every((f) => !/Left side|Right side/.test(f.name))).toBe(true);
+  const work = files.find((f) => f.name.endsWith("track saw hand work.txt"));
+  expect(work?.text).toContain("hand work on the track saw's parts");
+  expect(work?.text).toMatch(/Left side \(Sheet \d of \d · 4 x 8 sheet, 3\/4\)/);
+  expect(work?.text).toMatch(/holes? 5 mm/);
+  await expect(page.locator("#hint")).toContainText("Saved the hand work on");
+  // One undo takes the saw back off.
+  await page.keyboard.press("Control+z");
+  await expect(page.getByTestId("nest-unplaced")).toContainText("Left side");
+});
+
+test("base frame: drawn dimensioned in the panel and in the model before it is made, a click makes it, the Cut list groups it, long rails on the track saw", async ({ page }) => {
+  test.setTimeout(120_000);
+  await start(page);
+  await enable(page, CABINET, "Cabinet generator", ["model.read", "model.write", "ui", "storage"]);
+  const panel = `${CABINET}/cabinet`;
+  const rows = `${CABINET}/rows`;
+  const vp = (await page.locator("main.vp").boundingBox())!;
+  for (const [w, n] of [["24", 1], ["18", 2], ["36", 3]] as const) {
+    if (n > 1) {
+      await page.keyboard.press("Escape");
+      await page.mouse.click(vp.x + 40, vp.y + vp.height - 60);
+      await expect(page.locator(`[data-panel="${panel}"] [data-note="status"]`)).toContainText(`Adds Cabinet ${n}`);
+    }
+    await field(page, panel, "width", w);
+    await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+    await expect(page.locator("#hint")).toContainText(`Made Cabinet ${n}`);
+  }
+  // The last one is selected: its row's frame, drawn and laid out.
+  const pic = page.locator(`[data-panel="${rows}"] img`);
+  await expect.poll(async () => ((await pic.getAttribute("src")) ?? "").length).toBeGreaterThan(2000);
+  expect(await pic.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+  const layout = page.locator(`[data-panel="${rows}"] [data-table="ladderLayout"] tbody tr`);
+  await expect(layout).toHaveCount(2);
+  await expect(layout.nth(0)).toContainText("A");
+  await expect(layout.nth(0)).toContainText("42");
+  await expect(layout.nth(1)).toContainText("36");
+  // In the model: the preview tool, then a click makes it.
+  const before = (await solids(page)).length;
+  await page.locator(`[data-panel="${rows}"] [data-action="previewBase"]`).click();
+  await expect(page.locator("#hint")).toContainText("The base frame for 3 cabinets");
+  expect((await solids(page)).length).toBe(before);
+  await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height / 2);
+  // Made, one undo step, and selected: the tool now shows the frame as its settings make it.
+  await expect(page.locator("#hint")).toContainText("Base frame 1 as its settings now make it");
+  await expect.poll(async () => (await solids(page)).length).toBeGreaterThan(before);
+  // The Cut list, by assembly: a heading per cabinet and the frame.
+  await page.getByRole("tab", { name: "Cut list" }).click();
+  await page.locator('.cutlist [data-field="byAssembly"]').check();
+  const heads = page.locator(".cutlist tbody tr.group");
+  await expect(heads).toHaveCount(4);
+  const names = await heads.evaluateAll((trs) => trs.map((tr) => tr.getAttribute("data-group")));
+  expect([...names].sort()).toEqual(["Base frame 1", "Cabinet 1", "Cabinet 2", "Cabinet 3"]);
+  const frameRows = page.locator('.cutlist tbody tr.group[data-group="Base frame 1"] ~ tr[data-part^="Base "]');
+  await expect(frameRows.first()).toBeVisible();
+  // Long rails on the track saw: one 78 in ladder, and the panel says where the rails go.
+  await page.getByRole("tab", { name: "Plugins" }).click();
+  await page.locator(`[data-panel="${rows}"] [data-field="stock"]`).selectOption("saw");
+  await expect(page.locator(`[data-panel="${rows}"] [data-table="ladderLayout"] tbody tr`)).toHaveCount(1);
+  await expect(page.locator(`[data-panel="${rows}"] [data-note="baseStatus"]`)).toContainText("Changes apply as you make them");
+  await expect(page.locator(`[data-panel="${rows}"] [data-table="baseCuts"] tbody tr`).first()).toContainText("78");
 });
 
 test("cabinet generator: a wider cabinet moves its row along; Line up butts cabinets together; a cabinet turns the corner", async ({ page }) => {

@@ -2,7 +2,7 @@
   "$schema": "../../packages/plugin-api/manifest.schema.json",
   "id": "com.sawhorse3d.cabinet-generator",
   "name": "Cabinet generator",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "api": 1,
   "description": "A frameless cabinet for a CNC router: shelves, doors, Blum TANDEM or MOVENTO drawers, or both, with optional blind dados and hardware holes, cut to the measured stock thickness. Each part is a named component on a plywood material, so the cut list nests it as sheet goods. Each new cabinet goes against the last, so rows (and corners) build themselves; a row can stand on a base frame of plywood strips or lumber, with its own cut list.",
   "author": "Sawhorse",
@@ -10,6 +10,14 @@
   "permissions": ["model.read", "model.write", "ui", "storage"],
   "contributes": {
     "panels": [{ "id": "cabinet", "title": "Cabinet" }, { "id": "rows", "title": "Rows and base frames" }],
+    "tools": [
+      {
+        "id": "frame",
+        "title": "Base frame",
+        "hint": "The base frame for the selected row, drawn where it will go, and the cabinets on it. Click to make it; Esc or another tool to leave.",
+        "icon": "M2 16h20v3H2z M2 13h20v2H2z M4 13v6 M9 13v6 M15 13v6 M20 13v6 M5 4h6v8H5z M13 4h6v8h-6z"
+      }
+    ],
     "commands": [{ "id": "generate", "title": "Generate Cabinet" }],
     "menus": [{ "command": "generate" }],
     "shortcuts": [{ "command": "generate", "key": "Alt+Shift+C" }]

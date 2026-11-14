@@ -17,7 +17,7 @@
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
 import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
-import { apply, applyVector, BASE_LUMBER, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
+import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, ladderPicture, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -703,6 +703,12 @@ let rowView = { kind: "none" };
 let baseDraft = normalizeBase(/** @type {Partial<BaseSizes> | null} */ (await storage.app.get("base")), metric());
 /** What the fields show: the draft, or the selected frame's settings. */
 let baseSizes = baseDraft;
+/** The plan the rows panel shows now (null: none, or one that cannot be made). @type {ReturnType<typeof planBase> | null} */
+let plannedNow = null;
+/** The rows panel is registered: until then the selection has nothing to update. */
+let rowsReady = false;
+/** The preview tool while it is the active tool. @type {import("sawhorse").Tool | null} */
+let previewing = null;
 
 /** What the selection is, for the rows panel. @returns {Promise<RowView>} */
 async function rowFocus() {
@@ -746,15 +752,17 @@ function baseFields(b) {
   const out = [len("height", "Height", b.height), len("setback", "Toe setback", b.setback), len("backInset", "Back inset", b.backInset)];
   out.push(pick("ends", "Ends", b.ends, [["none", "Against walls or cabinets"], ["left", "Left end shows"], ["right", "Right end shows"], ["both", "Both ends show"]]));
   out.push(help("An end that shows is set back like the front, so the toe space turns the corner."));
-  out.push(pick("stock", "Stock", b.stock, [["plywood", "Plywood strips (CNC)"], ["lumber", "Lumber"]]), len("thickness", "Thickness", b.thickness));
+  out.push(pick("stock", "Stock", b.stock, [["plywood", "Plywood strips (CNC)"], ["saw", "Plywood strips, long rails on the track saw"], ["lumber", "Lumber"]]), len("thickness", "Thickness", b.thickness));
   out.push(pick("joints", "Sleepers", b.joints, [["dado", "In dados in the rails"], ["butt", "Butted between the rails"]]));
   if (b.joints === "dado") out.push(len("dadoDepth", "Dado depth", b.dadoDepth));
   out.push(len("spacing", "Sleepers at most", b.spacing), len("maxLength", "Longest piece", b.maxLength));
   out.push(
     help(
       b.stock === "plywood"
-        ? `Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: ${f(metric() ? 1190 * MM : 47 * IN)} fits a 4 × 4 sheet inside the CNC trim; a longer row is split into ladders at the joints between cabinets. Plywood strips nest with the carcass.`
-        : "Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: the boards you buy; a longer row is split into ladders at the joints between cabinets.",
+        ? `Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: ${f(cncLength(metric()))} fits a 4 × 4 sheet inside the CNC trim; a longer row is split into ladders at the joints between cabinets. Plywood strips nest with the carcass.`
+        : b.stock === "saw"
+          ? `Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: ${f(sawStripDefaults(metric()).maxLength)} fits a 4 × 8 inside the track saw's trim. Rails longer than ${f(cncLength(metric()))} are ripped on the track saw (Nesting › Track saw what won't fit); the sleepers stay on the CNC.`
+          : "Sleepers: centre to centre, and one under every joint between cabinets. Longest piece: the boards you buy; a longer row is split into ladders at the joints between cabinets.",
     ),
   );
   return out;
@@ -781,7 +789,10 @@ function rowsBody() {
   out.push(heading("Base frame"), ...baseFields(baseSizes));
   if (v.kind === "row") out.push({ type: "button", id: "makeBase", label: "Put the row on a base frame", primary: true });
   else out.push({ type: "button", id: "refit", label: "Fit to the row again" });
+  out.push({ type: "button", id: "previewBase", label: "Show it in the model" });
   out.push({ type: "note", id: "baseStatus", text: "" });
+  if (typeof OffscreenCanvas !== "undefined") out.push({ type: "image", id: "ladderPic", src: BLANK_PNG, alt: "The base frame from above, dimensioned", width: 320 });
+  out.push({ type: "table", id: "ladderLayout", columns: ["Ladder", "Length", "Sleeper centres from its left end"], rows: [], align: ["left", "right", "left"] });
   out.push(heading("Cut list"), { type: "table", id: "baseCuts", columns: ["Part", "Qty", "Length", "Width", "Thick"], rows: [], align: ["left", "right", "right", "right", "right"] });
   out.push({ type: "note", id: "baseTotal", text: "" });
   out.push({ type: "table", id: "baseNotes", columns: ["Step", "How"], rows: [], align: ["left", "left"] });
@@ -802,6 +813,7 @@ const topsOnFrame = (row, b) => {
 /** Fill in the row line, the plan's status and its cut list. */
 async function explainRows() {
   const v = rowView;
+  plannedNow = null;
   if (v.kind === "none") return;
   /** @type {Record<string, Record<string, unknown>>} */
   const fields = {};
@@ -824,6 +836,10 @@ async function explainRows() {
       const parts = [`${p.ladders} ${p.ladders === 1 ? "ladder" : "ladders"}, ${p.sleepers} sleepers, ${f(baseSizes.height)} tall.`];
       if (kicks.length) parts.push(`${kicks.length === row.length ? "The cabinets' toe kicks come off" : `${kicks.map((c) => c.name).join(", ")} ${kicks.length === 1 ? "loses its" : "lose their"} toe kick${kicks.length === 1 ? "" : "s"}`}: each box is its kick shorter and stays where it is.`);
       parts.push(`Tops at ${tops.join(", ")} above the floor.`);
+      // Rails a 4 x 4 bed cannot take go to the track saw; their dados would be hand work.
+      const bed = cncLength(metric());
+      const long = baseSizes.stock !== "lumber" && p.layout.ladders.some((l) => l.x1 - l.x0 > bed + 1e-9);
+      if (long) parts.push(`Rails over ${f(bed)} are cut on the track saw (Nesting › Track saw what won't fit)${baseSizes.joints === "dado" ? ", and their dados by hand (CNC files lists them)" : ""}.`);
       if (v.kind === "base") {
         const stale = fingerprint(row) !== v.base.kept.fit;
         fields.refit = { disabled: !stale };
@@ -838,8 +854,78 @@ async function explainRows() {
     const run = cuts.reduce((n, r) => n + r.qty * r.length, 0);
     fields.baseTotal = { text: cuts.length ? `${pieces} pieces, ${f(run)} of ${f(baseSizes.height)} ${baseSizes.stock === "plywood" ? `strips of ${stock(baseSizes.thickness)} plywood` : `by ${stock(baseSizes.thickness)} lumber`}. They are in the Cut list too, as Base front rail, Base back rail and Base sleeper.` : "" };
     fields.baseNotes = { rows: p && !p.error ? p.notes : [] };
+    fields.ladderLayout = { rows: p && !p.error ? p.layout.ladders.map((l) => [l.tag, f(l.x1 - l.x0), l.sleepers.map((x) => f(x + p.layout.thickness / 2 - l.x0)).join(", ")]) : [] };
+    if (typeof OffscreenCanvas !== "undefined") {
+      const src = p && !p.error ? await pictureOf(p.layout, p.length) : BLANK_PNG;
+      if (src) fields.ladderPic = { src };
+    }
+    plannedNow = p && !p.error ? p : null;
   }
   await rowsPanel.update({ fields });
+}
+
+/** A 1 x 1 white PNG: the picture's place before there is a frame to draw. */
+const BLANK_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+/** The last picture drawn, by what it shows, so an unchanged plan is not drawn again. */
+let picture = { key: "", src: BLANK_PNG };
+
+/** The frame from above, dimensioned, as a PNG data URL (twice the size it shows, for a sharp
+ * picture; half that when it would be over the panel's 256 KB). Null when it cannot be drawn.
+ * @param {import("./row.js").Layout} layout @param {number} length */
+async function pictureOf(layout, length) {
+  const key = JSON.stringify([layout, length, units.system()]);
+  if (key === picture.key) return picture.src;
+  for (const scale of [2, 1]) {
+    try {
+      const pic = ladderPicture(layout, length, f, 640);
+      const canvas = new OffscreenCanvas(Math.ceil(pic.width * scale), Math.ceil(pic.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, pic.width, pic.height);
+      for (const r of pic.rects) {
+        if (r.kind === "outline") {
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = "#8a8a8a";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.setLineDash([]);
+        } else {
+          ctx.fillStyle = r.kind === "rail" ? "#d9b98c" : "#e8d3b0";
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = "#5a4630";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+      }
+      ctx.strokeStyle = "#333333";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (const l of pic.lines) {
+        ctx.moveTo(l.x1, l.y1);
+        ctx.lineTo(l.x2, l.y2);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#1a1a1a";
+      for (const t of pic.texts) {
+        ctx.font = `${t.size}px sans-serif`;
+        ctx.textAlign = t.align;
+        ctx.fillText(t.text, t.x, t.y);
+      }
+      const blob = await canvas.convertToBlob({ type: "image/png" });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const src = `data:image/png;base64,${btoa(bin)}`;
+      if (src.length > 250_000 && scale > 1) continue;
+      picture = { key, src };
+      return src;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 let rowsShown = "";
@@ -851,10 +937,12 @@ async function rowsRefresh() {
     await rowsPanel.setBody(b);
   }
   await explainRows();
+  await showPreview();
 }
 
 /** The selection moved or the model changed: show the row or the base frame it is in. */
 async function rowsSync() {
+  if (!rowsReady) return;
   const was = rowView;
   rowView = await rowFocus();
   const wasBase = was.kind === "base" ? was.base.id : null;
@@ -873,10 +961,10 @@ function readBase(id, values) {
   for (const k of Object.keys(baseSizes)) if (k in values) v[k] = values[k];
   let next = normalizeBase({ ...baseSizes, .../** @type {Partial<BaseSizes>} */ (v) }, metric());
   if (id === "stock") {
-    const d = next.stock === "lumber" ? lumberDefaults(metric()) : normalizeBase(null, metric());
+    const d = next.stock === "lumber" ? lumberDefaults(metric()) : next.stock === "saw" ? { ...normalizeBase(null, metric()), ...sawStripDefaults(metric()) } : normalizeBase(null, metric());
     // Plywood starts at the row's carcass stock.
     const carcass = rowView.kind !== "none" && rowView.row[0] ? rowView.row[0].sizes.thickness : d.thickness;
-    next = { ...next, thickness: next.stock === "plywood" ? carcass : d.thickness, maxLength: d.maxLength, joints: d.joints };
+    next = { ...next, thickness: next.stock === "lumber" ? d.thickness : carcass, maxLength: d.maxLength, joints: d.joints };
   }
   return next;
 }
@@ -901,9 +989,11 @@ const rowsPanel = await ui.registerPanel({
     if (id === "selectBase" && v.kind === "row" && v.base) return model.select([{ kind: "instance", id: v.base.id }]);
     if (id === "makeBase" && v.kind === "row") return buildBase(v.row, baseSizes, null);
     if (id === "refit" && v.kind === "base") return buildBase(v.row, baseSizes, v.base);
+    if (id === "previewBase" && (v.kind === "row" || v.kind === "base")) return ui.activateTool("frame");
   },
 });
 rowsShown = idsOf(rowsBody());
+rowsReady = true;
 
 let baseTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
 /** Rebuild the selected base frame a moment after the last change. */
@@ -920,6 +1010,65 @@ function liveBase() {
     }
   }, 250);
 }
+
+// --- the frame drawn in the model before it is made -------------------------------------------
+
+
+/** Draw the planned frame where it will go, and each cabinet where it will stand on it; or
+ * nothing when the tool is not active or there is no plan. */
+async function showPreview() {
+  const tool = previewing;
+  if (!tool) return;
+  const v = rowView;
+  const p = plannedNow;
+  if (!p || (v.kind !== "row" && v.kind !== "base") || !v.row.length || (v.kind === "row" && v.base)) {
+    await tool.setView({ overlay: [], labels: [], status: "Select a cabinet of a row with no base frame (or a base frame) to see its frame here." });
+    return;
+  }
+  const row = v.row;
+  const inv0 = invert(row[0].world);
+  const bottom = (/** @type {Placed} */ c) => apply(inv0, c.world.translation)[2];
+  const floor = v.kind === "base" ? apply(inv0, v.base.world.translation)[2] : Math.min(...row.map(bottom));
+  const baseWorld = compose(row[0].world, translation([p.at[0], p.at[1], floor]));
+  /** @type {[number, number, number][]} */
+  const frame = [];
+  for (const b of boxesOf(p.parts)) for (const [a, c] of edgesOf(b)) frame.push(apply(baseWorld, a), apply(baseWorld, c));
+  // Each cabinet where it will stand: on the frame, its box its toe kick shorter.
+  /** @type {[number, number, number][]} */
+  const boxes = [];
+  for (const c of row) {
+    const h = c.sizes.base === "toekick" ? c.sizes.height - c.sizes.toeKick : c.sizes.height;
+    const lift = floor + baseSizes.height - bottom(c);
+    const at = compose(translation(applyVector(row[0].world, [0, 0, lift])), c.world);
+    for (const [a, b] of edgesOf({ min: [0, 0, 0], max: [c.width, c.depth, h] })) boxes.push(apply(at, a), apply(at, b));
+  }
+  const labels = p.layout.ladders.map((l) => ({ at: apply(baseWorld, [(l.x0 + l.x1) / 2, p.layout.front, baseSizes.height]), text: `${l.tag}: ${f(l.x1 - l.x0)}, ${l.sleepers.length} sleepers` }));
+  await tool.setView({
+    overlay: [
+      { kind: "segments", points: frame, color: "accent", width: 2 },
+      { kind: "segments", points: boxes, color: "preview", dashed: true },
+    ],
+    labels,
+    status: v.kind === "base" ? `${v.base.node.name ?? "The base frame"} as its settings now make it. Change them in Rows and base frames; Esc or another tool to leave.` : `The base frame for ${row.length} ${row.length === 1 ? "cabinet" : "cabinets"}, and where they will stand on it. Click to make it; Esc or another tool to leave.`,
+  });
+}
+
+await ui.registerTool({
+  id: "frame",
+  onActivate: async (tool) => {
+    previewing = tool;
+    await showPreview();
+  },
+  onDeactivate: async (tool) => {
+    previewing = null;
+    await tool.setView({ overlay: [], labels: [], status: null });
+  },
+  onEvent: async (e) => {
+    if (e.type !== "click") return;
+    const v = rowView;
+    if (v.kind === "row" && !v.base && plannedNow) await buildBase(v.row, baseSizes, null);
+  },
+});
 
 /** Butt the selected cabinets into one row: one undo step. @param {Placed[]} selected */
 async function lineUpCabinets(selected) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { apply, baseDefaults, compose, cutRows, IDENTITY, invert, lineUp, normalizeBase, placeNext, planBase, rightOf, rowOf, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
+import { apply, baseDefaults, boxesOf, cncLength, compose, cutRows, edgesOf, IDENTITY, invert, ladderPicture, lineUp, normalizeBase, placeNext, planBase, rightOf, rowOf, sawStripDefaults, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
 
 const IN = 0.0254;
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -144,4 +144,80 @@ describe("base frame", () => {
   it("refuses a frame with no room for sleepers", () => {
     expect(planBase(row(24), b({ setback: 20 * IN })).error).toMatch(/no room/);
   });
+
+  it("lays out each ladder: its extent, its sleepers, the rails' faces", () => {
+    const p = planBase(row(24, 18, 36), b());
+    const T = (23 / 32) * IN;
+    expect(p.layout.ladders.map((l) => [l.tag, inches(l.x0), inches(l.x1), l.sleepers.length])).toEqual([
+      ["A", 0, 42, p.layout.ladders[0].sleepers.length],
+      ["B", 42, 78, p.layout.ladders[1].sleepers.length],
+    ]);
+    expect(p.layout.ladders.reduce((n, l) => n + l.sleepers.length, 0)).toBe(p.sleepers);
+    expect(inches(p.layout.front)).toBe(3);
+    expect(inches(p.layout.back)).toBe(23.25);
+    expect(p.layout.thickness).toBe(T);
+    // A sleeper sits centred under the joint between the 24 and the 18.
+    expect(p.layout.ladders[0].sleepers.some((x) => Math.abs(x + T / 2 - 24 * IN) < 1e-9)).toBe(true);
+  });
+
+  it("gives every part's box for the preview, and a box's 12 edges", () => {
+    const p = planBase(row(24), b());
+    const boxes = boxesOf(p.parts);
+    expect(boxes).toHaveLength(p.parts.reduce((n, x) => n + x.copies.length, 0));
+    const front = p.parts.find((x) => x.name === "Base front rail")!;
+    expect(boxes[0].min).toEqual(front.copies[0].at);
+    expect(boxes[0].max.map((v, k) => r6(v - boxes[0].min[k]))).toEqual(front.blank.map(r6));
+    const e = edgesOf({ min: [0, 0, 0], max: [1, 2, 3] });
+    expect(e).toHaveLength(12);
+    // Each edge runs along one axis, the box's full size on it.
+    for (const [a, c] of e) {
+      const d = [0, 1, 2].map((k) => Math.abs(c[k] - a[k]));
+      expect(d.filter((v) => v > 0)).toHaveLength(1);
+      expect([1, 2, 3]).toContain(Math.max(...d));
+    }
+  });
+
+  it("draws the ladders from above with their lengths, depth and sleeper centres", () => {
+    const p = planBase(row(24, 18, 36), b());
+    const fmt = (m: number) => String(inches(m));
+    const pic = ladderPicture(p.layout, p.length, fmt, 640);
+    expect(pic.width).toBe(640);
+    expect(pic.height).toBeGreaterThan(100);
+    expect(pic.rects.filter((r) => r.kind === "rail")).toHaveLength(4);
+    expect(pic.rects.filter((r) => r.kind === "sleeper")).toHaveLength(p.sleepers);
+    const texts = pic.texts.map((t) => t.text);
+    expect(texts).toContain("A: 42");
+    expect(texts).toContain("B: 36");
+    // Rail to rail: 23 1/4 less the 3 in setback.
+    expect(texts).toContain("20.25");
+    // The first sleeper's centre is half a thickness from its ladder's end.
+    expect(texts).toContain(String(inches((23 / 32) * IN / 2)));
+    // Everything inside the picture.
+    for (const r of pic.rects) {
+      expect(r.x).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.w).toBeLessThanOrEqual(640 + 1e-9);
+      expect(r.y).toBeGreaterThanOrEqual(0);
+      expect(r.y + r.h).toBeLessThanOrEqual(pic.height + 1e-9);
+    }
+  });
+
+  it("long rails on the track saw: a ladder up to 95 in, sleepers butted", () => {
+    expect(normalizeBase({ stock: "saw" }, false).stock).toBe("saw");
+    expect(normalizeBase({ stock: "nonsense" as never }, false).stock).toBe("plywood");
+    expect(inches(sawStripDefaults(false).maxLength)).toBe(95);
+    expect(inches(cncLength(false))).toBe(47);
+    expect(sawStripDefaults(true).maxLength).toBeCloseTo(2.42, 9);
+    const p = planBase(row(24, 18, 36), b({ stock: "saw", ...sawStripDefaults(false) }));
+    expect(p.error).toBeNull();
+    // 78 in: one ladder, two 78 in rails, on cabinet plywood (it nests with the carcass).
+    expect(p.ladders).toBe(1);
+    const rails = cutRows(p.parts).filter((r) => r.name.endsWith("rail"));
+    expect(rails.map((r) => [r.qty, inches(r.length)])).toEqual([
+      [1, 78],
+      [1, 78],
+    ]);
+    expect(rails.every((r) => r.material === "Cabinet plywood")).toBe(true);
+    expect(p.notes.some((n) => n[1].startsWith("Sleepers butt"))).toBe(true);
+  });
 });
+

@@ -32,7 +32,7 @@ export interface BaseSizes {
   setback: number;
   backInset: number;
   ends: "none" | "left" | "right" | "both";
-  stock: "plywood" | "lumber";
+  stock: "plywood" | "saw" | "lumber";
   thickness: number;
   joints: "dado" | "butt";
   dadoDepth: number;
@@ -48,11 +48,35 @@ export function rowLayout(row: Cab[]): { starts: number[]; length: number; depth
 export function baseIssue(b: BaseSizes, depth: number): string | null;
 export function sections(x0: number, x1: number, joints: number[], max: number): [number, number][];
 export function sleepers(a: number, b: number, joints: number[], T: number, spacing: number): number[];
+/** The planned ladders in the frame's axes. */
+export interface Layout {
+  ladders: { tag: string; x0: number; x1: number; sleepers: number[] }[];
+  front: number;
+  back: number;
+  thickness: number;
+  depth: number;
+}
 export function planBase(
   row: Cab[],
   b: BaseSizes,
   carcassMaterial?: string,
-): { error: string | null; parts: Part[]; length: number; depth: number; depths: number; at: V3; ladders: number; sleepers: number; notes: string[][] };
+): { error: string | null; parts: Part[]; length: number; depth: number; depths: number; at: V3; ladders: number; sleepers: number; notes: string[][]; layout: Layout };
+export function sawStripDefaults(metric: boolean): { maxLength: number; joints: "butt" };
+export function cncLength(metric: boolean): number;
+export function boxesOf(parts: Part[]): { min: V3; max: V3 }[];
+export function edgesOf(b: { min: V3; max: V3 }): [V3, V3][];
+export function ladderPicture(
+  layout: Layout,
+  length: number,
+  format: (m: number) => string,
+  width?: number,
+): {
+  width: number;
+  height: number;
+  rects: { x: number; y: number; w: number; h: number; kind: "rail" | "sleeper" | "outline" }[];
+  lines: { x1: number; y1: number; x2: number; y2: number }[];
+  texts: { x: number; y: number; text: string; align: "left" | "center" | "right"; size: number }[];
+};
 export function cutRows(parts: Part[]): { name: string; qty: number; length: number; width: number; thickness: number; material: string }[];
 /** Turned the same way (the linear part is the identity, within a hair). */
 export function unturned(r: Frame): boolean;

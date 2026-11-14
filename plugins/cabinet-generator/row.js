@@ -173,7 +173,7 @@ export function lineUp(cabs) {
  * ladders at the joints between cabinets, each its own frame, screwed together.
  * @typedef {{
  *   height: number, setback: number, backInset: number, ends: "none" | "left" | "right" | "both",
- *   stock: "plywood" | "lumber", thickness: number, joints: "dado" | "butt", dadoDepth: number, fit: number,
+ *   stock: "plywood" | "saw" | "lumber", thickness: number, joints: "dado" | "butt", dadoDepth: number, fit: number,
  *   spacing: number, maxLength: number,
  * }} BaseSizes
  */
@@ -191,6 +191,14 @@ export function baseDefaults(metric) {
 /** What lumber starts at: a 2x4 (1 1/2 in, 38 mm), 8 ft (2400 mm) long. @param {boolean} metric */
 export const lumberDefaults = (metric) => (metric ? { thickness: 38 * MM, maxLength: 2400 * MM, joints: /** @type {const} */ ("butt") } : { thickness: 1.5 * IN, maxLength: 96 * IN, joints: /** @type {const} */ ("butt") });
 
+/** Plywood strips with the long rails ripped on the track saw from a 4 x 8: rails up to 95 in
+ * (2420 mm), what a 4 x 8 takes inside the saw's 1/4 in (6 mm) trim, and butted sleepers (a
+ * dado in a rail too long for the router's bed would be hand work). @param {boolean} metric */
+export const sawStripDefaults = (metric) => (metric ? { maxLength: 2420 * MM, joints: /** @type {const} */ ("butt") } : { maxLength: 95 * IN, joints: /** @type {const} */ ("butt") });
+
+/** The longest rail a 4 x 4 CNC bed takes inside its trim: longer ones go to the track saw. @param {boolean} metric */
+export const cncLength = (metric) => (metric ? 1190 * MM : 47 * IN);
+
 /** @param {Partial<BaseSizes> | null | undefined} saved @param {boolean} metric @returns {BaseSizes} */
 export function normalizeBase(saved, metric) {
   const d = baseDefaults(metric);
@@ -201,7 +209,7 @@ export function normalizeBase(saved, metric) {
     setback: num("setback"),
     backInset: num("backInset"),
     ends: s.ends === "left" || s.ends === "right" || s.ends === "both" ? s.ends : "none",
-    stock: s.stock === "lumber" ? "lumber" : "plywood",
+    stock: s.stock === "lumber" || s.stock === "saw" ? s.stock : "plywood",
     thickness: num("thickness"),
     joints: s.joints === "butt" ? "butt" : "dado",
     dadoDepth: num("dadoDepth"),
@@ -310,7 +318,7 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   const error = baseIssue(b, depth);
   /** @type {import("./cabinet.js").Part[]} */
   const parts = [];
-  if (error) return { error, parts, length, depth, depths, at: /** @type {V3} */ ([0, 0, 0]), ladders: 0, sleepers: 0, notes: /** @type {string[][]} */ ([]) };
+  if (error) return { error, parts, length, depth, depths, at: /** @type {V3} */ ([0, 0, 0]), ladders: 0, sleepers: 0, notes: /** @type {string[][]} */ ([]), layout: /** @type {Layout} */ ({ ladders: [], front: 0, back: 0, thickness: 0, depth }) };
   const T = b.thickness;
   const H = b.height;
   const material = b.stock === "lumber" ? BASE_LUMBER.name : carcassMaterial;
@@ -326,8 +334,11 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   const rails = new Map();
   /** @type {{ at: V3, name: string }[]} */
   const sleeperCopies = [];
+  /** @type {Layout} */
+  const layout = { ladders: [], front: yf, back: yb, thickness: T, depth };
   ladders.forEach(([a, c], i) => {
     const xs = sleepers(a, c, joints, T, b.spacing);
+    layout.ladders.push({ tag: letter(i), x0: a, x1: c, sleepers: xs });
     const len = c - a;
     /** Each sleeper's dado in a rail, across its inner face. */
     const cuts = dd ? xs.map((x) => [Math.max(0, x - a - b.fit / 2), Math.min(len, x - a + T + b.fit / 2)]) : [];
@@ -354,7 +365,77 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   else notes.push(["Rails", "Sleepers butt between the rails: glue and screw through the rails into their ends, and check the diagonals"]);
   notes.push(["Setting", "Level the frame on the floor with shims under the sleepers, screw it down, then set the cabinets on it and screw down through their bottoms"]);
   if (depths > 1) notes.push(["Depth", "The cabinets differ in depth: the frame follows the shallowest, backs in line"]);
-  return { error: null, parts, length, depth, depths, at: /** @type {V3} */ ([0, row[0].depth - depth, 0]), ladders: ladders.length, sleepers: sleeperCopies.length, notes };
+  return { error: null, parts, length, depth, depths, at: /** @type {V3} */ ([0, row[0].depth - depth, 0]), ladders: ladders.length, sleepers: sleeperCopies.length, notes, layout };
+}
+
+/** The planned ladders, in the frame's axes: each one's extent along the row and its sleepers'
+ * left edges; the rails' front and back faces (y), the stock and the cabinets' depth.
+ * @typedef {{ ladders: { tag: string, x0: number, x1: number, sleepers: number[] }[], front: number, back: number, thickness: number, depth: number }} Layout */
+
+/** Every part's box in the frame's axes (each copy of each part), for a preview.
+ * @param {import("./cabinet.js").Part[]} parts @returns {{ min: V3, max: V3 }[]} */
+export function boxesOf(parts) {
+  return parts.flatMap((p) => p.copies.map((c) => ({ min: c.at, max: /** @type {V3} */ ([0, 1, 2].map((k) => c.at[k] + p.blank[k])) })));
+}
+
+/** The 12 edges of a box, as pairs of corners. @param {{ min: V3, max: V3 }} b @returns {[V3, V3][]} */
+export function edgesOf(b) {
+  const c = (/** @type {number} */ i, /** @type {number} */ j, /** @type {number} */ k) => /** @type {V3} */ ([i ? b.max[0] : b.min[0], j ? b.max[1] : b.min[1], k ? b.max[2] : b.min[2]]);
+  /** @type {[V3, V3][]} */
+  const out = [];
+  for (const j of [0, 1]) for (const k of [0, 1]) out.push([c(0, j, k), c(1, j, k)]);
+  for (const i of [0, 1]) for (const k of [0, 1]) out.push([c(i, 0, k), c(i, 1, k)]);
+  for (const i of [0, 1]) for (const j of [0, 1]) out.push([c(i, j, 0), c(i, j, 1)]);
+  return out;
+}
+
+/**
+ * A top view of the ladders, dimensioned, as shapes to draw (pixels, y down, the cabinets'
+ * front at the bottom): the cabinets' outline dashed, each ladder's rails and sleepers, its
+ * letter and length above it, its depth beside the last, and each sleeper's centre from the
+ * ladder's left end under it (where they fit; every one is in the table beside the picture).
+ * @param {Layout} layout @param {number} length the row's length @param {(m: number) => string} format
+ * @param {number} [width] the picture's width in pixels
+ */
+export function ladderPicture(layout, length, format, width = 640) {
+  const pad = 14;
+  const top = 34;
+  const bottom = 30;
+  const scale = (width - 2 * pad - 48) / Math.max(length, 1e-6);
+  const H = Math.round(layout.depth * scale + top + bottom);
+  const X = (/** @type {number} */ x) => pad + x * scale;
+  // y = 0 is the cabinets' front: at the bottom of the picture.
+  const Y = (/** @type {number} */ y) => top + (layout.depth - y) * scale;
+  /** @type {{ x: number, y: number, w: number, h: number, kind: "rail" | "sleeper" | "outline" }[]} */
+  const rects = [{ x: X(0), y: Y(layout.depth), w: length * scale, h: layout.depth * scale, kind: "outline" }];
+  /** @type {{ x1: number, y1: number, x2: number, y2: number }[]} */
+  const lines = [];
+  /** @type {{ x: number, y: number, text: string, align: "left" | "center" | "right", size: number }[]} */
+  const texts = [];
+  const T = layout.thickness;
+  for (const l of layout.ladders) {
+    for (const y of [layout.front, layout.back - T]) rects.push({ x: X(l.x0), y: Y(y + T), w: (l.x1 - l.x0) * scale, h: T * scale, kind: "rail" });
+    for (const x of l.sleepers) rects.push({ x: X(x), y: Y(layout.back - T), w: T * scale, h: (layout.back - layout.front - 2 * T) * scale, kind: "sleeper" });
+    // Its length, above it, with a dimension line.
+    const yd = top - 12;
+    lines.push({ x1: X(l.x0), y1: yd, x2: X(l.x1), y2: yd }, { x1: X(l.x0), y1: yd - 4, x2: X(l.x0), y2: yd + 4 }, { x1: X(l.x1), y1: yd - 4, x2: X(l.x1), y2: yd + 4 });
+    texts.push({ x: (X(l.x0) + X(l.x1)) / 2, y: yd - 4, text: `${l.tag}: ${format(l.x1 - l.x0)}`, align: "center", size: 11 });
+    // Each sleeper's centre from the ladder's left end, under it, while they do not crowd.
+    let last = -Infinity;
+    for (const x of l.sleepers) {
+      const cx = X(x + T / 2);
+      if (cx - last < 34) continue;
+      last = cx;
+      texts.push({ x: cx, y: H - bottom + 14, text: format(x + T / 2 - l.x0), align: "center", size: 9 });
+      lines.push({ x1: cx, y1: Y(layout.front), x2: cx, y2: H - bottom + 4 });
+    }
+  }
+  // The depth, rail to rail, beside the row.
+  const xr = X(length) + 8;
+  lines.push({ x1: xr, y1: Y(layout.back), x2: xr, y2: Y(layout.front) });
+  texts.push({ x: xr + 4, y: (Y(layout.back) + Y(layout.front)) / 2 + 4, text: format(layout.back - layout.front), align: "left", size: 10 });
+  texts.push({ x: pad, y: H - 4, text: "Front", align: "left", size: 9 });
+  return { width, height: H, rects, lines, texts };
 }
 
 /**
