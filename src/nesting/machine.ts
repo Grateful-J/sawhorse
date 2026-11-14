@@ -233,41 +233,74 @@ function parity(u: number, v: number, t: number): 1 | -1 {
   return inv % 2 === 0 ? 1 : -1;
 }
 
+/** A face's points, holes and normal along the three directions of `frame`. */
+function into(l: FaceLoop, frame: readonly [V3, V3, V3]): FaceLoop {
+  const to = (p: V3): V3 => [dot(p, frame[0]), dot(p, frame[1]), dot(p, frame[2])];
+  return { points: l.points.map(to), holes: l.holes?.map((h) => h.map(to)), normal: to(l.normal), origin: to(l.origin) };
+}
+
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** The triple product a . (b x c): +1 for a right-handed set of unit directions, -1 for a
+ * left-handed one. */
+function handedness(f: readonly [V3, V3, V3]): number {
+  const [a, b, c] = f;
+  return a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+}
+
+/** The box around every face's points. */
+function extent(loops: FaceLoop[]): { lo: V3; hi: V3; ext: V3 } {
+  const lo: V3 = [Infinity, Infinity, Infinity];
+  const hi: V3 = [-Infinity, -Infinity, -Infinity];
+  for (const l of loops) {
+    for (const p of l.points) {
+      for (let k = 0; k < 3; k++) {
+        lo[k] = Math.min(lo[k], p[k]);
+        hi[k] = Math.max(hi[k], p[k]);
+      }
+    }
+  }
+  return { lo, hi, ext: [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] };
+}
+
 /**
  * Features of one blank. `size` is the cut-list box [thickness, width, length].
  * `turned` means the length runs across the sheet.
- * Loops are in the part's coordinates (world, for a placed solid). When the blank is not
- * axis-aligned to those coordinates, no feature is emitted.
+ * Loops are in the part's coordinates (world, for a placed solid).
+ *
+ * `frame` is the part's own thickness, width and length directions (the cut list's box): with
+ * it a part standing at any angle is measured, and a square part's length is the cut list's.
+ * Without it the blank must lie along the coordinate axes and its width and length must
+ * differ. A part that can be placed neither way keeps its rectangle, and is `skipped` when it
+ * is more than a plain box, so its cuts are never left out without saying so.
  */
-export function machineBlank(size: V3, loops: FaceLoop[], turned: boolean): BlankFeatures {
+export function machineBlank(size: V3, loops: FaceLoop[], turned: boolean, frame?: readonly [V3, V3, V3]): BlankFeatures {
   const empty = (): BlankFeatures => ({ profile: null, cutouts: [], pockets: [], drills: [], flip: { pockets: [], drills: [] }, skipped: false });
-  const pts = loops.flatMap((l) => l.points);
-  if (pts.length < 4) return empty();
-  const lo: V3 = [Infinity, Infinity, Infinity];
-  const hi: V3 = [-Infinity, -Infinity, -Infinity];
-  for (const p of pts) {
-    for (let k = 0; k < 3; k++) {
-      lo[k] = Math.min(lo[k], p[k]);
-      hi[k] = Math.max(hi[k], p[k]);
-    }
-  }
-  const ext: V3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  if (loops.reduce((k, l) => k + l.points.length, 0) < 4) return empty();
+  // Along the coordinate axes, each extent its own: the directions are plain.
+  const { ext } = extent(loops);
   const tAxis = axisOf(ext, size[0], []);
   const wAxis = tAxis === null ? null : axisOf(ext, size[1], [tAxis]);
   const lAxis = tAxis === null || wAxis === null ? null : axisOf(ext, size[2], [tAxis, wAxis]);
-  if (tAxis === null || wAxis === null || lAxis === null) {
-    // An interior face we cannot place on the blank is left out, and named.
-    const inset = loops.some((face) =>
-      [0, 1, 2].some((k) => {
-        let c = 0;
-        for (const p of face.points) c += p[k];
-        c /= face.points.length;
-        const thin = face.points.every((p) => Math.abs(p[k] - c) <= EPS);
-        return thin && c > lo[k] + EPS && c < hi[k] - EPS;
-      }),
-    );
-    return { ...empty(), skipped: inset };
+  if (tAxis !== null && wAxis !== null && lAxis !== null) return features(loops, tAxis, wAxis, lAxis, 1, turned);
+  // Turned to an angle, or square: the cut list's directions say which way the blank lies.
+  if (frame) {
+    const det = handedness(frame);
+    if (Math.abs(Math.abs(det) - 1) <= 1e-6) {
+      const local = loops.map((l) => into(l, frame));
+      const box = extent(local).ext;
+      if ([0, 1, 2].every((k) => nearly(box[k], size[k]))) return features(local, 0, 1, 2, det > 0 ? 1 : -1, turned);
+    }
   }
+  // A plain box has six faces and no rings in them: anything more is a cut we cannot place.
+  return { ...empty(), skipped: loops.length > 6 || loops.some((l) => (l.holes?.length ?? 0) > 0) };
+}
+
+/** The cuts of a blank whose thickness, width and length run along the coordinate axes
+ * `tAxis`, `wAxis` and `lAxis`. `hand` is -1 when those coordinates are a mirror image of the
+ * part (a left-handed frame). */
+function features(loops: FaceLoop[], tAxis: number, wAxis: number, lAxis: number, hand: 1 | -1, turned: boolean): BlankFeatures {
+  const { lo, hi, ext } = extent(loops);
   const uAxis = turned ? wAxis : lAxis;
   const vAxis = turned ? lAxis : wAxis;
   const dx = hi[uAxis] - lo[uAxis];
@@ -307,9 +340,9 @@ export function machineBlank(size: V3, loops: FaceLoop[], turned: boolean): Blan
   const count = (side: 1 | -1) => floors.filter((f) => f.side === side).length;
   const up: 1 | -1 = count(-1) > count(1) ? -1 : 1;
   // The file's x runs with u and its y against v (the sheet's y runs down), so the face the
-  // file shows from above is the one whose outward normal is e_u x (-e_v) = -parity * e_t.
-  // When that is not the up face, mirror u.
-  const mirror = parity(uAxis, vAxis, tAxis) * -1 !== up;
+  // file shows from above is the one whose outward normal is e_u x (-e_v) = -parity * e_t
+  // (the other one in a left-handed frame). When that is not the up face, mirror u.
+  const mirror = parity(uAxis, vAxis, tAxis) * hand * -1 !== up;
   const view = (p: P2): P2 => (mirror ? [dx - p[0], p[1]] : p);
   const viewLoop = (l: P2[]) => {
     const out = l.map(view);

@@ -153,6 +153,132 @@ describe("measured blanks", () => {
     }
   });
 
+  // A part standing at an angle, measured along its own directions (the cut list's box).
+  describe("with the part's own directions", () => {
+    const t = 0.75 * IN;
+    const w = 12 * IN;
+    const l = 30 * IN;
+    const d = t / 3;
+    type M = [V3, V3, V3];
+    /** Rotation by `deg` about `axis` (Rodrigues). */
+    const rotation = (axis: V3, deg: number): M => {
+      const n = Math.hypot(...axis);
+      const [x, y, z] = axis.map((c) => c / n);
+      const a = (deg * Math.PI) / 180;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const k = 1 - c;
+      return [
+        [c + x * x * k, x * y * k - z * s, x * z * k + y * s],
+        [y * x * k + z * s, c + y * y * k, y * z * k - x * s],
+        [z * x * k - y * s, z * y * k + x * s, c + z * z * k],
+      ];
+    };
+    const mul = (m: M, p: V3): V3 => [m[0][0] * p[0] + m[0][1] * p[1] + m[0][2] * p[2], m[1][0] * p[0] + m[1][1] * p[1] + m[1][2] * p[2], m[2][0] * p[0] + m[2][1] * p[1] + m[2][2] * p[2]];
+    const turn = (m: M, loops: FaceLoop[]): FaceLoop[] => loops.map((f) => ({ normal: mul(m, f.normal), origin: mul(m, f.origin), points: f.points.map((q) => mul(m, q)), holes: f.holes?.map((h) => h.map((q) => mul(m, q))) }));
+    /** Three square floors of different sizes in the face x = t (`side` 1) or x = 0 (-1), at
+     * (y, z) centres that are not in a line: enough to tell a part from its mirror image. */
+    const marks: { c: [number, number]; a: number }[] = [
+      { c: [1.5 * IN, 3 * IN], a: 1 * IN },
+      { c: [4 * IN, 12 * IN], a: 0.6 * IN },
+      { c: [9 * IN, 24 * IN], a: 0.3 * IN },
+    ];
+    const part = (side: 1 | -1): FaceLoop[] =>
+      box(t, w, l, marks.map(({ c, a }) => {
+        const x = side > 0 ? t - d : d;
+        const ring: V3[] = [[x, c[0] - a / 2, c[1] - a / 2], [x, c[0] + a / 2, c[1] - a / 2], [x, c[0] + a / 2, c[1] + a / 2], [x, c[0] - a / 2, c[1] + a / 2]];
+        return face([side, 0, 0], ring);
+      }));
+    const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    /** The turn of the three marks seen from outside the face they are cut in: +1 or -1. */
+    const seen = (side: 1 | -1) => {
+      const [a, b, c] = marks.map((m) => [0, m.c[0], m.c[1]] as V3);
+      return Math.sign(cross(sub(b, a), sub(c, a))[0] * side);
+    };
+    /** The same turn in the file: x runs with u and y against v (the sheet's y runs down). */
+    const drawn = (f: BlankFeatures) => {
+      const centre = (loop: [number, number][]): [number, number] => [loop.reduce((k, q) => k + q[0], 0) / loop.length, -loop.reduce((k, q) => k + q[1], 0) / loop.length];
+      const size = (loop: [number, number][]) => Math.max(...loop.map((q) => q[0])) - Math.min(...loop.map((q) => q[0]));
+      const [a, b, c] = [...f.pockets].sort((p, q) => size(q.loop) - size(p.loop)).map((k) => centre(k.loop));
+      return { turn: Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])), ab: Math.hypot(b[0] - a[0], b[1] - a[1]), ac: Math.hypot(c[0] - a[0], c[1] - a[1]) };
+    };
+    const turns: [string, M][] = [
+      ["square on", rotation([0, 0, 1], 0)],
+      ["a quarter turn", rotation([0, 0, 1], 90)],
+      ["30 degrees", rotation([0, 0, 1], 30)],
+      ["half a degree", rotation([0, 0, 1], 0.5)],
+      ["tipped over", rotation([1, 2, 3], 77)],
+    ];
+    const signs: V3[] = [];
+    for (const a of [1, -1]) for (const b of [1, -1]) for (const c of [1, -1]) signs.push([a, b, c]);
+
+    it.each(turns)("%s: the cuts are found, the same distances apart, and never as the mirror image", (_name, m) => {
+      for (const side of [1, -1] as const) {
+        for (const turned of [false, true]) {
+          for (const sg of signs) {
+            // The box's directions may point either way along each edge (a left-handed set too).
+            const frame: M = [mul(m, [sg[0], 0, 0]), mul(m, [0, sg[1], 0]), mul(m, [0, 0, sg[2]])];
+            const f = machineBlank([t, w, l], turn(m, part(side)), turned, frame);
+            expect(f.skipped).toBe(false);
+            expect(f.pockets).toHaveLength(3);
+            expect(f.flip.pockets).toEqual([]);
+            for (const k of f.pockets) expect(k.depth).toBeCloseTo(d, 9);
+            const got = drawn(f);
+            expect(got.turn).toBe(seen(side));
+            expect(got.ab).toBeCloseTo(Math.hypot(marks[1].c[0] - marks[0].c[0], marks[1].c[1] - marks[0].c[1]), 9);
+            expect(got.ac).toBeCloseTo(Math.hypot(marks[2].c[0] - marks[0].c[0], marks[2].c[1] - marks[0].c[1]), 9);
+            // Along the sheet: the length, or the width when the part is turned.
+            const us = f.pockets.flatMap((k) => k.loop.map((q) => q[0]));
+            expect(Math.max(...us)).toBeLessThanOrEqual((turned ? w : l) + 1e-9);
+          }
+        }
+      }
+    });
+
+    it("square on, the same answer with and without the directions", () => {
+      for (const side of [1, -1] as const) {
+        const plain = machineBlank([t, w, l], part(side), false);
+        expect(drawn(plain).turn).toBe(seen(side));
+        expect(machineBlank([t, w, l], part(side), false, [[1, 0, 0], [0, 1, 0], [0, 0, 1]])).toEqual(plain);
+      }
+    });
+
+    it("at an angle without the directions: the cuts are named as left out, never dropped quietly", () => {
+      const m = rotation([0, 0, 1], 30);
+      const f = machineBlank([t, w, l], turn(m, part(1)), false);
+      expect(f.pockets).toEqual([]);
+      expect(f.skipped).toBe(true);
+      // A notch alone (no floor inside the part) is named too.
+      const notched = box(t, w, l);
+      notched.push(face([0, -1, 0], [[0, IN, 0], [t, IN, 0], [t, IN, IN], [0, IN, IN]]));
+      expect(machineBlank([t, w, l], turn(m, notched), false).skipped).toBe(true);
+      // A plain box has nothing to leave out.
+      expect(machineBlank([t, w, l], turn(m, box(t, w, l)), false).skipped).toBe(false);
+      // Directions that are not the part's (a stale cut list) are not used.
+      const wrong = machineBlank([t, w, l], turn(m, part(1)), false, [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+      expect(wrong.pockets).toEqual([]);
+      expect(wrong.skipped).toBe(true);
+    });
+
+    it("a square part: measured along the cut list's length, and named without it", () => {
+      const sq = 20 * IN;
+      const floor = face([1, 0, 0], [[t - d, 2 * IN, 3 * IN], [t - d, 4 * IN, 3 * IN], [t - d, 4 * IN, 10 * IN], [t - d, 2 * IN, 10 * IN]]);
+      const loops = box(t, sq, sq, [floor]);
+      expect(machineBlank([t, sq, sq], loops, false).skipped).toBe(true);
+      // Length along z: the pocket is 7 in along the sheet and 2 in across it.
+      const along = machineBlank([t, sq, sq], loops, false, [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+      expect(along.skipped).toBe(false);
+      const span = (f: BlankFeatures, k: 0 | 1) => Math.max(...f.pockets[0].loop.map((q) => q[k])) - Math.min(...f.pockets[0].loop.map((q) => q[k]));
+      expect(span(along, 0)).toBeCloseTo(7 * IN, 9);
+      expect(span(along, 1)).toBeCloseTo(2 * IN, 9);
+      // Length along y: the same pocket lies the other way.
+      const across = machineBlank([t, sq, sq], loops, false, [[1, 0, 0], [0, 0, 1], [0, 1, 0]]);
+      expect(span(across, 0)).toBeCloseTo(2 * IN, 9);
+      expect(span(across, 1)).toBeCloseTo(7 * IN, 9);
+    });
+  });
+
   it("leaves out a loop that crosses the blank", () => {
     const t = 0.75 * IN;
     const w = 12 * IN;

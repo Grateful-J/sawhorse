@@ -1,11 +1,17 @@
 // Read each nested part's faces and keep only the cuts that sit inside its blank.
-import type { FaceInfo, Nesting, Placement, V3 } from "../kernel/types";
+import type { CutList, CutOptions, FaceInfo, Item, Nesting, Placement, V3 } from "../kernel/types";
 import { machineBlank, type BlankFeatures, type FaceLoop } from "./machine";
 
 export interface Measurer {
   faces(object: number): Promise<FaceInfo[]>;
   outline(part: "face", owner: number, index: number): Promise<V3[][]>;
+  /** The cut list: each part's own thickness, width and length directions. With it a cabinet
+   * turned to any angle, and a square part, are measured; without it only parts that lie
+   * along the model's axes are. */
+  cutList?(options: CutOptions): Promise<CutList>;
 }
+
+const itemKey = (item: Item) => ("object" in item ? `o${item.object}` : `n${item.node}`);
 
 export interface MeasuredNest {
   features: Map<string, BlankFeatures>;
@@ -69,6 +75,14 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
     cache.set(id, loops);
     return loops;
   };
+  // Each part's directions, read with its faces so both describe the same model.
+  const frames = new Map<string, [V3, V3, V3]>();
+  try {
+    const list = await kernel.cutList?.({ rounding: "sixteenth", visible_only: false });
+    for (const row of list?.rows ?? []) for (const o of row.occurrences) frames.set(itemKey(o.item), o.axes);
+  } catch {
+    // Without them, parts along the axes are still measured and the rest are named.
+  }
   for (const piece of nesting.pieces) {
     for (const q of piece.placements) {
       if (q.strip) continue;
@@ -77,7 +91,7 @@ export async function measureNest(kernel: Measurer, objects: { id: number; paren
         const loops: FaceLoop[] = [];
         for (const id of ids) loops.push(...(await loopsOf(id)));
         if (!loops.length) continue;
-        const feat = machineBlank(q.size, loops, q.turned);
+        const feat = machineBlank(q.size, loops, q.turned, frames.get(itemKey(q.item)));
         if (feat.skipped) note(skipped, q.name);
         if (feat.flip.pockets.length || feat.flip.drills.length) note(flipped, q.name);
         if (feat.profile || feat.cutouts.length || feat.pockets.length || feat.drills.length || feat.flip.pockets.length || feat.flip.drills.length) features.set(q.tag, feat);
