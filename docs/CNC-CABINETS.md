@@ -213,9 +213,23 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 - **Change the one you just made:** it is selected and the panel edits it. Every change rebuilds it in place, with one undo step (Ctrl+Z) per change and no button to press.
 - **Edit an older one:** click it (or click it in the Outliner, or double-click into it). The panel shows that cabinet's own settings.
 - **Start a new one:** click empty space. The panel goes back to a new cabinet, numbered on (Base 2).
-- **Copy one:** **Add another like this** makes a copy of the cabinet being edited, placed as **Place** says.
+- **Copy one:** **Add another like this** makes a copy of the cabinet being edited, placed as **Place** says, and named on (it skips a name already in use). A copy made with **Move** and Ctrl is that cabinet too: select it to edit it, and only that copy is rebuilt. It keeps the original's name until you change it.
+- **Undo** (Ctrl+Z) puts the cabinet back, and the panel shows it as it is after the undo, also inside an open cabinet.
+- **Typed a change, then clicked another cabinet?** The change goes to the cabinet you typed it for, and the panel then shows the one you clicked.
+- A cabinet keeps its hidden state and its tag when it is rebuilt, and keeps its own units when you switch the document between inches and millimetres.
+- A double-click on a button counts once: **Generate cabinet** double-clicked makes one cabinet.
 
 If a setting cannot be built (a dado deeper than half the stock, a pull on a hinge cup, a drawer too short for its runner), the note under the button says why and the button is greyed out. A cabinet being edited is left as it was: the note ends "The cabinet keeps its last good build."
+
+Some cabinets are not rebuilt by a change, and the panel says why and what to do:
+- **Made by an older version of the plugin** (before it kept each cabinet's settings): the panel shows a new cabinet's settings, which are not this cabinet's. Set them to what it should be, then press **Replace it with these settings**.
+- **Scaled or mirrored by hand:** its parts no longer match its settings. Undo that, or delete it and make it again.
+- **Holding something the plugin did not make** (a group, a component, or a solid you drew into it): rebuilding would delete it. Move it out first, or press **Rebuild it anyway**.
+- **A part of it open for editing:** "Leave the part (Esc) to change the cabinet."
+- **Its width, while it is open:** "Close the cabinet (Esc) to change its width: the cabinets right of it move with it."
+- **A new cabinet or base frame while a cabinet or frame is open:** leave it first (Esc). A new one is never made inside another.
+
+When a change is refused, the panel goes back to what the cabinet is.
 
 ## Build a row of cabinets
 
@@ -263,7 +277,7 @@ Select any cabinet in the row. The **Rows and base frames** panel names the row 
 | Sleepers at most | 16 / 400 | Centre to centre. Must be more than two thicknesses. |
 | Longest piece | 47 / 1190 | A 4 x 4 less the CNC trim. Longer rows split into ladders, under whole cabinets where they can. |
 
-The setback and back inset must leave at least 2 in between the rails for the sleepers.
+The setback and back inset must leave at least 2 in between the rails for the sleepers. A row too short for a ladder once its showing ends are set back is refused ("The ends' setback leaves too short a ladder under this row: set the ends back less, or let fewer ends show."), and so is a cabinet too narrow for a ladder of its own ("make the longest piece longer").
 
 ### See it before you make it
 
@@ -281,7 +295,7 @@ Click **Put the row on a base frame**, or click in the model while the Base fram
 - every cabinet is lifted onto the frame;
 - the frame (Base frame 1) goes under them, selected, so the panel edits it.
 
-Change the frame's settings to rebuild it in place: a taller frame lifts the row with it. If the row changes underneath it (a wider cabinet, one more cabinet), the panel says **The row has changed since this frame was made**: select the frame and click **Fit to the row again**.
+Change the frame's settings to rebuild it in place: a taller frame lifts the row with it. If the row changes underneath it (a wider cabinet, one more cabinet), the panel says **The row has changed since this frame was made**: select the frame and click **Fit to the row again**. The frame is numbered after the frames in the model (Base frame 2), and keeps its hidden state and tag when rebuilt. A frame holding something the plugin did not make is not rebuilt by a change; **Fit to the row again** rebuilds it anyway. A cabinet that was scaled or mirrored by hand, or holds something the plugin did not make, is not rebuilt without its toe kick: the panel names it.
 
 To install it, level the frame on the floor with shims under the sleepers and screw it down, then set the cabinets on it and screw down through their bottoms. The last rows of the cut list say the same.
 
