@@ -20,6 +20,10 @@ import { cncSettings } from "../components/NestingSection";
 import { boxOf, cutKeys, cutsDiffer, holeCentres, overlap, type Box, type P3, type WorldFace } from "../plugins/bandingProof";
 import { defaultShopPrefs, itemKey, priceList, shoppingList } from "../cutlist/shopping";
 import { nestingDxf } from "./dxf";
+import { bandingByItem } from "../cutlist/format";
+import { defaultShop } from "../cam/store";
+import { jobSheets } from "./jobsheet";
+import { partLabels } from "./partlabels";
 import { measureNest } from "./measure";
 import { sheetSetOps } from "./sheetset";
 
@@ -97,10 +101,27 @@ const THICK = { "0.018in": 0.018 * IN, "1": 1 * MM, "2": 2 * MM, "3": 3 * MM };
  * 3 mm band on the doors leaves 3 mm of wood beside the cups. */
 const sizesFor = (id: string, metric: boolean, front: "overlay" | "inset", catalog: "us" | "eu"): Sizes => ({ ...applyPreset(defaults(metric), id, metric), front, catalog, cupDistance: 6 * MM });
 
+/** The batch main.js sends: the parts flat, each part's grain and bom (hardware, banding) set
+ * through its first copy, then the cabinet's component. */
+function generate(parts: Part[], name: string) {
+  const ref = (k: number) => ({ $ref: 0, path: `groups.${k}` });
+  const ops: Record<string, unknown>[] = [flatImportOp(parts, [0, 0, 0], Object.values(MATERIALS))];
+  let k = 0;
+  const items: unknown[] = [];
+  for (const part of parts) {
+    const first = ref(k);
+    for (let c = 0; c < part.copies.length; c++) items.push({ node: ref(k++) });
+    if (part.grain !== "length") ops.push({ op: "set_grain", part: { node: first }, grain: part.grain });
+    if (part.bom?.length) ops.push({ op: "set_bom", part: { node: first }, bom: part.bom });
+  }
+  ops.push({ op: "make_component", items, name });
+  return { name: "Generate cabinet", ops };
+}
+
 /** The DXF of every sheet the cabinet nests on (4 x 4 sheets, CNC spacing), and the nesting. */
 async function dxfOf(parts: Part[], name: string, metric: boolean) {
   const d = await doc();
-  d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(parts, [0, 0, 0], name, name, Object.values(MATERIALS))] }));
+  d.apply_named_batch(JSON.stringify(generate(parts, name)));
   const lib = (JSON.parse(d.nest("{}")) as Nesting).library;
   d.apply_op(JSON.stringify(sheetSetOps(lib, 48 * IN, 48 * IN).op));
   const lib2 = (JSON.parse(d.nest("{}")) as Nesting).library;
@@ -238,23 +259,31 @@ run("edge banding through the kernel", () => {
     }
   }, 120_000);
 
+  it("the part labels say each part's bands, from the cut list; an unbanded part keeps its line to write on", async () => {
+    for (const metric of [false, true]) {
+      const s: Sizes = { ...applyPreset(defaults(metric), "mixed", metric), band: true, bandCount: 2, band2Size: "3", band2Name: "White PVC", bandFronts: "2", cupDistance: 6 * MM };
+      const { d, n, m } = await dxfOf(plan(s, metric).parts, s.name, metric);
+      const list = JSON.parse(d.cut_list("{}")) as CutList;
+      const of = bandingByItem(list);
+      const labels = partLabels(jobSheets(n, m, defaultShop(), metric ? "half_mm" : "sixteenth", s.name, () => s.name, (q) => of(q.item)));
+      const by = (name: string) => labels.filter((l) => l.name === name);
+      const width = metric ? "23 mm" : "15/16 in";
+      expect(by("Left door").length + by("Right door").length).toBe(2);
+      for (const l of [...by("Left door"), ...by("Right door"), ...by("Drawer front")]) expect(l.banding).toBe(`3 mm x ${width}, White PVC`);
+      for (const l of [...by("Left side"), ...by("Bottom"), ...by("Front stretcher")]) expect(l.banding).toBe(`1 mm x ${width}`);
+      for (const name of ["Back", "Rear stretcher", "Toe kick", "Drawer side", "Drawer back"]) for (const l of by(name)) expect(l.banding, name).toBeNull();
+      // Unbanded, every label keeps its line.
+      const plain = await dxfOf(plan({ ...s, band: false }, metric).parts, s.name, metric);
+      const of2 = bandingByItem(JSON.parse(plain.d.cut_list("{}")) as CutList);
+      expect(partLabels(jobSheets(plain.n, plain.m, defaultShop(), "half_mm", s.name, () => s.name, (q) => of2(q.item))).every((l) => l.banding === null)).toBe(true);
+    }
+  }, 120_000);
+
   it("the shopping list counts each band by the metre over every copy, rounded to rolls when a roll length is set", async () => {
     const d = await doc();
     const s: Sizes = { ...applyPreset(defaults(false), "mixed", false), band: true, bandCount: 2, band2Size: "3", band2Name: "White PVC", bandFronts: "2", cupDistance: 6 * MM };
     const planned = plan(s, false);
-    // The batch main.js sends: the parts flat, each part's bom through its first copy.
-    const ref = (k: number) => ({ $ref: 0, path: `groups.${k}` });
-    const ops: Record<string, unknown>[] = [flatImportOp(planned.parts, [0, 0, 0], Object.values(MATERIALS))];
-    let k = 0;
-    const items: unknown[] = [];
-    for (const part of planned.parts) {
-      const first = ref(k);
-      for (let c = 0; c < part.copies.length; c++) items.push({ node: ref(k++) });
-      if (part.grain !== "length") ops.push({ op: "set_grain", part: { node: first }, grain: part.grain });
-      if (part.bom?.length) ops.push({ op: "set_bom", part: { node: first }, bom: part.bom });
-    }
-    ops.push({ op: "make_component", items, name: s.name });
-    d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops }));
+    d.apply_named_batch(JSON.stringify(generate(planned.parts, s.name)));
     const list = JSON.parse(d.cut_list("{}")) as CutList;
     const shop = shoppingList(list, JSON.parse(d.nest("{}")) as Nesting);
     const banding = shop.rows.filter((r) => r.category === "banding");

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { csvBytes, csvCellText, cutListCsv, parseCsv, textCell } from "./csv";
 import { labelSlot, labelsPdf, LABEL_SHEET, reportPdf } from "./documents";
-import { anyBanded, bandingText, decimalSteps, defaultRounding, formatSteps, GRAIN_WORDS, nominalText, rowNotes, scopeNote, summary } from "./format";
+import { anyBanded, bandingByItem, bandingText, labelBandingText, decimalSteps, defaultRounding, formatSteps, GRAIN_WORDS, nominalText, rowNotes, scopeNote, summary } from "./format";
 import { parseNumber } from "../lib/units";
 import { fit, PdfDoc, readPdf, textWidth, winAnsi } from "./pdf";
 import { bookshelf, row } from "./fixture";
@@ -46,6 +46,12 @@ describe("cut list formatting", () => {
     // Not "Finished sizes" when a part is drawn at its cut size.
     expect(scopeNote("half_mm", true)).toMatch(/^Sizes as drawn, rounded to the nearest 0\.5 mm\. A part noted "edge banding" is drawn at its cut size, before the band .* the other parts at their finished sizes\. .* The sheet count here is a rough area estimate/);
     expect(scopeNote("half_mm", true)).not.toMatch(/Finished sizes/);
+    // A part label says the bands, not the metres, found by the model item a placement names.
+    expect(labelBandingText(banded)).toBe("1 mm x 15/16 in, White PVC; 3 mm x 15/16 in");
+    list.rows[0] = { ...banded, occurrences: [{ ...banded.occurrences[0], item: { node: 41 } }, { ...banded.occurrences[0], item: { object: 7 } }] };
+    const of = bandingByItem(list);
+    expect([of({ node: 41 }), of({ object: 7 }), of({ node: 7 }), of({ object: 41 })]).toEqual(["1 mm x 15/16 in, White PVC; 3 mm x 15/16 in", "1 mm x 15/16 in, White PVC; 3 mm x 15/16 in", null, null]);
+    expect(bandingByItem(null)({ node: 41 })).toBeNull();
     expect(scopeNote("sixteenth")).toMatch(/^Finished sizes, rounded to the nearest 1\/16 in\. Grain runs along L unless noted\. Board feet .* Edge banding is not included; the sheet count here is a rough area estimate \(Nesting lays the parts out on real sheets and boards, kerf included\)\.$/);
   });
 });
