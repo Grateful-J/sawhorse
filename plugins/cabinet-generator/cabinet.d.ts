@@ -24,6 +24,17 @@ export type SideGrain = "vertical" | "any";
 export type HiddenGrain = "any" | "length";
 /** The cut list's grain: along a part's length or width, or none (free to turn on the sheet). */
 export type Grain = "length" | "width" | "none";
+/** Blum CLIP top hinges with BLUMOTION (soft close) or self-closing: what the shopping list names. */
+export type HingeClose = "soft" | "self";
+/** What is bought for each copy of a part beyond its wood (the kernel's part attribute `bom`). */
+export interface BomItem {
+  item: string;
+  sku?: string;
+  qty: number;
+  unit: "each" | "pair" | "m";
+  /** Bought once for the shop, however many parts carry it (a drilling template). */
+  once?: boolean;
+}
 export interface Sizes {
   /** The cabinet's name: its instance in the model, and its files. */
   name: string;
@@ -75,6 +86,8 @@ export interface Sizes {
   hingeInset: number;
   /** Blum boring distance (metres, 3 to 7 mm): the cup's edge from the door's edge. */
   cupDistance: number;
+  /** Which CLIP top hinge the shopping list names (the holes are the same). */
+  hingeClose: HingeClose;
   drawerPull: DrawerPull;
   drawerPullFromTop: number;
   pullSpacing: number;
@@ -107,6 +120,8 @@ export interface Part {
   copies: { at: V3; name?: string }[];
   mesh: Mesh;
   grain: Grain;
+  /** What is bought for each copy (hinges on a door, runners on a drawer front, pins on a shelf). */
+  bom?: BomItem[];
 }
 export interface RunnerLength {
   nl: number;

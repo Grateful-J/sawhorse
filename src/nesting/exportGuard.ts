@@ -50,6 +50,20 @@ export function exportBlock(s: ExportState): string | null {
   return null;
 }
 
+export const CUT_PENDING = "Nothing was saved: the model changed and the cut list is being worked out again. Save again in a moment.";
+
+/**
+ * Why the shopping list must not be saved now, or null: it takes its sheets and boards from the
+ * nesting and its hardware from the cut list, so both must be of the model as it is now (the
+ * nesting by `exportBlock`, the cut list by the stamp it was worked out for). Never hardware of
+ * one state with sheets of another.
+ */
+export function shopExportBlock(s: ExportState & { cutStamp: NestStamp | null | undefined }): string | null {
+  const nest = exportBlock(s);
+  if (nest) return nest;
+  return sameStamp(s.cutStamp, s.now) ? null : CUT_PENDING;
+}
+
 export interface GuardedSave<M, P> {
   /** Why `n` must not be saved now (`exportBlock`, or it is no longer the nesting on screen). */
   blocked(n: Nesting): string | null;

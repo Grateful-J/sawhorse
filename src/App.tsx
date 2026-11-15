@@ -9,6 +9,7 @@ import { SidePanel, type PaneId } from "./components/SidePanel";
 import { CutListReport } from "./components/CutListReport";
 import { rowKey } from "./components/CutListPane";
 import { cncSettings, NestingSection } from "./components/NestingSection";
+import { ShoppingSection } from "./components/ShoppingSection";
 import { StockDialog } from "./components/StockDialog";
 import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
@@ -18,7 +19,7 @@ import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
 import { CNC_BIT, cncFileName, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
 import { loadShop, profileBit } from "./cam/shop";
-import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, stampOf, type NestStamp } from "./nesting/exportGuard";
+import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, sameStamp, shopExportBlock, stampOf, type NestStamp } from "./nesting/exportGuard";
 import { assemblyIndex } from "./lib/assembly";
 import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
@@ -29,6 +30,8 @@ import { csvBytes, CSV_TYPE } from "./cutlist/csv";
 import { labelsPdf, reportPdf } from "./cutlist/documents";
 import { followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
 import { loadCutRounding, saveCutRounding } from "./cutlist/rounding-store";
+import { currencyForLocale, priceList, shoppingCsvBytes, shoppingList, SHOPPING_CSV_TYPE, type ShopPrefs } from "./cutlist/shopping";
+import { loadShopPrefs, saveShopPrefs } from "./cutlist/shop-store";
 import { PDF_TYPE } from "./cutlist/pdf";
 import type { CutList, CutRow, Grain, Nesting, NestSettings, Placement, Rounding, StockDef, StockLibrary, StockPiece } from "./kernel/types";
 import { ValueBar, type StatusMessage } from "./components/ValueBar";
@@ -161,6 +164,12 @@ const UNITS_KEY = "sawhorse.units";
 const NEST_OPEN_KEY = "sawhorse.nestingOpen";
 /** Wait this long after the last edit before nesting again (typing a kerf, dragging). */
 const NEST_DEBOUNCE_MS = 200;
+/** With only the Shopping list open (no diagrams to follow along), wait longer: a run of edits
+ * is nested once at its end. The nesting is asked for after the edits already sent (it joins
+ * the edit queue's tail) and is not itself put in that queue, so no edit waits for it in the
+ * app; the kernel's worker still answers one request at a time, so an edit sent while a large
+ * nesting runs is applied when it ends. Nothing is nested while neither section is open. */
+const SHOP_NEST_DEBOUNCE_MS = 750;
 const BY_ASSEMBLY_KEY = "sawhorse.cutlist.byAssembly";
 
 function loadNestOpen(): boolean {
@@ -170,6 +179,20 @@ function loadNestOpen(): boolean {
     return false;
   }
 }
+
+/** The Cut list pane's Shopping list section was left open. */
+const SHOP_OPEN_KEY = "sawhorse.shoppingOpen";
+
+function loadShopOpen(): boolean {
+  try {
+    return localStorage.getItem(SHOP_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The browser's language, for money and numbers (none in a test without a navigator). */
+const LOCALE = typeof navigator !== "undefined" ? navigator.language : undefined;
 
 /** What selecting a nested piece selects. */
 function entityOfItem(item: Item): Entity {
@@ -434,6 +457,16 @@ export function App() {
   // Nesting (lane 9): the parts laid out on stock by the kernel while its section is open.
   const [nestOpen, setNestOpen] = useState<boolean>(loadNestOpen);
   const nestShown = cutOpen && nestOpen;
+  // The Shopping list: its sheets and boards are the nesting's, so it is worked out while
+  // either section is open. Its prices are the shop's, kept on this device, not in the model.
+  const [shopOpen, setShopOpen] = useState<boolean>(loadShopOpen);
+  const shopShown = cutOpen && shopOpen;
+  const nestWanted = nestShown || shopShown;
+  const [shopPrefs, setShopPrefsState] = useState<ShopPrefs>(() => loadShopPrefs(currencyForLocale(LOCALE)));
+  const setShopPrefs = useCallback((p: ShopPrefs) => {
+    setShopPrefsState(p);
+    saveShopPrefs(p);
+  }, []);
   const [nesting, setNesting] = useState<Nesting | null>(null);
   const [nestProblem, setNestProblem] = useState<string | null>(null);
   const [nestBusy, setNestBusy] = useState(false);
@@ -441,6 +474,17 @@ export function App() {
   // at the moment of a click, which a render may not have caught up with).
   const nestStamps = useRef(new WeakMap<Nesting, NestStamp>());
   const nestNow = useRef<{ nesting: Nesting | null; pending: boolean; failed: boolean }>({ nesting: null, pending: false, failed: false });
+  // What each cut list was worked out for: the shopping list saves only a cut list and a
+  // nesting both of the model as it is (shopExportBlock).
+  const cutStamps = useRef(new WeakMap<CutList, NestStamp>());
+  /** A new or opened document: the last one's cut list and nesting are not shown for it, not
+   * even for the moment its own take to work out. */
+  const forgetResults = useCallback(() => {
+    setCutList(null);
+    setNesting(null);
+    setNestProblem(null);
+    nestNow.current = { nesting: null, pending: false, failed: false };
+  }, []);
   const [nestHover, setNestHover] = useState<Entity | null>(null);
   const [stockOpen, setStockOpen] = useState(false);
   // CNC setup: shop data kept on this device (src/cam/store.ts), never the model's.
@@ -804,7 +848,8 @@ export function App() {
       }
       if (empty) {
         const e = empty as EmptySkp;
-        pluginsRef.current?.documentOpened(null);
+        forgetResults();
+      pluginsRef.current?.documentOpened(null);
         setDocName(null);
         fileHandle.current = undefined;
         setSavedLogLen(r.scene.state.log_len);
@@ -848,6 +893,7 @@ export function App() {
       const opened = info as { notes: string[]; opened: { display_units: string | null; plugin_data?: string | null } };
       // The plugins' document stores came back through the kernel (lane 16): the app never
       // unzips a user's file itself.
+      forgetResults();
       pluginsRef.current?.documentOpened(f.name, opened.opened.plugin_data ?? null);
       setDocName(f.name);
       fileHandle.current = f.handle;
@@ -905,6 +951,7 @@ export function App() {
     const closed = docName ? stem(docName) : "Untitled";
     const r = await run((k) => k.newDocument(), null, () => (how === "close" ? `Closed ${closed}.` : "New model."));
     if (r) {
+      forgetResults();
       pluginsRef.current?.documentOpened(null);
       setDocName(null);
       fileHandle.current = undefined;
@@ -1198,10 +1245,15 @@ export function App() {
     if (!k) return;
     let stale = false;
     void queue.current
-      .then(() => k.cutList({ rounding: cutRounding, visible_only: cutVisibleOnly }))
-      .then((l) => {
+      .then(() => {
+        const stamp = stampOf(live.current.scene?.state, cutVisibleOnly);
+        return k.cutList({ rounding: cutRounding, visible_only: cutVisibleOnly }).then((l) => ({ l, stamp }));
+      })
+      .then(({ l, stamp }) => {
         if (stale) return;
-        setCutList(l ? { ...l, style: cutStyle } : l);
+        const shown = l ? { ...l, style: cutStyle } : l;
+        if (shown && stamp) cutStamps.current.set(shown, stamp);
+        setCutList(shown);
         setCutProblem(null);
       })
       .catch((e) => !stale && setCutProblem(`The cut list could not be worked out: ${friendlyError(e instanceof Error ? e.message : String(e))}`));
@@ -1213,7 +1265,7 @@ export function App() {
   // The nesting: worked out again a moment after the last edit while its section is open
   // (read-only; kerf, trim and the algorithm are document settings, so they are edits too).
   useEffect(() => {
-    if (!nestShown || !scene) return;
+    if (!nestWanted || !scene) return;
     const k = kernelRef.current;
     if (!k) return;
     let stale = false;
@@ -1244,12 +1296,12 @@ export function App() {
           setNestBusy(false);
           setNestProblem(`The nesting could not be worked out: ${friendlyError(e instanceof Error ? e.message : String(e))}`);
         });
-    }, NEST_DEBOUNCE_MS);
+    }, nestShown ? NEST_DEBOUNCE_MS : SHOP_NEST_DEBOUNCE_MS);
     return () => {
       stale = true;
       window.clearTimeout(t);
     };
-  }, [nestShown, scene, cutVisibleOnly]);
+  }, [nestWanted, nestShown, scene, cutVisibleOnly]);
 
   // Read-only hooks for tests: the cut list and the nesting for any options, straight from
   // the kernel.
@@ -1872,7 +1924,12 @@ export function App() {
       if (!(await inContext(parentOfItem({ node: nodes[0] })))) return;
       const ops: KernelOp[] = nodes.map((node) => ({ op: "explode", node }));
       const what = nodes.length === 1 ? "it" : `${nodes.length} groups and components`;
-      const r = await apply(ops.length === 1 ? ops[0] : { op: "batch", ops }, () => `Exploded ${what}: what was inside is now loose here.`);
+      const r = await apply(ops.length === 1 ? ops[0] : { op: "batch", ops }, (res) => {
+        // Where an exploded part's hardware went (the kernel never drops it).
+        const outs = res.outcome.kind === "batch" ? res.outcome.outcomes : [res.outcome];
+        const notes = outs.flatMap((o) => (o.kind === "exploded" ? (o.notes ?? []) : []));
+        return `Exploded ${what}: what was inside is now loose here.${notes.length ? ` ${notes.join("; ")}.` : ""}`;
+      });
       if (r) {
         const outs = r.outcome.kind === "batch" ? r.outcome.outcomes : [r.outcome];
         select(outs.flatMap((o) => (o.kind === "exploded" ? [...o.objects.map((object) => ({ kind: "object" as const, object })), ...o.nodes.map((node) => ({ kind: "node" as const, node }))] : [])));
@@ -2279,6 +2336,21 @@ export function App() {
       /* per-viewer convenience only */
     }
   }, [nestOpen]);
+  const toggleShop = useCallback(() => {
+    const next = !shopOpen;
+    setShopOpen(next);
+    if (!next && !nestOpen) {
+      setNestBusy(false);
+      nestNow.current.pending = false;
+    }
+    try {
+      localStorage.setItem(SHOP_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [shopOpen, nestOpen]);
+  /** The shopping list priced at the shop's prices (null until there is a cut list). */
+  const shopPriced = useMemo(() => (cutList && shopShown ? priceList(shoppingList(cutList, nesting, { countLeftOut: shopPrefs.countLeftOut }), shopPrefs) : null), [cutList, nesting, shopPrefs, shopShown]);
   const setNestSettings = useCallback((s: NestSettings) => void apply({ op: "set_nest_settings", settings: s }, () => nestSettingsText(s, nestUnits)), [apply, nestUnits]);
   /** An edit built from the stock library as the kernel has it when the edit's turn comes: the
    * read and the write are one task in the edit queue. The nesting on screen can be a moment
@@ -2395,6 +2467,20 @@ export function App() {
     },
     [cutList, cutTitle],
   );
+  const saveShopCsv = useCallback(async () => {
+    if (!shopPriced) return;
+    // Hardware from the cut list and sheets from the nesting, both of the model as it is now
+    // (read from the refs: a click a render has not caught up with is judged as things are).
+    const now = nestNow.current;
+    const blocked = now.nesting !== nesting ? NEST_REPLACED : shopExportBlock({ nesting, stamp: nesting ? nestStamps.current.get(nesting) : null, cutStamp: cutList ? cutStamps.current.get(cutList) : null, now: stampOf(live.current.scene?.state, cutVisibleOnly), pending: now.pending || editsPending.current > 0, failed: now.failed });
+    if (blocked) return void setMessage({ text: blocked, error: true });
+    try {
+      const res = await saveFile(`${cutTitle} shopping list.csv`, shoppingCsvBytes(shopPriced, shopPrefs), SHOPPING_CSV_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: the shopping list with your prices${shopPriced.unpriced.length ? ` (${shopPriced.unpriced.length} row${shopPriced.unpriced.length === 1 ? "" : "s"} with no price, left out of the total)` : ""}.`, error: false });
+    } catch (e) {
+      setMessage({ text: `Could not save the shopping list: ${e instanceof Error ? e.message : String(e)}`, error: true });
+    }
+  }, [shopPriced, shopPrefs, cutTitle, nesting, cutList, cutVisibleOnly]);
   // A nesting that went wrong (parts on no stock, glued up, or off their material's sheet) is
   // not saved for cutting without asking.
   const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
@@ -2419,6 +2505,11 @@ export function App() {
       return exportBlock({ nesting: n, stamp: nestStamps.current.get(n), now: stampOf(live.current.scene?.state, cutVisibleOnly), pending: now.pending || editsPending.current > 0, failed: now.failed });
     },
     [cutVisibleOnly],
+  );
+  // The shopping list's CSV, as the section draws it.
+  const shopCsvBlock = useMemo(
+    () => (shopShown ? shopExportBlock({ nesting, stamp: nesting ? nestStamps.current.get(nesting) : null, cutStamp: cutList ? cutStamps.current.get(cutList) : null, now: stampOf(scene?.state, cutVisibleOnly), pending: nestBusy, failed: !!nestProblem }) : null),
+    [shopShown, nesting, cutList, scene, cutVisibleOnly, nestBusy, nestProblem],
   );
   // The same, as the section draws it: its file buttons are off, and say why, while the
   // diagrams are not of the model as it is.
@@ -2629,18 +2720,22 @@ export function App() {
   );
   const saveNestPdf = useCallback(async (n: Nesting) => {
     try {
+      // With the Shopping list open, its list (at the shop's prices) follows the summary.
+      // Only from a cut list of the model as it is (the nesting is checked by guardNest).
+      const cutFresh = !!cutList && sameStamp(cutStamps.current.get(cutList), stampOf(live.current.scene?.state, cutVisibleOnly));
+      const shop = cutList && shopShown && cutFresh ? { priced: priceList(shoppingList(cutList, n, { countLeftOut: shopPrefs.countLeftOut }), shopPrefs), prefs: shopPrefs, locale: LOCALE } : undefined;
       // Each router sheet's job sheet and the part labels, from the router's sheets measured
       // as CNC files measures them (outlines only when they cannot be).
       const router = routerShare(n);
       const measured = router.pieces.length ? await measureNesting(router) : null;
-      const shop = loadShop();
-      const sheets = jobSheets(n, measured, shop, nestUnits, cutTitle, (q) => ownerOfItem(q.item));
-      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, { sheets, prefs: shop.jobs }), PDF_TYPE);
-      if (res) setMessage({ text: `Saved ${res.name}: what to buy, then a page per sheet or board with its diagram and cut sequence${sheets.length ? ", each router sheet's job sheet, and its part labels at the end" : ""}.`, error: false });
+      const cam = loadShop();
+      const sheets = jobSheets(n, measured, cam, nestUnits, cutTitle, (q) => ownerOfItem(q.item));
+      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, shop, { sheets, prefs: cam.jobs }), PDF_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: what to buy${shop ? ", the shopping list with your prices" : ""}, then a page per sheet or board with its diagram and cut sequence${sheets.length ? ", each router sheet's job sheet, and its part labels at the end" : ""}.`, error: false });
     } catch (e) {
       setMessage({ text: `Could not save the nesting booklet: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [cutTitle, nestUnits, measureNesting, ownerOfItem]);
+  }, [cutTitle, nestUnits, cutList, shopShown, shopPrefs, cutVisibleOnly, measureNesting, ownerOfItem]);
 
   const printCut = useCallback(() => {
     const body = document.body;
@@ -3457,6 +3552,22 @@ export function App() {
               handWorkNote={sawWorkNote}
               blocked={nestExportBlock}
               jobSheetOf={jobSheetOf}
+            />
+          ) : null,
+          shopOpen,
+          onShop: toggleShop,
+          shopping: shopShown ? (
+            <ShoppingSection
+              list={cutList}
+              nesting={nesting}
+              busy={nestBusy}
+              problem={nestProblem ?? (kernelState === "missing" || kernelState === "error" ? "The sheets and boards come from the nesting, which the kernel works out; it is not loaded." : null)}
+              stale={!!nesting && !!shopCsvBlock}
+              csvBlocked={shopCsvBlock}
+              prefs={shopPrefs}
+              onPrefs={setShopPrefs}
+              onCsv={() => void saveShopCsv()}
+              locale={LOCALE}
             />
           ) : null,
         }}

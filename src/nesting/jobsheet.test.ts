@@ -362,7 +362,7 @@ describe("part labels", () => {
     const shop = shopWith(() => {});
     const js = build(n, measured, shop);
     const plain = readPdf(nestingPdf(n, "Kitchen", "half_mm"));
-    const full = readPdf(nestingPdf(n, "Kitchen", "half_mm", { sheets: [js], prefs: shop.jobs }));
+    const full = readPdf(nestingPdf(n, "Kitchen", "half_mm", undefined, { sheets: [js], prefs: shop.jobs }));
     expect(full.pages).toBeGreaterThan(plain.pages + 1);
     const all = full.text.map((t) => t.join("\n"));
     expect(all[plain.pages]).toContain("Job sheet: 1. Sheet 1 of 1");

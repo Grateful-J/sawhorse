@@ -12,7 +12,9 @@
 // to go back to a new cabinet.
 //
 // Every part is a named component on a plywood material with its grain set (doors, faces and
-// sides as asked, the hidden parts free to turn), so the cut list nests it as sheet goods.
+// sides as asked, the hidden parts free to turn), so the cut list nests it as sheet goods, and
+// carries the hardware it takes (hinges on a door, runners on a drawer front, pins on a shelf)
+// for the shopping list.
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
@@ -458,6 +460,8 @@ function details() {
       const ks = ["3", "3.5", "4", "4.5", "5", "5.5", "6", "6.5", "7"];
       out.push(pick("cupDistance", "Boring distance", k, (ks.includes(k) ? ks : [...ks, k]).map((x) => [x, `${x} mm${x === "5" ? " · 16 mm overlay" : ""}`])));
       out.push(help("The cup's edge to the door's edge. Cuts and holes compares the overlay it gives with your door's."));
+      out.push(pick("hingeClose", "Hinges", s.hingeClose, [["soft", "BLUMOTION (soft close)"], ["self", "Self-closing"]]));
+      out.push(help("Which CLIP top hinge the shopping list names: the holes are the same."));
     }
     if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help("5 mm holes, 10 deep, 32 mm apart, five around each shelf: a row 37 mm from the front and a rear row on the same 32 mm grid. Drilled whenever shelves are adjustable."));
   } else if (view === "secCnc") {
@@ -979,8 +983,10 @@ async function materialsToAdd() {
   };
 }
 
-/** Add parts to a batch at `frame`, each part's grain set through its first copy; returns the
- * copies, to wrap into a component. @param {import("sawhorse").Batch} batch
+/** Add parts to a batch at `frame`, each part's grain and hardware (its `bom`, for the shopping
+ * list) set through its first copy; returns the copies, to wrap into a component. Set on the
+ * part's component, the hardware is counted once per copy: a copied cabinet doubles it, a
+ * deleted one takes it away. @param {import("sawhorse").Batch} batch
  * @param {import("./cabinet.js").Part[]} parts @param {Frame} frame
  * @param {{ name: string, color: [number, number, number, number] }[]} materials */
 function addParts(batch, parts, frame, materials) {
@@ -993,6 +999,7 @@ function addParts(batch, parts, frame, materials) {
     for (let c = 0; c < part.copies.length; c++) items.push({ node: imported.get(`groups.${k++}`) });
     // "length" is every part's grain until said otherwise.
     if (part.grain !== "length") batch.op({ op: "set_grain", part: { node: first }, grain: part.grain });
+    if (part.bom?.length) batch.op({ op: "set_bom", part: { node: first }, bom: part.bom });
   }
   return items;
 }

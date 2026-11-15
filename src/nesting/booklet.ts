@@ -5,11 +5,12 @@
 // sheet's page is followed by its job sheet (src/nesting/jobsheet.ts), and the part labels
 // (src/nesting/partlabels.ts) close the booklet on pages of their own.
 import type { Nesting, StockPiece } from "../kernel/types";
-import { fit, LETTER, PdfDoc, textWidth, type PdfPage } from "../cutlist/pdf";
+import { fit, LETTER, PdfDoc, textWidth, winAnsi, type PdfPage } from "../cutlist/pdf";
 import { NOT_SOLID_NOTE } from "../cutlist/format";
 import type { JobPrefs } from "../cam/jobs";
 import { bitName, feedText, orderSummary, stepText, type JobSheet } from "./jobsheet";
 import { labelPages, partLabels } from "./partlabels";
+import { amountText, BANDING_PLACEHOLDER, boughtText, moneyText, ROUNDING_NOTE, SHOP_CATEGORIES, type PricedList, type ShopPrefs } from "../cutlist/shopping";
 import { diagram } from "./diagram";
 import { area, cutText, dims, glueText, len, nestNote, nestSummary, pct, pieceNumber, pieceTitle, pieceYield, placedSize, reasonText, settingsText, sizeUnit, stockSize, stripText, type Units } from "./format";
 
@@ -324,12 +325,115 @@ export interface BookletJobs {
   prefs: JobPrefs;
 }
 
-/** The booklet. `title`: the model's name. With `jobs`, each router sheet's job sheet follows
- * its page, and the part labels come last, on pages of their own. */
-export function nestingPdf(n: Nesting, title: string, r: Units, jobs?: BookletJobs): Uint8Array {
+/** The shopping list priced at the shop's prices, for the booklet. */
+export interface BookletShopping {
+  priced: PricedList;
+  prefs: ShopPrefs;
+  locale?: string;
+}
+
+/** Money the PDF's fonts can write: the locale's way when every character is one Helvetica
+ * has, else the plain number and the currency's code ("1,234.50 PLN"). */
+function pdfMoney(v: number, prefs: ShopPrefs, locale?: string): string {
+  const t = moneyText(v, prefs.currency, locale).replace(/[\u00a0\u202f]/g, " ");
+  if (!winAnsi(t).includes(63) || t.includes("?")) return t;
+  return `${moneyText(v, null, locale).replace(/[\u00a0\u202f]/g, " ")}${prefs.currency ? ` ${prefs.currency}` : ""}`;
+}
+
+/** The shopping list page(s): each row with what is needed, what to buy, its price and cost;
+ * the totals and what they leave out; the labour line. */
+function shoppingPages(doc: PdfDoc, title: string, shop: BookletShopping) {
+  const { priced, prefs, locale } = shop;
+  const money = (v: number) => pdfMoney(v, prefs, locale);
+  const [W, H] = LETTER;
+  const left = 48;
+  const right = W - 48;
+  const bottom = 56;
+  let p: PdfPage = doc.page();
+  let y = H - 56;
+  const need = (h: number) => {
+    if (y - h < bottom) {
+      p = doc.page();
+      y = H - 56;
+      p.text(left, y, `Shopping list: ${title} (continued)`, 11, { bold: true });
+      y -= 24;
+    }
+  };
+  const para = (s: string, size: number, gray = 0) => {
+    for (const l of wrap(s, size, right - left)) {
+      need(size + 3);
+      p.text(left, y, l, size, { gray });
+      y -= size + 3;
+    }
+  };
+  p.text(left, y, `Shopping list: ${title}`, 18, { bold: true });
+  y -= 20;
+  para(`Prices are the shop's${prefs.currency ? `, in ${prefs.currency}` : ""}. Sheets and boards are the nesting's; hardware is what each part carries, times how many of it there are.`, 9, 0.35);
+  y -= 8;
+  const cols: [string, number, boolean][] = [
+    ["Item", left, false],
+    ["Needs", left + 250, true],
+    ["Buy", left + 340, true],
+    ["Price", left + 420, true],
+    ["Cost", right, true],
+  ];
+  for (const c of SHOP_CATEGORIES) {
+    const rows = priced.rows.filter((r) => r.category === c.id);
+    if (c.id === "tools" && !rows.length) continue;
+    need(40);
+    const over = rows[0]?.overage ?? prefs.overage[c.id];
+    p.text(left, y, `${c.label}${rows.length ? ` · overage ${over}%` : ""}`, 12, { bold: true });
+    y -= 15;
+    if (!rows.length) {
+      para(c.id === "banding" ? BANDING_PLACEHOLDER : `No ${c.label.toLowerCase()}.`, 9, 0.35);
+      y -= 6;
+      continue;
+    }
+    for (const [label, x, alignRight] of cols) p.text(x, y, label.toUpperCase(), 7.5, { bold: true, gray: 0.35, align: alignRight ? "right" : "left" });
+    y -= 4;
+    p.line(left, y, right, y, 0.6);
+    y -= 12;
+    for (const r of rows) {
+      // The name wraps (a part number is never cut off); the numbers sit on its first line.
+      const lines = wrap(`${r.sku ? `${r.sku} · ` : ""}${r.name}${r.material ? ` · ${r.material}` : ""}${r.saw ? " · track saw" : ""}`, 9, 200);
+      need(12 * lines.length + 2);
+      lines.slice(1).forEach((l, k) => p.text(left, y - 11 * (k + 1), l, 9));
+      p.text(left, y, lines[0] ?? "", 9);
+      p.text(left + 250, y, fit(amountText(r.need, r.unit), 9, 80), 9, { align: "right" });
+      p.text(left + 340, y, fit(boughtText(r, r.buyOver), 9, 85), 9, { align: "right" });
+      p.text(left + 420, y, r.price === null ? "price not set" : `${money(r.price)} / ${r.per}`, 8, { align: "right" });
+      p.text(right, y, r.costOver === null ? "price not set" : money(r.costOver), 9, { align: "right", bold: r.costOver !== null });
+      y -= 12 + 11 * (lines.length - 1);
+    }
+    y -= 8;
+  }
+  need(60);
+  p.line(left, y + 4, right, y + 4, 0.8);
+  y -= 10;
+  p.text(left, y, "Total with overage", 11, { bold: true });
+  p.text(right, y, money(priced.totalOver), 11, { bold: true, align: "right" });
+  y -= 15;
+  p.text(left, y, "Total without overage", 10);
+  p.text(right, y, money(priced.total), 10, { align: "right" });
+  y -= 18;
+  if (priced.unpriced.length) para(`The totals leave out ${priced.unpriced.length} row${priced.unpriced.length === 1 ? "" : "s"} with no price: ${priced.unpriced.map((r) => r.name).join(", ")}.`, 9.5);
+  else para("Every row is priced.", 9.5);
+  y -= 6;
+  if (priced.labour !== null) {
+    para(`Labour you saved (for fun): ${prefs.labour.hours} hours at ${money(prefs.labour.rate ?? 0)} per hour, ${money(priced.labour)}.`, 9.5);
+    y -= 6;
+  }
+  para(`${ROUNDING_NOTE} Overage percentages are assumptions you set, not facts.`, 8.5, 0.35);
+}
+
+/** The booklet. `title`: the model's name. With `shop`, a shopping list follows the summary.
+ * With `jobs`, each router sheet's job sheet follows its page, and the part labels come last,
+ * on pages of their own. */
+export function nestingPdf(n: Nesting, title: string, r: Units, shop?: BookletShopping, jobs?: BookletJobs): Uint8Array {
   const doc = new PdfDoc({ title: `Nesting: ${title}`, creator: "Sawhorse" });
   summaryPages(doc, n, title, r);
   const first = doc.pages[0];
+  if (shop && shop.priced.rows.length) shoppingPages(doc, title, shop);
   for (const piece of n.pieces) {
     piecePages(doc, n, piece, title, r);
     const js = jobs?.sheets.find((j) => j.index === piece.index);
