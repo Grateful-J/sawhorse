@@ -41,3 +41,16 @@ CNC layer names append the assigned tool name and diameter and say `POCKET_WITH`
 No specific Carbide catalog number is inferred from a generic starter tool. Give a confirmed cutter its actual catalog/library name and measured dimensions in CNC setup to carry that identity into the layer. In particular, a generic #102 must not be assumed to reach through 19.05 mm stock or fit the collet without checking its actual dimensions.
 
 Run `NODE_ENV=test npm test -- src/nesting/gcode` and `python3 scripts/test-check-c2d-pocket-width.py` and `python3 scripts/test-check-c2d-drilling.py`. A clean result does not establish generated G-code compatibility: Sawhorse continues to export DXF for external CAM, not G-code.
+
+## Integration validation, 2026-11-15
+
+The final integration includes the completed CNC tools, joinery, row features and grain-matching work. Checks run locally on macOS:
+
+- Vitest with the real WASM kernel required: **1,768 passed, 2 skipped**. Rust workspace: **685 passed, 3 ignored**. Python diagnostic regressions: **13 passed**.
+- Production build, provenance and test-hook checks, native/WASM golden comparison, rustfmt and clippy with warnings denied: passed.
+- Final kernel sequence fuzz: **10,000 cases**, seed `20261011`, passed (130.35 seconds).
+- Full browser run before the last grain-matching integration: **196 passed**, 10 fixture/platform skips, one existing title-history assertion failure, and seven timing tests blocked by that failure. Startup can successfully send the same initial title twice; the title test now uses the same consecutive-repeat history helper as its neighboring tests, while still requiring the failed dirty title never to be accepted.
+- On the final integration, the nine focused browser tests for grain matching, joinery, row trim, hardware demo, CNC export/job sheets and all four title cases passed; all **seven timing tests** passed separately. No timeouts or geometry tolerances were increased.
+- The hardware demo saves and reopens with the same model hash, opens in the actual app as 17 counted solids, and nests with no unplaced parts on three scraps. See [the demo and its exact hardware/stock assumptions](../examples/cnc-hardware-demo/README.md).
+
+These checks exercise software and DXF preparation. The desktop shell was not built, no actual G-code generator was added, and no CAM program or physical machine was used to validate a cut.
