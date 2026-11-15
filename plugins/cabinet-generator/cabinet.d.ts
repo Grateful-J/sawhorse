@@ -1,4 +1,5 @@
 import type { Mesh, V3 } from "./mesh.js";
+import type { TrimSizes } from "./trimsizes.js";
 
 export type Layout = "shelves" | "doors" | "drawers" | "mixed" | "trash";
 export type DoorCount = "auto" | "one" | "two";
@@ -11,6 +12,10 @@ export type Front = "overlay" | "inset";
 export type Base = "toekick" | "none";
 export type Slides = "tandem" | "movento";
 export type BackMount = "groove" | "butt";
+/** What holds the rails to the sides with no blind dados: nothing drilled (butt joints), 8 mm dowels, or Confirmat screws. */
+export type Fastener = "none" | "dowels" | "confirmat";
+/** Shelf-pin rows: a band around each shelf, or the full height on Blum Process 32's grid. */
+export type LineBoring = "shelves" | "full";
 export type DrawerPull = "center" | "top" | "notch" | "none";
 export type DoorPull = "vertical" | "horizontal" | "none";
 export type DoorPullFrom = "top" | "bottom";
@@ -62,7 +67,7 @@ export interface BomItem {
   /** Bought once for the shop, however many parts carry it (a drilling template). */
   once?: boolean;
 }
-export interface Sizes {
+export interface Sizes extends TrimSizes {
   /** The cabinet's name: its instance in the model, and its files. */
   name: string;
   width: number;
@@ -105,6 +110,11 @@ export interface Sizes {
   dadoStop: number;
   fit: number;
   bit: number;
+  /** Dowels or Confirmat screws in place of blind dados (dados is then false). */
+  fastener: Fastener;
+  /** A Confirmat screw's length in mm: 50 or 70, Häfele's self-countersinking connector. */
+  confirmatLength: number;
+  lineBoring: LineBoring;
   slides: Slides;
   catalog: Catalog;
   /** Drawer length in mm (229, 305, ...), or 0 for the longest that fits. */
@@ -277,6 +287,16 @@ export const CUP: { dia: number; depth: number; radius: number; minK: number; ma
 export const PLATE_HOLE: { dia: number; depth: number };
 /** Shelf pin holes (mm). */
 export const PIN: { dia: number; depth: number; setback: number; pitch: number };
+/** Full-height line boring: the lowest hole above the box's bottom, the least room under the top (mm, Blum Process 32). */
+export const LINE_BORE: { bottom: number; top: number };
+/** Häfele's case dowelling and its assembly dowel's depths (mm; `upTo` inches with the least count). */
+export const DOWEL: { dia: number; face: number; edge: number; setback: number; pitch: number; minStock: number; upTo: [number, number][] };
+/** Häfele's 7 mm Confirmat: the face's through hole, the edge's pilot, the head (mm), and the self-countersinking lengths' part numbers. */
+export const CONFIRMAT: { through: number; pilot: number; head: number; lengths: Record<string, { sku: string }> };
+/** What the panel and the rows say of the Confirmat layout. */
+export const CONFIRMAT_LAYOUT: string;
+/** Where a joint's dowels (or Confirmat screws) go from its front edge, for a joint `d` deep (metres); a string says why not. */
+export function dowelLayout(d: number): number[] | string;
 export interface BinRoom {
   across: number;
   deep: number;

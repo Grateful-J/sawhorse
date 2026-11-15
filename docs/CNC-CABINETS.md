@@ -14,17 +14,18 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 5. [Edge banding](#edge-banding)
 6. [Build a row of cabinets](#build-a-row-of-cabinets)
 7. [Put a row on a base frame](#put-a-row-on-a-base-frame)
-8. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
-9. [Set up the CAM job](#set-up-the-cam-job)
-10. [Job sheet and part labels](#job-sheet-and-part-labels)
-11. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
-12. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
-13. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
-14. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-15. [Shopping list and pricing](#shopping-list-and-pricing)
-16. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-17. [What is kept with the model](#what-is-kept-with-the-model)
-18. [Limits](#limits)
+8. [End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)
+9. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
+10. [Set up the CAM job](#set-up-the-cam-job)
+11. [Job sheet and part labels](#job-sheet-and-part-labels)
+12. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
+13. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
+14. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
+15. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
+16. [Shopping list and pricing](#shopping-list-and-pricing)
+17. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+18. [What is kept with the model](#what-is-kept-with-the-model)
+19. [Limits](#limits)
 
 ## Why this exists
 
@@ -190,7 +191,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 
 | Field | Starts at (in / mm) | Limits | Notes |
 |---|---|---|---|
-| Joinery | Blind dados | | **Butt joints** for screws only. |
+| Joinery | Blind dados | | **Butt joints** for screws only. **Dowels** or **Confirmat screws** in place of the dados ([Joinery: dowels and Confirmat screws](#joinery-dowels-and-confirmat-screws)). |
+| Confirmat length | 50 mm | 50 or 70 mm | With Confirmat screws: the lengths Häfele lists for its self-countersinking connector (264.44.190, 264.44.194). |
 | Dado depth | 1/4 / 6 | at most half the stock | |
 | Dado stop | 1/2 / 12 | at least 1/8 in (3 mm) | How far short of the front the dado stops, so it never shows. |
 | Top | Full panel (**Two stretchers** after a base preset) | | **Two stretchers** (front and rear) for a countertop or a sink. |
@@ -199,6 +201,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | Groove depth | 5/16 / 8 | at most half the stock | Must differ from the dado depth, so each gets its own DXF layer and toolpath. |
 | Back inset | 1/2 / 12 | 0, or enough to leave 3 mm of wood behind the groove; under a third of the depth | The groove's distance from the rear edge. At 0 the groove is a rabbet along the rear edge of the sides, top and bottom. With nailers, an inset that leaves a sliver under 3 mm between the back's groove and the nailers' dados is refused, and the message gives the values that work. |
 | Rear nailers | None (**Top and bottom** after Wall cabinet, **Top** after Tall pantry) | | **Top**, or **Top and bottom**, with **Nailer height** (3 in, 75 mm). Needs the back in a groove, or no back. |
+| Line boring | Around each shelf | | With adjustable shelves. **Full height** drills the pin rows the height of the shelves' space on Blum Process 32's grid ([Full-height line boring](#full-height-line-boring)). |
 
 **6 · Hardware**
 - **Drill hinge, runner and pull holes** (on): the router drills 35 x 13 mm hinge cups, the plates' 5 mm system-screw holes, the runners' screw holes, the rear hook holes in each drawer back, and the pull holes. Turn it off to drill by hand or with a jig.
@@ -213,6 +216,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | CNC, CNC (pocket), CNC (profile), CNC (inside profile) | In the CNC files: a hole, a dado or groove, an outline, an opening through a part. |
 | Hardware | What to buy and fit: the runners, how many hinges, and the overlay they give. |
 | Hand | Yours to do: the locking devices' pilot holes, drilled with Blum's template, and the glue-up. |
+| Jig | Holes a 3-axis router cannot drill, in a rail's end: dowel holes or Confirmat pilots, with each one's distance from the rail's front edge, for a doweling jig. |
 | Change bit | A groove or a hole smaller than your **Bit diameter**: its layer needs a smaller bit. |
 | Check | A warning. Act on it before you cut: the row says what to change. |
 | Not drilled | Left out of the files, with the reason (inset hinge plates and runner screws). |
@@ -221,6 +225,48 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 **9 · Test cuts** makes small pieces that prove the setup before the real sheet: a machine check, joint ladders, a mini drawer and a mini door ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)).
 
 **10 · Edge banding** bands the edges that show: doors and drawer fronts all round, the carcass's front edges, the adjustable shelves' front edges. It starts off ([Edge banding](#edge-banding)).
+
+**11 · Ends, fillers and openings** puts a finished end panel or a filler on either side, an appliance opening beside it, a skin on its toe kick, and checks a sink and an over-the-range microwave. Nothing is on to start ([End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)).
+
+### Joinery: dowels and Confirmat screws
+
+**5 · Construction > Joinery** has four choices: **Blind dados** (the default), **Butt joints**, **Dowels** and **Confirmat screws**. Dowels and Confirmat screws join the top (or the two stretchers), the bottom and each fixed shelf to the sides, and turn the blind dados off: the rails are plain boxes the inside width long, with no tongues and no notches. The back's groove, the nailers and everything else are as before. The sources, quoted with their addresses, are in [docs/research/joinery-sources.md](research/joinery-sources.md).
+
+**Where the holes go.** Each joint's holes are laid out as Häfele's case-dowelling drawing places dowels (Häfele America catalogue, ch. 11, FC 11.124):
+- one 37 mm from the joint's front edge and one 37 mm from its back edge (the rail's own edges: a fixed shelf behind an inset door starts further back, and its holes with it);
+- at least 3 a joint up to 18 in (457.2 mm) deep, at least 4 up to 24 in (609.6 mm). Sawhorse drills exactly that many. Häfele gives no count past 24 in, so a deeper joint is refused rather than guessed;
+- the ones between on the 32 mm grid counted from the front one, the grid points nearest to evenly spaced, each keeping 3 mm of wood to the back one. AWS says dowel joints are "often based on" 32 mm spacing: a description, not a rule. The 23 1/4 in base's bottom gets 37, 197, 389 and 553.6 mm; a 12 in wall cabinet's top and bottom 37, 165 and 267.8 mm.
+- Stretchers narrower than 117 mm (4.607 in) are made at least 117 mm (4-5/8 in) wide with dowels or Confirmat; the cut list says when they were widened. Any other joint too shallow for its count is refused with the least depth.
+
+| | Dowels | Confirmat screws |
+|---|---|---|
+| In the sides (router) | 8 mm, 11 mm deep, inner face: `DRILL_D8MM_11MM` | 7 mm, through: `DRILL_D7MM_THRU`. No countersink is cut: the screw is Häfele's self-countersinking connector ("Countersink is not necessary as the nibs countersink hole") |
+| In each rail's two ends (jig) | 8 mm, 25 mm deep, centred in the thickness | 5 mm pilot, centred in the thickness, as deep as the screw maker's instructions give |
+| Where the numbers come from | The depths are **Häfele's for its 8 mm permanent assembly dowel** (UK catalogue 2023, p. 7.96), one product: 11 mm into the side, 25 mm into the edge. No maker's depth table for a plain 8 mm wood dowel was found. | Häfele America FC 11.161: Ø5 drill hole, Ø7 through hole, Ø10 head. **The pilot's depth, the distance from the edges and the spacing were not found in any maker's document.** The screws go where Häfele's dowels go, and the panel and the rows say: "Häfele's dowel layout; no confirmat spacing was found in a maker's document". |
+| Least stock | 14 mm (11 mm deep with 3 mm of wood behind). Häfele gives its assembly dowel "for minimum wood thickness 18 mm": thinner stock builds, with a **Check** row quoting it. | 13 mm: the 7 mm through hole in the side is centred in the thickness, so flush with the side's end it needs 3 mm of wood each side (the 5 mm pilot needs 11 mm) |
+| Shopping list, on each rail | "Dowel, 8 x 35 mm or shorter (the holes are 11 mm in the side and 25 mm in the edge, 36 mm together)", two joints' worth, in words | Häfele self-countersinking Confirmat connector, 7 x 50 mm **264.44.190** or 7 x 70 mm **264.44.194** (pointed tip, Pozi drive size 3, zinc-plated), two joints' worth. Häfele supplies them in 1000s. |
+
+**The rails' end holes are for a jig.** A 3-axis router cannot drill into a panel's edge, so **8 · Cuts and holes** lists them as **Jig** rows: for each rail, how many holes in each end and their distances from its front edge, in millimetres and, in an inch document, inches. With edge banding on, the row also gives the distances from the blank's front edge as cut, before banding, for drilling before the band goes on. Line the jig up from the rail's front edge, the edge the side's holes are measured from too.
+
+**Checks it makes.** Every joint hole keeps the planner's 3 mm of wood to the side's edges, the back's groove, the toe-kick notch and every other hole. The joint holes are placed first; hinge plates, runner screws and shelf pins are placed after and keep their wood to them (a pin that would not is left out, and the pin row says how many were). With edge banding on, the side's holes are the band's thickness nearer the raw edge on the blank, like every other cut.
+
+**What to know before you use them.**
+- A Confirmat's head is on the side's outer face. In a run of cabinets it is hidden; on an exposed end it shows. Sawhorse has no finished-end option.
+- The face holes are drilled from the face the router cuts, the side's inner face, so nothing needs a second setup. Pocket each circle with an end mill smaller than the hole, as the other holes ([the layer table](#2-give-each-layer-its-toolpath)); the job sheet gives hole layers the 1/8 in end mill to start. For `DRILL_D7MM_THRU`, check the bit's flutes reach through the sheet, as for the pull holes.
+- **Test cuts:** there is no dado ladder; the panel says a ladder proves a dado's clearance and does not apply to dowel or Confirmat holes.
+- **Stock:** Confirmat needs stock at least 13 mm thick; 1/2 in (12.7 mm) is refused.
+- **Back inset:** with dowels or Confirmat screws and a grooved back, a back inset of roughly 25 to 36 mm is refused, because the rear hole lands in the back's groove. 12 mm and 45 mm build.
+- **Dowel hole fit:** the dowel hole is drawn at 8.0 mm, the dowel's own size, as Häfele's hole is. A plain 8 mm dowel in a milled 8 mm hole is a tight fit: check the fit on a test cut before the job.
+- **Nailers:** with dowels or Confirmat screws, the nailers are butted between the sides and Sawhorse drills nothing for them: fasten them yourself.
+
+### Full-height line boring
+
+**5 · Construction > Line boring** (shown with adjustable shelves) is **Around each shelf** to start: five pin holes around each shelf's place, as before. **Full height** drills the two pin rows the height of the shelves' space on the 32 mm grid:
+- **The rule (Blum Process 32):** Blum's Universal Boring Pattern (drawing BUS0126, 2004) bores a 775 mm (30 1/2 in) side with its first hole 56.5 mm below the top end and its last 46.5 mm above the bottom end: 22 holes, 672 mm apart end to end.
+- **Generalised by Sawhorse** (Blum draws one height): the lowest hole is 46.5 mm above the bottom of the box (the side's bottom end with no toe kick, the top of the toe-kick notch with one), as Blum measures its hinge-plate holes from the bottom of the side; then one every 32 mm up to the highest that is at least 56.5 mm below the side's top end. A 775 mm side with no toe kick gives Blum's 22 holes exactly, and that is a test.
+- Of those, a hole is drilled where it keeps 3 mm of wood to the rails' faces (the bottom, the top, a fixed shelf) and is clear of the hinge plates, runner screws and joint holes, the same checks as around each shelf: the pin row in **8 · Cuts and holes** says how many were left out. In a drawer-over-door cabinet the rows stop in the door's space, below the drawers.
+- The holes are the same 5 mm x 10 mm holes on the same rows (37 mm from the front, the rear row on the same 32 mm grid). No maker gives a line-bore depth: 10 mm is the planner's, from shelf-pin lengths.
+- Many holes make the model slower to build: a tall pantry with full-height rows took about 1 s to import into the kernel against 0.2 s around each shelf (measured once, in Node, on one machine).
 
 ### Edit a cabinet
 
@@ -285,7 +331,7 @@ Each 0.1 mm the band is thicker than typed makes the part 0.1 mm larger on every
 - **The carcass and the shelves.** The AWS standard (2009) defines a frameless cabinet as one "where the front edge of the cabinet body components are edgebanded", and counts the "visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers" as exposed. It counts "the three non-visible edges of adjustable shelves" as concealed. So the starting choice bands the front edges of the sides, the top, the bottom, the fixed shelves and the front stretcher, and the front edge of each adjustable shelf.
 - **Doors and drawer fronts.** These are banded all round. One owner's spec (the University of Maryland's casework section) asks for banding "on all exposed edges", 3 mm PVC on doors and drawer fronts and 1 mm elsewhere. That is one spec, not a standard. To follow it: **Bands** > **Two bands**, Band 2 at 3 mm, and **Doors and drawer fronts** > Band 2. A 3 mm band on doors needs a **Boring distance** of at least 6 mm (below).
 - **Never banded:** the rear stretcher, the back, the toe kick, the nailers, the drawer boxes and the bin frame. AWS counts nailers' visible front edges as exposed, but the nailers here sit behind the back at the rear edge: no front edge of theirs shows. The others do not show either, or they sit in a joint.
-- **Finished ends:** the plugin makes none yet.
+- **Finished ends:** an applied end panel (**11 · Ends, fillers and openings**) takes the band the carcass front edges take, on its front edge, or its front and bottom, or front, bottom and top ([below](#end-panels-fillers-and-appliance-openings)).
 - A band goes only on an edge that shows. No edge the panel offers can be banded into a joint: every one is a front edge, or a front's edge, that nothing sits against. The planner also checks each banded edge against every other part (and refuses a band that would sit in a dado or groove, or against another part); today that check never fires, and it guards part kinds added later.
 - **Notches at an end.** A side's front edge ends at its toe kick notch, and a fixed rail's at its tongues, which are notched to clear the dado's stop. On an edgebander the band runs across such a notch; trim it off by hand at the notch's inside corner. The band counted for the part is the edge's whole run, notch and all, plus the waste per side. **10 · Edge banding** and **8 · Cuts and holes** say so for each such part.
 
@@ -329,7 +375,7 @@ A row is cabinets side by side: turned the same way, each against the last one's
 3. In **Place**, choose where the next one goes, relative to the last cabinet made or edited:
    - **Right of …, at its row's end** (the default);
    - **Left of …, at its row's start**;
-   - **Around the corner, right of …'s row** or **left of …'s row**: turned a quarter, its back on the next wall. **Corner filler** (3 in, 75 mm) is the gap from the corner cabinet's carcass front to the new cabinet's side, so doors and pulls clear. After a corner, Place carries on down the new wall.
+   - **Around the corner, right of …'s row** or **left of …'s row**: turned a quarter, its back on the next wall. **Corner filler** (3 in, 75 mm) is the gap from the corner cabinet's carcass front to the new cabinet's side, so doors and pulls clear. The new cabinet's own filler or end panel on that side is counted too. After a corner, Place carries on down the new wall.
    - **Apart, beside the model**.
 4. Pick the next cabinet in **Start from** and click **Generate cabinet**.
 
@@ -363,6 +409,7 @@ Select any cabinet in the row. The **Rows and base frames** panel names the row 
 | Dado depth | 1/4 / 6 | At most half the stock. |
 | Sleepers at most | 16 / 400 | Centre to centre. Must be more than two thicknesses. |
 | Longest piece | 47 / 1190 | A 4 x 4 less the CNC trim. Longer rows split into ladders, under whole cabinets where they can. |
+| Toe-kick skin | None | A strip in front of each front rail, as long and as tall, in the row's first cabinet's **Carcass**, **Door** or **Back plywood** (its thickness from that cabinet's **4 · Materials**). A setback no more than the skin's thickness is refused; KCMA's least toe space (3 in (76 mm) high, 2 in (51 mm) deep once skinned) is warned of. |
 
 The setback and back inset must leave at least 2 in between the rails for the sleepers. A row too short for a ladder once its showing ends are set back is refused ("The ends' setback leaves too short a ladder under this row: set the ends back less, or let fewer ends show."), and so is a cabinet too narrow for a ladder of its own ("make the longest piece longer").
 
@@ -393,6 +440,92 @@ On a 4 x 4 bed, a 78 in row becomes ladders of 42 and 36 in (split at a joint be
 2. In Nesting, turn on **Track saw what won't fit** ([below](#parts-too-big-for-the-bed-the-track-saw)). The long rails go to a 4 x 8 on the saw; the sleepers stay on the CNC.
 
 The panel says when a rail is longer than a 4 x 4 bed takes. If you keep dados on with long rails, those dados are listed as hand work.
+
+## End panels, fillers and appliance openings
+
+A row is rarely just boxes. A finished end covers the side that shows, a filler gives the doors room at a wall, and a dishwasher or a range needs a gap. The cabinet panel's **11 · Ends, fillers and openings** group puts each beside a cabinet, and the row makes room for it. Nothing is on to start: a cabinet that uses none of it is built, kept and cut exactly as before, to the byte.
+
+Every number here comes from a maker's or a standard's document, quoted with its address in [research/row-features-sources.md](research/row-features-sources.md), or is labelled as Sawhorse's own. Appliances differ between models: each preset names its maker and model family, and the panel says to check your appliance's installation guide.
+
+### What stands beside a cabinet
+
+Each side (**Left side**, **Right side**) takes one of these. The row counts its width, so the next cabinet stands past it, and a change moves the cabinets right of it as a wider cabinet does (one on the left moves the cabinet itself, and those right of it).
+
+| Choice | What it is | Its width in the row |
+|---|---|---|
+| **Nothing** | The side as it is. | 0 |
+| **Finished end panel** | A panel of its own on the side's outer face, its grain up. | The stock's thickness |
+| **Filler** | A strip beside the side, its face flush with the carcass front. | **Filler width** |
+| **Scribe filler** | A filler cut wider by the **Scribe allowance** on its wall side, to scribe to the wall by hand. | **Filler width** (what it ends at once scribed) |
+
+**End panels**
+
+| Field | Starts at | Notes |
+|---|---|---|
+| End panel stock | Carcass plywood | Or **Door plywood** (for a laminate face that matches the doors). The thickness is the cabinet's **Carcass, doors** stock. Fillers use the same stock. |
+| Panel bottom | To the floor, over the toe kick | Or **Flush with the cabinet's bottom** (the toe kick's top). No source picks one. Shown for a cabinet with a toe kick. |
+| Panel front | Flush with the door faces | Decor's installation guide: applied end panels are "usually flush with the door face". Or **Flush with the carcass front**. Inset fronts and open shelves have no door face to be flush with. |
+| Panel edges banded | Front edge | With **10 · Edge banding** on, in the band the carcass front edges take: the front edge (AWS counts the "visible front edges of ... ends" as exposed), or front and bottom (a wall cabinet's bottom edge shows), or front, bottom and top. Cut short by the band, as every banded part. |
+| Scribe allowance | 0 | Your setting, not a standard: the panel is cut this much deeper at its back edge, to scribe to the wall. The AWS standard allows scribes up to 1-1/2 in (38.1 mm) wide at wall-to-wall installations; wider is warned of. |
+
+Fasten it with screws from inside the cabinet: Decor's guide uses 1-1/8 in screws. It is not drilled, since no source gives a hole pattern. On a base frame the cabinet has no toe kick, so the panel stops at the cabinet's bottom: set the frame's showing end back (**Ends**) so the toe space turns the corner.
+
+**Fillers**
+
+| Field | Starts at | Notes |
+|---|---|---|
+| Filler width | 3 in (50 mm) | Starting values, not a standard. 3 in is a width KraftMaid sells (BF3), and the filler it ships with each blind corner base. 50 mm is IKEA's planning guide's least filler between a cabinet and a wall; IKEA's Canadian checklist says 1 in. No general table of filler widths was found. |
+
+A filler is as tall as the cabinet's box, above the toe kick (KraftMaid's base fillers have "No toe kick"), or the cabinet's full height without one. Screw through the cabinet's side into its edge (IKEA), fixed before the cabinet goes in (Decor). Nothing is drilled, and fillers are not banded: their face shows, and their edges are against the cabinet and the wall.
+
+**A scribe filler** is cut wider than it ends up, by the **Scribe allowance**, on the side away from the cabinet. Hold it against the wall, trace the wall onto it with a small block and a pencil (IKEA's method), and cut to the line. The row counts the width it ends at; the model shows it as cut, past the row's end by the allowance.
+
+### Toe-kick skins
+
+A skin is a strip in front of the toe kick, in the stock you pick: **Carcass**, **Door** (laminate to match the doors) or **Back plywood** (thinner). No maker's source for applied skins was found.
+- **On a cabinet with a toe kick** (**Toe-kick skin** in **11 · Ends, fillers and openings**): as tall as the kick, under the cabinet and its fillers, and under an end panel that is flush with the box's bottom. It stops at an end panel to the floor.
+- **On a base frame** (**Toe-kick skin** in **Rows and base frames**): one strip in front of each ladder's front rail, as long and as tall, in the row's first cabinet's stock.
+
+KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) deep. Those are checks, made only when a toe-kick skin is on: a lower kick, or less depth once the skin is in front of it, is warned of, never refused. A bare toe kick is not checked. A skin as thick as the setback, or thicker, would stand in front of the cabinets, and is refused. Glue and pin or screw the skin on from behind, and scribe it to the floor as needed (Decor: "Scribe the toe kick as needed").
+
+### Appliance openings
+
+**Left of it** and **Right of it** put an opening beside the cabinet, past its end panel or filler: space in the row where no cabinet goes. Nothing is cut and no appliance is drawn. A base frame stops at an opening, so each side of it is its own ladder. Picking a preset sets the opening's width; change it to what your appliance asks.
+
+| Preset | Starts at | Checked | Source |
+|---|---|---|---|
+| Dishwasher, GE built-in | 24 in | At least 24 in wide; 34-1/4 to 34-3/4 in under the countertop (GE's Figure A: 34-1/2 in, plus or minus 1/4 in) | GE installation instructions 31-31546 |
+| Dishwasher, Bosch | 24 in (610 mm) | At least 24 in (610 mm) wide, 33-7/8 in (860 mm) high | Bosch 9002059336 |
+| Dishwasher, Bosch fully integrated | 600 mm (23 5/8 in) | 600 to 616 mm wide, 813 to 870 mm high | Bosch 9001450387 |
+| Range, freestanding 30 in | 30 in | At least 30 in wide; a cabinet of the plugin's over it at most 13 in deep | Frigidaire FFEF3003U |
+| Range, slide-in 30 in | 30 in | 29-15/16 to 30-1/16 in wide; over it at most 13 in deep (GE's JS760 manual allows 16 in: the makers disagree) | Frigidaire FGDS3065P |
+| Refrigerator | No width: type it | Nothing: the panel shows GE's and Whirlpool's clearances, which disagree, and Monogram's note that frameless cabinets may need fillers beside a fridge | GE 49-60792, Whirlpool W10768947A, Monogram 49-60314 |
+| Another opening | No width: type it | Nothing | Your appliance's guide |
+
+A metric document reads the millimetres where the maker prints them (Bosch's 610 and 860 mm) and converts the rest. The **height under the countertop** is the top of the cabinets beside the opening above the floor (the lower one, if they differ), since the countertop is not modelled. GE's 24 in depth is shown, not checked. The floor is the model's ground.
+
+**Over-the-range microwave.** A microwave over a range hangs under a wall cabinet in the wall row, not in a gap. Tick **An over-the-range microwave hangs under it** on that wall cabinet (no toe kick). GE's installation guide asks for the space between the cabinets to be 30 in wide: a narrower cabinet over it is warned of, and a wider one is warned of too, the warning naming the Filler Panel Kit GE says may be used where the space is wider. The cabinet over it is checked at most 13 in deep for a standard installation, and 66 in or more from the floor to the microwave's top, against the cabinet's bottom. GE's 30 in from the cooking surface is in the panel's text only.
+
+### Sinks
+
+Type the sink's width in **Sink width**, or tick **Farmhouse (apron-front) sink**. Kohler's spec sheets give the narrowest base cabinet:
+
+| Sink | Base at least | Kohler |
+|---|---|---|
+| 24 to 25 in | 27 in (686 mm) | Vault K-3894, K-3822-4; Staccato K-3362-4 |
+| 32 to 33 in | 36 in | K-3145-4, K-3346-4, K-3672, and others |
+| 35 in | 36 in, and 36 in "may require cabinet modifications" | Strive K-5283 |
+| Farmhouse | 36 in (914 mm) | Whitehaven K-6489, K-6488 |
+
+A narrower cabinet is warned of. A sink of another width has no rule here, and the panel says so: check your sink's own spec sheet.
+
+### Where it shows
+
+- **The model**: end panels, fillers and skins are parts of the cabinet, beside it; an opening is the gap.
+- **8 · Cuts and holes**: a **Hand** row for each part (how it is fastened, the scribe), an **Edge band** row for a banded end panel, and a **Check** row for each opening and each warning.
+- **11 · Ends, fillers and openings > Checks**: the cabinet's own checks, and, once it is made, those that read the cabinets beside and over its openings.
+- **Rows and base frames**: the row's layout, left to right (each cabinet, end panel, filler and opening, where it starts and how wide), and every check of the row.
+- **The Cut list, the CNC files and the shopping list**: each part, at its size and with its grain; a banded end panel's band by the metre.
 
 ## Nest the parts and save the CNC files
 
@@ -457,6 +590,7 @@ The sheet's lower-left corner is at 0,0. Set the job's X and Y zero at that corn
 | `DRILL_D35MM_13MM` | Hinge cups: 35 mm across, 13 mm deep | Pocket the circle to 13 mm with your end mill. Never put a Forstner or hinge-boring bit in a router: it is made for a drill press's speed ([the warnings](#the-warnings)). |
 | `DRILL_D5MM_11.5MM`, `DRILL_D5MM_13MM`, `DRILL_D5MM_10MM`, `DRILL_D6MM_10MM` | Hinge-plate (5 x 11.5), runner-screw (5 x 13), shelf-pin (5 x 10) and drawer rear hook (6 x 10) holes | Pocket each circle to its depth with an end mill smaller than the hole (1/8 in or 3 mm). A 1/4 in end mill cannot make a 5 or 6 mm hole. Check that the small bit's flutes are at least as long as the hole is deep. Use a drill bit of the hole's size only if your spindle has a collet for its shank and a speed slow enough for drilling. |
 | `DRILL_D4.76MM_THRU` (a 3/16 in pull hole), `DRILL_D5MM_THRU` | Pull holes | The same, through the sheet. If the small bit's flutes are shorter than the sheet is thick, bore as deep as they reach and finish the hole with a hand drill. |
+| `DRILL_D8MM_11MM`, `DRILL_D7MM_THRU` | With **Joinery** Dowels: the dowel holes in the sides (8 x 11). With Confirmat screws: the screws' holes through the sides (7 mm) | Pocket each circle with an end mill smaller than the hole, to 11 mm or through the sheet ([Joinery](#joinery-dowels-and-confirmat-screws)). |
 | `CUTOUT_THRU` | Openings through a part (the trash bins' cutouts) | Inside profile, through. |
 | `FLIP_…` | Cuts in the other face of a part | A second setup after the part is turned over. The status line names those parts. |
 | `STOCK`, `LABELS` | The sheet's outline and trim line; the tags | Reference only: do not cut. |
@@ -809,7 +943,7 @@ One coupon per joint whose stock differs:
 
 | Coupon | Cut from | Tried with | Dados | Made when |
 |---|---|---|---|---|
-| Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados |
+| Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados. With Dowels or Confirmat screws the panel says a ladder proves a dado's clearance and does not apply to their holes. |
 | Back groove ladder | the carcass sheet | a piece of the back plywood | the back stock plus each step, **Groove depth** deep | **Back** is In a groove and the back's inset from the rear edge is not 0: **Back inset**, or with **Rear nailers** at least the nailer's thickness plus the clearance, so never 0 (at 0 the groove is a rabbet: nothing to fit) |
 | Drawer bottom ladder | the drawer box sheet | a piece of the back plywood | the back stock plus each step, half the box stock deep, at most 1/4 in, as the drawer's groove | always |
 
@@ -993,6 +1127,7 @@ Part numbers are only those printed in Blum's catalogues. Anything Blum does not
 | A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: where the plate's holes are drilled (overlay doors, holes on) and the Overlay row settles on a 0 mm plate, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe), with pre-mounted system screws; otherwise (an inset door, holes drilled by hand, another plate height) the plate is named in words. Two screws per hinge, cup to door: **606N** (#6 x 5/8 in, Blum Inc.) or **609.1700** (3.5 x 17 mm, Blum Europe). A pull and its two screws, when the door has a pull. |
 | A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give (Blum names a 14.5 mm system screw for the 560H but no hole depth for it, and the holes here are 13 mm deep). A pull and its two screws, when the front has one (not a finger notch). A trash pull-out's bins, in words with the sizes from the maker's drawing (no order number). Once, on the Tools list: the drilling template (**T65.1600.01** with drill bits **DB-2.5mm** and **DB-6mm**, or **T65.1000.02** in Europe) and tool set **T65.9000**. |
 | A loose shelf | Four 5 mm shelf pins (Blum sells none: buy the ones that fit a 5 x 10 mm hole). |
+| A top, bottom, stretcher or fixed shelf (Dowels or Confirmat screws) | Both its joints' fasteners: 8 mm dowels in words, or Häfele's self-countersinking Confirmat connector **264.44.190** (7 x 50) or **264.44.194** (7 x 70) ([Joinery](#joinery-dowels-and-confirmat-screws)). |
 | A banded part (banding on) | Its band by the metre, with waste: "Edge banding, 1 mm x 15/16 in", one item per band it takes. |
 
 The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the plates and the runner screws are named in words, because their holes are not drilled here.
@@ -1061,20 +1196,24 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - The clearances of the last joint ladders added are kept in the model, so the ladders' picks name the dados that were cut.
 - The hardware each part takes (its `bom`, [format.md](format.md#part-attributes-cut-list)) is saved on the part in the model, so the shopping list counts copies and deletions. It is not in the plugin's 64 KB store, where it could be dropped.
 - Shopping list prices are kept on this device, not in the model.
+- A cabinet's end panels, fillers, openings, skin, sink and microwave settings are kept with its other settings; a cabinet that uses none of them stores nothing for them. A base frame's skin is kept with the frame.
 - A cabinet's edge banding settings are kept with its other settings. Each banded part's band, by the metre, is in its `bom` in the model, as the hardware is.
 
 ## Limits
 
 - No walls or room outline. A corner is a dead corner with a filler; there is no blind-corner cabinet.
+- Appliance openings are space: no appliance is drawn, and a fridge's or a range's own size is not known. The countertop is not modelled: a dishwasher's height is checked against the tops of the cabinets beside it.
+- End panels, fillers and skins are not drilled for their screws, and a scribe is cut by hand.
 - Hand work is a list, not a drawing.
 - The track saw's sheet is 4 x 8 (1220 x 2440 mm).
 - Only System 32 screw holes are drilled. Blum's chipboard-only holes and the locking devices' pilot holes are listed for drilling by hand.
 - With inset fronts, hinge plates and runner screws are listed, not drilled.
-- Adjustable shelves get a band of pin holes around each shelf (five holes), not the full height.
+- Adjustable shelves get a band of pin holes around each shelf (five holes) to start; **Full height** follows Blum's 775 mm drawing, generalised by Sawhorse to other heights.
+- Dowels and Confirmat screws: the rails' end holes are listed for a jig, never cut. The dowel depths are one Häfele product's; Confirmat spacing and pilot depth were not found in a maker's document. Joints deeper than 24 in are refused (Häfele gives no dowel count past it).
 - A base frame's dado clearance is fixed at 0.008 in (0.2 mm): it has no field.
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
 - A test cut is not rebuilt when the settings change, and is not edited as a cabinet: delete it and add it again. Nesting only the tests, or only the cabinets, takes hiding the others and **Visible only**.
 - The shopping list names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
-- Edge banding: no finished ends; drawer boxes are never banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels name the bands a part carries, not which edges.
+- Edge banding: drawer boxes are never banded; fillers and skins are not banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels name the bands a part carries, not which edges.
 - Hardware is put on parts, never on a whole cabinet: a cabinet is an assembly, and the cut list counts its parts.
