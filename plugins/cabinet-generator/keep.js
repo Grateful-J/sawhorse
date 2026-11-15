@@ -25,9 +25,12 @@ import { normalize } from "./cabinet.js";
 /** What differs from the baseline of the document's units. @param {Sizes} s @param {boolean} metric */
 export function pack(s, metric) {
   const base = metric ? BASELINE.mm : BASELINE.in;
+  // A setting newer than the baseline is kept only when it is not what reading the cabinet back
+  // fills in (normalize's default), so a cabinet that leaves it alone stores nothing for it.
+  const filled = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (normalize({ ...base }, metric)));
   /** @type {Record<string, unknown>} */
   const d = {};
-  for (const [k, v] of Object.entries(s)) if (base[k] !== v) d[k] = v;
+  for (const [k, v] of Object.entries(s)) if (base[k] !== v && !(!(k in base) && filled[k] === v)) d[k] = v;
   return metric ? { d, m: /** @type {const} */ (1) } : { d };
 }
 

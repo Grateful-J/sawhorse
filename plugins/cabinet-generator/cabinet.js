@@ -43,6 +43,8 @@ const MM = 0.001;
 /** @typedef {"center" | "top" | "notch" | "none"} DrawerPull */
 /** @typedef {"vertical" | "horizontal" | "none"} DoorPull */
 /** @typedef {"top" | "bottom"} DoorPullFrom */
+/** Blum CLIP top hinges with BLUMOTION (soft close) or self-closing (a spring, no damper).
+ * @typedef {"soft" | "self"} HingeClose */
 /**
  * @typedef {{
  *   name: string,
@@ -56,7 +58,7 @@ const MM = 0.001;
  *   front: Front, gap: number,
  *   dados: boolean, dadoDepth: number, dadoStop: number, fit: number, bit: number,
  *   slides: Slides, catalog: Catalog, runner: number,
- *   hardware: boolean, hingeInset: number, cupDistance: number,
+ *   hardware: boolean, hingeInset: number, cupDistance: number, hingeClose: HingeClose,
  *   drawerPull: DrawerPull, drawerPullFromTop: number, pullSpacing: number, notchWidth: number, notchDepth: number,
  *   doorPull: DoorPull, doorPullFrom: DoorPullFrom, doorPullEnd: number, doorPullEdge: number, doorPullSpacing: number,
  *   pullHole: number,
@@ -75,8 +77,13 @@ const MM = 0.001;
  *   copies: { at: V3, name?: string }[],
  *   mesh: import("./mesh.js").Mesh,
  *   grain: Grain,
+ *   bom?: BomItem[],
  * }} Part
  */
+/** What is bought for each copy of a part beyond its wood, for the shopping list: the kernel's
+ * part attribute `bom` (docs/format.md), sent with `set_bom`. Part numbers only where this
+ * file already has them (the runner tables, the locking devices).
+ * @typedef {{ item: string, sku?: string, qty: number, unit: "each" | "pair" | "m", once?: boolean }} BomItem */
 
 /**
  * Blum runners (millimetres). Two catalogues: Blum Inc.'s (US, inch lengths) and Blum's
@@ -275,6 +282,55 @@ const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
 const PIN_END = 64 * MM;
 /** Pin holes around each shelf's place: this many each side of it, 32 mm apart (+-64 mm). */
 const PIN_REACH = 2;
+/**
+ * What the shopping list names for the hardware, from Blum's own catalogues (read 2026-11-14).
+ * Only part numbers Blum prints are given; anything Blum does not number is named in words.
+ * - Hinges, CLIP top 110°, screw-on: BLUMOTION (soft close) 71B3550, full overlay, straight arm,
+ *   and 71B3750, inset, full-cranked; self-closing 71T3550 and 71T3750. Blum Inc. Concealed
+ *   hinges (c) 2025 pp. 10 and 24; Blum catalogue 2024/2025 p. 76, 2027/2028 p. 70.
+ * - Mounting plate, 0 mm, pre-mounted system screws, for the 5 x 11.5 mm holes drilled here:
+ *   173L8100 (Concealed hinges (c) 2025 p. 48; Blum Inc. lists no 175L8100) and 175L8100 (Blum
+ *   catalogue 2024/2025 p. 155, 2027/2028 p. 149). Blum's inset table is for a 0 mm plate too
+ *   (Concealed hinges (c) 2025 p. 10).
+ * - A screw-on hinge's cup is held to the door with 3.5 x 17 mm screws (Blum MD-029/3, 11.24).
+ * - Blum Inc.'s runner system screw 662.1150.HG, #6 x 11.5 mm, for 5 mm holes (TANDEM plus
+ *   BLUMOTION (c) 2025 pp. 14, 34; MOVENTO (c) 2026 p. 12), and its locking-device screw 606N,
+ *   #6 x 5/8 in, two per device (TANDEM plus BLUMOTION (c) 2025 p. 11).
+ * - Drilling templates, one per shop: T65.1600.01 (TANDEM plus BLUMOTION (c) 2025 pp. 11, 35) and
+ *   T65.1000.02 (Blum catalogue 2024/2025 p. 682, 2027/2028 p. 698), each with tool set T65.9000.
+ * - Blum sells no shelf pins.
+ * Blum Europe's screws for runners and locking devices are not named in the pages read, so they
+ * are left in words. Blum gives no pack sizes: everything is each or pair.
+ */
+const HARDWARE = {
+  hinge: {
+    soft: {
+      overlay: { item: "Blum CLIP top BLUMOTION 110° hinge, full overlay, straight arm, screw-on", sku: "71B3550" },
+      inset: { item: "Blum CLIP top BLUMOTION 110° hinge, inset, full-cranked, screw-on", sku: "71B3750" },
+    },
+    self: {
+      overlay: { item: "Blum CLIP top 110° hinge, self-closing, full overlay, straight arm, screw-on", sku: "71T3550" },
+      inset: { item: "Blum CLIP top 110° hinge, self-closing, inset, full-cranked, screw-on", sku: "71T3750" },
+    },
+  },
+  plate: { item: "Blum CLIP mounting plate, 0 mm, pre-mounted system screws", us: "173L8100", eu: "175L8100" },
+  // Two per hinge, one through each screw hole of the cup; Blum's pages read give the screw's
+  // size, not the count.
+  hingeScrew: { item: "Screw, 3.5 x 17 mm, hinge cup to door (Blum MD-029/3)", perHinge: 2 },
+  runnerScrewUs: { item: "Blum system screw, #6 x 11.5 mm, runner to a 5 mm hole", sku: "662.1150.HG" },
+  lockScrewUs: { item: "Blum wood screw, #6 x 5/8 in, locking device to drawer", sku: "606N" },
+  templates: {
+    us: [
+      { item: "Blum concealed runner template", sku: "T65.1600.01" },
+      { item: "Blum tool set for the runner template", sku: "T65.9000" },
+    ],
+    eu: [
+      { item: "Blum drilling template for MOVENTO | TANDEM", sku: "T65.1000.02" },
+      { item: "Blum tool set for the drilling template", sku: "T65.9000" },
+    ],
+  },
+  shelfPin: "5 mm shelf pins",
+};
 /** A door wider than this is a pair. */
 const MAX_DOOR = 24 * IN;
 /**
@@ -415,7 +471,7 @@ export function defaults(metric) {
         front: "overlay", gap: 3 * MM,
         dados: true, dadoDepth: 6 * MM, dadoStop: 12 * MM, fit: 0.2 * MM, bit: 6 * MM,
         slides: "tandem", catalog: "eu", runner: 0,
-        hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM,
+        hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 38 * MM, pullSpacing: 96 * MM, notchWidth: 100 * MM, notchDepth: 25 * MM,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 64 * MM, doorPullEdge: 38 * MM, doorPullSpacing: 96 * MM,
         pullHole: 5 * MM,
@@ -440,7 +496,7 @@ export function defaults(metric) {
         front: "overlay", gap: 0.125 * IN,
         dados: true, dadoDepth: 0.25 * IN, dadoStop: 0.5 * IN, fit: 0.008 * IN, bit: 0.25 * IN,
         slides: "tandem", catalog: "us", runner: 0,
-        hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM,
+        hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 1.5 * IN, pullSpacing: 3 * IN, notchWidth: 4 * IN, notchDepth: 1 * IN,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 2.5 * IN, doorPullEdge: 1.5 * IN, doorPullSpacing: 3 * IN,
         // 3/16 in: the usual drill for the 8-32 screws US pulls take.
@@ -501,6 +557,7 @@ export function normalize(saved, metric) {
     hardware: !!s.hardware,
     hingeInset: num("hingeInset"),
     cupDistance: num("cupDistance"),
+    hingeClose: pick("hingeClose", /** @type {const} */ (["soft", "self"])),
     drawerPull: oldPull ?? pick("drawerPull", /** @type {const} */ (["center", "top", "notch", "none"])),
     drawerPullFromTop: num("drawerPullFromTop"),
     pullSpacing: num("pullSpacing"),
@@ -875,11 +932,11 @@ function build(s, metric) {
    * One definition per distinct part: same name, blank and cuts. Parts that differ (the top
    * drawer front is taller) are separate definitions with the same name.
    * @param {string} name @param {string} material @param {V3} blank @param {Prism[]} prisms @param {Hole[]} holes
-   * @param {{ at: V3, name?: string }} copy
+   * @param {{ at: V3, name?: string }} copy @param {BomItem[]} [bom] what is bought for each copy (hardware)
    */
-  const add = (name, material, blank, prisms, holes, copy) => {
+  const add = (name, material, blank, prisms, holes, copy, bom = []) => {
     // Rounded to a micrometre: two fronts a float apart are the same part.
-    const key = JSON.stringify([name, blank, prisms, holes], (_k, v) => (typeof v === "number" ? Math.round(v * 1e6) : v));
+    const key = JSON.stringify([name, blank, prisms, holes, bom], (_k, v) => (typeof v === "number" ? Math.round(v * 1e6) : v));
     let part = /** @type {Part & { key?: string } | undefined} */ (parts.find((p) => /** @type {Part & { key?: string }} */ (p).key === key));
     if (!part) {
       let mesh;
@@ -888,7 +945,7 @@ function build(s, metric) {
       } catch (e) {
         throw new Error(`${name}: ${e instanceof Error ? e.message : String(e)}`);
       }
-      part = { name, material, blank, copies: [], mesh, grain: grainFor(s, name, blank) };
+      part = { name, material, blank, copies: [], mesh, grain: grainFor(s, name, blank), ...(bom.length ? { bom } : {}) };
       Object.defineProperty(part, "key", { value: key, enumerable: false });
       parts.push(part);
     }
@@ -967,6 +1024,49 @@ function build(s, metric) {
     sideHoles[which].push(placeHole(part, sideSize, sidePrisms(inner), h, what, fix));
     sideWhat[which].push(what);
   };
+
+  // --- the shopping list: hardware that rides on the part it goes on (HARDWARE) -------------
+  /**
+   * A door's hinges, their mounting plates (one each) and the screws that hold a screw-on hinge's
+   * cup to the door. @param {number} count @returns {BomItem[]}
+   */
+  const hingeBom = (count) => {
+    const hinge = HARDWARE.hinge[s.hingeClose][overlay ? "overlay" : "inset"];
+    const plate = overlay ? overlayPlate() : 0;
+    return [
+      { item: hinge.item, sku: hinge.sku, qty: count, unit: "each" },
+      plate === 0 ? { item: HARDWARE.plate.item, sku: HARDWARE.plate[s.catalog], qty: count, unit: "each" } : { item: plate === null ? "Blum CLIP mounting plate, frameless, system screws, height to match the overlay" : `Blum CLIP mounting plate, frameless, ${plate} mm, system screws`, qty: count, unit: "each" },
+      { item: HARDWARE.hingeScrew.item, qty: HARDWARE.hingeScrew.perHinge * count, unit: "each" },
+    ];
+  };
+  /**
+   * The plate height an overlay door's hinges go on (mm), as the Overlay row works it out
+   * (overlayText): 0 when the overlay is matched on a 0 mm plate, the hinge's reach is the limit
+   * (worked out on a 0 mm plate), a boring distance on a 0 mm plate matches it, or the side screw
+   * takes up the rest; the thinnest plate that matches with a boring distance otherwise; null when
+   * none does.
+   */
+  const overlayPlate = () => {
+    const want = t - g / 2;
+    const reach = (OVERLAY.base + OVERLAY.side) * MM + s.cupDistance;
+    if (s.hardware && want > reach + 1e-9) return 0;
+    const got = OVERLAY.base * MM + s.cupDistance;
+    if (Math.abs(want - got) <= 0.5 * MM || Math.abs(want - got) <= OVERLAY.side * MM + 1e-9) return 0;
+    const way = OVERLAY.plates.find((h) => want / MM - OVERLAY.base + h >= CUP.minK - 1e-9 && want / MM - OVERLAY.base + h <= CUP.maxK + 1e-9);
+    return way ?? null;
+  };
+  /**
+   * A pull and its two screws, on the front it goes through. Named by hole spacing and the
+   * front's thickness (the screw's length depends on it); no part numbers.
+   * @param {boolean} has @param {number} spacing @param {number} thick @returns {BomItem[]}
+   */
+  const pullBom = (has, spacing, thick) =>
+    has
+      ? [
+          { item: `Pull, ${both(spacing)} hole centres`, qty: 1, unit: "each" },
+          { item: `Pull screw, through a ${both(thick)} front`, qty: 2, unit: "each" },
+        ]
+      : [];
 
   // --- fronts --------------------------------------------------------------------------------
   const last = bands.length - 1;
@@ -1154,7 +1254,7 @@ function build(s, metric) {
           note(name, `Pull, 2 holes ${both(s.doorPullSpacing)} apart, ${s.doorPull}, the nearer ${both(s.doorPullEnd)} from the ${s.doorPullFrom} and ${both(s.doorPullEdge)} from the opening edge`, fmtMm(s.pullHole), "through", "CNC");
         }
       }
-      add(name, MATERIALS.doors.name, size, [], holes, { at: [leaf.x0, fb.y, fb.z0], name });
+      add(name, MATERIALS.doors.name, size, [], holes, { at: [leaf.x0, fb.y, fb.z0], name }, [...hingeBom(count), ...pullBom(s.doorPull !== "none", s.doorPullSpacing, t)]);
     }
 
     /**
@@ -1221,6 +1321,33 @@ function build(s, metric) {
     const gz = /** @type {[number, number]} */ ([recess, recess + bT + s.fit]);
     note("Drawer", `${R.name} ${rl.part}, ${rl.nl} mm${s.catalog === "us" ? ` (${(rl.nl / 25.4).toFixed(0)} in)` : ""} runners; the box is ${mm(nl)} mm long`, "-", "-", "Hardware");
     note("Drawer", R.lock, "-", "-", "Hand");
+    // Each drawer's runners, locking devices and their screws ride on its front (one front per
+    // drawer); the drilling template and tool set are bought once for the shop.
+    const lockPart = R.lock.match(/^T\d+\.\d+(?:\.\d+)?/)?.[0] ?? "";
+    const drilled = s.hardware && overlay;
+    const us = s.catalog === "us";
+    const holes = 2 * rl.screws.length;
+    /** @type {BomItem[]} */
+    const drawerBom = [
+      { item: `${R.name} runners, ${rl.nl} mm${us ? ` (${(rl.nl / 25.4).toFixed(0)} in)` : ""}, left and right`, sku: rl.part, qty: 1, unit: "pair" },
+      // Blum Inc. numbers the right and left devices; Blum Europe orders one number left and right.
+      ...(us
+        ? /** @type {BomItem[]} */ ([
+            { item: `${R.name} locking device, right`, sku: `${lockPart} R`, qty: 1, unit: "each" },
+            { item: `${R.name} locking device, left`, sku: `${lockPart} L`, qty: 1, unit: "each" },
+            { item: HARDWARE.lockScrewUs.item, sku: HARDWARE.lockScrewUs.sku, qty: 4, unit: "each" },
+          ])
+        : /** @type {BomItem[]} */ ([
+            { item: `${R.name} locking devices, left and right (order one of each)`, sku: lockPart, qty: 1, unit: "pair" },
+            { item: "Locking-device screws for a left and a right device, as Blum's instructions give", qty: 1, unit: "pair" },
+          ])),
+      drilled
+        ? us
+          ? { item: HARDWARE.runnerScrewUs.item, sku: HARDWARE.runnerScrewUs.sku, qty: holes, unit: "each" }
+          : { item: "Runner screw for a drilled 5 mm System 32 hole, as Blum's instructions give", qty: holes, unit: "each" }
+        : { item: "Runner screws for a pair of runners, as Blum's instructions give", qty: 1, unit: "pair" },
+      ...HARDWARE.templates[s.catalog].map((x) => /** @type {BomItem} */ ({ item: x.item, sku: x.sku, qty: 1, unit: "each", once: true })),
+    ];
     note("Drawer box", `Bottom slides in from the back in grooves ${both(bT + s.fit)} wide, ${both(recess)} up; the back sits on it, so the runner passes under the back (no notch)`, "-", both(gd), "CNC (pocket)");
 
     drawerBands.forEach((band, i) => {
@@ -1276,7 +1403,7 @@ function build(s, metric) {
         }
         note("Drawer front", `Pull, 2 holes ${both(s.pullSpacing)} apart, ${s.drawerPull === "center" ? "centred" : `${both(s.drawerPullFromTop)} down from the top`}`, fmtMm(s.pullHole), "through", "CNC");
       }
-      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` });
+      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` }, [...drawerBom, ...pullBom(s.drawerPull === "center" || s.drawerPull === "top", s.pullSpacing, tf)]);
 
       // Box: sides run the full length; the sub-front and back sit between them. The bottom
       // slides in under the back, in grooves in the sides and the sub-front.
@@ -1501,7 +1628,7 @@ function build(s, metric) {
     // Loose shelves on pins, a sliver narrower than the opening so they lift out, each resting
     // on its pins (placed with the pin holes).
     shelfZs.forEach((z, i) => {
-      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth - shelfFront, t], [], [], { at: [t + PANEL_GAP, shelfFront, rests[i] ?? z], name: `Shelf ${i + 1}` });
+      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth - shelfFront, t], [], [], { at: [t + PANEL_GAP, shelfFront, rests[i] ?? z], name: `Shelf ${i + 1}` }, [{ item: HARDWARE.shelfPin, qty: 4, unit: "each" }]);
     });
   }
   if (shelfFront) note(shelfZs.length === 1 ? "Shelf" : "Shelves", `Set back ${both(shelfFront)} from the cabinet's front: behind the inset door (${both(t)}) and its bumpers`, "-", "-", "CNC (profile)");
