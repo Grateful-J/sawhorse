@@ -48,7 +48,7 @@ On a 4 x 4 bed, two more problems come up: a run of cabinets needs a base, and s
 7. **Save the files.** Click **CNC files**. You get one DXF per sheet, in millimetres, with the sheet's lower-left corner at 0,0. This Base is four sheets, so four files: the door, two sheets of carcass parts, and the back.
 8. **Cut.** Open each file in your CAM program and give each layer its toolpath ([Set up the CAM job](#set-up-the-cam-job)). Cut one small part first ([Cut one small part first](#7-cut-one-small-part-first)).
 
-Before cutting real plywood, do [Set up your shop once](#set-up-your-shop-once): the defaults assume plywood that measures exactly 23/32 in and a 1/4 in bit. Then prove the setup on small pieces ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)): all four tests together use less plywood than a fifth of one Base.
+Before cutting real plywood, do [Set up your shop once](#set-up-your-shop-once): the defaults assume plywood that measures exactly 23/32 in and a 1/4 in bit. Then prove the setup on small pieces ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)): all four tests together use about a third of the plywood of one Base (9.9 of 30.1 sq ft).
 
 ## Set up your shop once
 
@@ -450,7 +450,8 @@ All four come to 9.9 sq ft of parts: under two thirds of one 4 x 4 sheet, agains
 2. Click **Add the … to the model**. The test goes beside the model as its own assembly, named like **Test cuts · Mini drawer**, on the tag **Test cuts**, in one undo step. Its parts are on the cabinet's materials (Cabinet plywood, Drawer box plywood and so on), so they nest on the same sheets. The selection stays where it was, so the panel keeps the cabinet it was showing.
 
 A test nests with everything else in the model. To choose:
-- **Only the tests:** hide the cabinets and base frames (select them in the Outliner, right-click, **Hide**), then tick **Visible only** at the top of the Cut list. Nesting and **CNC files** then take only what is shown. Show the cabinets again afterwards.
+- **One test alone** (the joint ladders for the real sheets, say): hide the cabinets, the base frames and the other tests (select them in the Outliner, right-click, **Hide**), then tick **Visible only** at the top of the Cut list. Nesting and **CNC files** then take only what is shown. Show the rest again afterwards.
+- **A test cut from MDF:** its parts are on the cabinet's plywood materials, so they nest on your plywood sheets. In **Stock…** add your MDF sheet at its measured thickness, then select the test's rows in the Cut list (**By assembly** puts them under the test's name), right-click, **Stock / material…**, and pick the MDF sheet.
 - **Only the cabinets:** in the Tags pane, click the eye of **Test cuts**, and tick **Visible only**.
 
 With **Visible only** off, hidden parts are nested too. A test is not rebuilt when the settings change: delete it and add it again.
@@ -459,17 +460,19 @@ With **Visible only** off, hidden parts are nested too. A test is not rebuilt wh
 
 A 4 in (100 mm) square of carcass stock, cut out by its outside profile, with a slot one bit wide and 2 in (50 mm) long, cut in one pass, 1/8 in (3 mm) deep, and a 1 1/4 in (30 mm) square pocket 1/4 in (6 mm) deep. Cut it from any flat scrap at least 5 x 5 in (130 x 130 mm). It is drawn in Cabinet plywood at the carcass thickness, so it nests on that sheet: type the scrap's measured thickness as the CAM job's.
 
-The slot is on a pocket layer of its own (`POCKET_3.18MM`, `POCKET_3MM` in a metric document). Pocket it with your bit: being exactly one bit wide, it is one pass. If the CAM program makes no toolpath for a shape as wide as the tool, cut it as a profile on its centre line.
+The slot is on a pocket layer of its own (`POCKET_3.18MM`, `POCKET_3MM` in a metric document). Pocket it with your bit: being exactly one bit wide, it is one pass. If the CAM program makes no toolpath for a shape as wide as the tool, cut this slot as a profile on its centre line. That is for the slot only: never cut a joint ladder that way, since every dado would come out one bit wide and the pick would mean nothing.
 
 Measure in this order:
 
 | Measure | Expected | If it is off |
 |---|---|---|
 | The slot's width, with calipers | the **Bit diameter**: 0.250 in (6.35 mm); 6 mm in a metric document | The slot is your bit's real cutting width, runout included. Type it as the CAM tool's diameter and as **7 · CNC** > **Bit diameter**, then cut the square again before you judge it. |
-| The square, the side along X and the side along Y (mark which ran along X before you unclamp it) | 4.000 in (101.6 mm); 100 mm | An outside profile cut with a tool diameter typed larger than the bit's comes out larger by the difference: settle the slot first. An axis still off: new steps per mm = old x expected (in mm) / measured (in mm), for that axis. 25.4 times too big or too small: the CAM program's units. |
-| Both diagonals | 5.657 in (143.68 mm); 141.42 mm; the two equal | The axes are not square. Each 0.1 mm between the diagonals is 0.033 in (0.85 mm) out of square across a 4 ft sheet (0.86 mm at 100 mm): square the gantry as the machine's manual says. |
+| The square, the side along X and the side along Y (mark which ran along X before you unclamp it) | 4.000 in (101.6 mm); 100 mm | For gross errors only. 25.4 times too big or too small: the CAM program's units. Several millimetres off: the CAM job's units or scale, or the machine (its belts or drive); check them with your machine maker's support documents (Carbide 3D's for a Shapeoko). An outside profile cut with a tool diameter typed larger than the bit's comes out larger by the difference, so settle the slot first. A small difference at 100 mm is measurement and the bit's deflection, not scale: do not change the machine's calibration from it. |
+| Both diagonals | 5.657 in (143.68 mm); 141.42 mm; the two equal | Unequal by clearly more than you can measure: the axes are not square. Each 0.1 mm between the diagonals is 0.033 in (0.85 mm) out of square across a 4 ft sheet (0.86 mm at 100 mm): square the machine as its maker's documents say. |
 | The pocket's depth, with a depth gauge from the top face | 0.250 in (6.35 mm); 6 mm | Z zero. Zero Z on the top of the stock for pockets, or, with Z zeroed on the bed, type the stock's measured thickness in the CAM job: a depth off by x means a thickness off by x. |
 | The slot's depth | 0.125 in (3.18 mm); 3 mm | As the pocket. |
+
+**The scale on a long cut.** A 100 mm part cannot show a scale error smaller than you can measure on it. To check the scale, measure a cut of 500 mm or more against the file: the mini drawer's sides are your cabinet's depth (23 1/4 in, 590.55 mm, with the starting sizes), and its measurement table lists their length.
 
 The squareness figure is geometry: the difference between the diagonals of a square, divided by a diagonal, is how far out of square the axes are per unit of length.
 
@@ -480,23 +483,27 @@ One coupon per joint whose stock differs:
 | Coupon | Cut from | Tried with | Dados | Made when |
 |---|---|---|---|---|
 | Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados |
-| Back groove ladder | the carcass sheet | a piece of the back plywood | the back stock plus each step, **Groove depth** deep | **Back** is In a groove and **Back inset** is not 0 (at 0 the groove is a rabbet: nothing to fit) |
+| Back groove ladder | the carcass sheet | a piece of the back plywood | the back stock plus each step, **Groove depth** deep | **Back** is In a groove and the back's inset from the rear edge is not 0: **Back inset**, or with **Rear nailers** at least the nailer's thickness plus the clearance, so never 0 (at 0 the groove is a rabbet: nothing to fit) |
 | Drawer bottom ladder | the drawer box sheet | a piece of the back plywood | the back stock plus each step, half the box stock deep, at most 1/4 in, as the drawer's groove | always |
 
 Each has five dados at five clearances a step apart: one under **Joint clearance** and three over it, 0.004 in apart in an inch document (0.004, 0.008, 0.012, 0.016, 0.020 in at the starting 0.008) and 0.1 mm apart in a metric one (0.1 to 0.5 mm at the starting 0.2), moved to stay within the panel's 0 to 1 mm. The panel lists every dado's clearance and width.
 
-The labels are on the LABELS layer, which is not cut, so the wood names each dado: the dados run 2 in (50 mm) in from the coupon's rear edge and stop behind a strip, and in front of dado *k* are *k* round dimples, 1 mm wider than the bit and 2 mm deep. Dado 3 is the one with three dimples whichever way the coupon lies. The dimples are on a drill layer of their own (`DRILL_D7.35MM_2MM` with a 1/4 in bit, `DRILL_D7MM_2MM` with a 6 mm one): drill them with the same bit, or pocket them.
+The labels are on the LABELS layer, which is not cut, so the wood names each dado: the dados run 2 in (50 mm) in from the coupon's rear edge and stop behind a strip, and in front of dado *k* are *k* round dimples, 1 mm wider than the bit and 2 mm deep. Dado 3 is the one with three dimples whichever way the coupon lies. The dimples are on a drill layer of their own (`DRILL_D7.35MM_2MM` with a 1/4 in bit, `DRILL_D7MM_2MM` with a 6 mm one): drill them with the same bit, or pocket them. Where a dado would be as wide as a dimple, the dimples are made a little wider than the widest dado instead.
+
+**The bit for each ladder.** A dado narrower than **Bit diameter** cannot be cut with that bit, as **8 · Cuts and holes** says for the cabinet's own grooves (**Change bit**). With the starting inch sizes the back groove and drawer bottom ladders' dados are 0.223 to 0.239 in wide, under a 1/4 in bit. The panel names each such ladder and the bit it needs ("narrower than 0.223 in (dado 1): 1/8 in (3 mm) is"). Cut their pocket layers with that smaller end mill, its diameter typed in the CAM program, as pockets.
 
 1. Cut the ladders from the real sheets, as the cabinets will be cut.
 2. Slide the mating stock into each dado. Under **Which dado fits**, pick for each ladder the dado it goes into with hand pressure: no mallet, no wobble.
-3. When the ladders agree, click **Set Joint clearance to …**. With a cabinet selected it goes to that cabinet, rebuilt with it in one undo step; with none, to new cabinets. Cabinets already made keep their own: select each and set it in **7 · CNC**.
+3. When the ladders agree, click **Set Joint clearance to …**. With a cabinet selected it goes to that cabinet, rebuilt with it in one undo step; with none, to new cabinets. Cabinets already made keep their own: select each and set it in **7 · CNC**. A cabinet that is not rebuilt from the panel (made by an older version, scaled by hand), or whose rebuild the generator refuses at that clearance, keeps its build, and the message says so and why.
+
+**A dado that fit is a width.** Each pick names a dado by the width it was cut at, and the clearance is that width less the mating stock as **4 · Materials** says now. Measure a sheet again and retype it, and the clearance follows: a dado cut 23/32 + 0.012 = 0.731 in wide that fits is a clearance of 0.006 in over a carcass retyped as 0.725 in. The panel says when a stock has changed since the ladders were cut. A clearance under 0 or over 1 mm is held to the panel's limit and said as a warning: measure the sheet again.
 
 What else the ladders say:
-- **They disagree** (the dado ladder fits at 0.012 in, the back's at 0.008): one clearance serves every dado and groove, so the difference is in the stock. Measure the sheets again, type what they measure in **4 · Materials**, and cut the ladders again. The two back-plywood ladders try the same stock in grooves of the same widths, so they should agree; when they do not, look at the two jobs' groove toolpaths.
+- **They disagree** (the dado ladder fits at 0.012 in, the back's at 0.008): one clearance serves every dado and groove, so the difference is in the stock. Measure the sheets again, type what they measure in **4 · Materials**, and cut the ladders again. The two back-plywood ladders try the same stock in grooves of the same widths, so they should agree; when only those two disagree, the panel points at the two jobs' groove toolpaths (the bit, its diameter in the CAM program, Z zero), not the stock.
 - **All too tight** or **All loose**: the sheet is thicker or thinner than you typed by more than the steps reach. Measure it again and cut the ladder again.
 - **Every dado wider (or narrower) than listed by the same amount**: the bit is not the size the CAM program thinks (the machine check's slot).
 
-The clearances of the last ladders added are kept in the document, so a pick names the dado that was cut even after the clearance has changed; the panel says when the ladders in the model were cut at other steps than Add would make now.
+The last ladders added are kept in the document as cut (each dado's width and the mating stock then), with the assembly they were added as. A pick names the dado that was cut even after the clearance or the stock has changed; the panel says when the ladders in the model were cut at other steps than Add would make now. Undo the Add or delete the ladders, and the picks no longer name them: the panel says no ladders were added and names the dados Add would make.
 
 ### Mini drawer
 
@@ -508,7 +515,8 @@ One drawer with your cabinet's runner (with **Length** on Automatic, the one you
 | The drawer box's outside width | as the panel says (the opening less 42 mm, plus two sides) | Tight or loose on the runners: measure the drawer box stock again (**4 · Materials**). |
 | The box's length | the runner's length (Blum Inc.), or the runner less 10 mm (Blum Europe) | The CAM job's scale (the machine check). |
 | The box's height | the opening less Blum's deduction (21 mm for TANDEM 563H), rounded down | |
-| The runner screw holes and rear hook holes | the rows the panel lists, from **8 · Cuts and holes** | X and Y zero, or the scale (the machine check). |
+| Each side's length (a long cut: the machine's scale) | your cabinet's depth | Off by more than you can measure: the CAM job's units or scale, or the machine (its belts or drive); check them with your machine maker's support documents. |
+| The runner screw holes and rear hook holes | the rows the panel lists, from **8 · Cuts and holes** | X and Y zero, or the scale (the machine check). With inset fronts the runner screw holes are listed and not drilled: place the runners by Blum's inset setback, by hand. |
 | The drawer in its runners | runs in and out freely, closes fully, the front's gaps even | Fit the locking devices and adjust them as Blum's instructions say. |
 
 ### Mini door
@@ -520,11 +528,13 @@ One door with your front type (overlay or inset), gap, boring distance, hinge in
 | Each hinge cup's centre from the door's hinge edge | 17.5 mm plus the **Boring distance**: 22.5 mm at 5 mm | The door turned or mirrored in the CAM program, or X and Y zero. |
 | The cups' depth | 13 mm | Z zero or the CAM job's thickness (the machine check). |
 | The cups' centres from the door's ends | **From top, bottom**, unless **8 · Cuts and holes** says one moved to clear a rail | Off at both ends the same way: the door turned end for end. |
-| The mounting plate holes (overlay) | 5 mm, 11.5 mm deep, 32 mm apart, 37 mm from the side's front edge | X and Y zero. |
-| The gap round the closed door | overlay: half the reveal gap at each edge of the cabinet; inset: half the gap all round | Even but wrong (overlay): the boring distance; the Overlay row says which matches. Uneven: the hinges' adjusting screws. |
+| The mounting plate holes (overlay) | 5 mm, 11.5 mm deep, 32 mm apart, 37 mm from the side's front edge. With inset fronts they are listed and not drilled: place the plates by Blum's inset tables | X and Y zero. |
+| The gap round the closed door | where the planned door's edge is: overlay, half the reveal gap at each edge of the cabinet, or more where the hinge cannot reach that far over the side (the panel gives the planned figure); inset, half the gap all round | Even but wrong (overlay): the boring distance; the Overlay row says which matches. Uneven: the hinges' adjusting screws. |
 | The shelf pins | a 5 mm pin pushes in by hand and the shelf sits flat on four | The end mill that bores the 5 mm holes is not the size the CAM program thinks. |
 
-On a door this short the top and bottom hinges are closer together than the door is wide, and **8 · Cuts and holes** marks it **Check**, as Blum asks for more. It moves no cup or plate: they are placed from the door's hinge edge and ends, as on your doors.
+The test door is made tall enough that no hinge cup is moved off its place to clear the other (a cup moved on the test door but not on yours would prove nothing); only when no height it tries (up to 4 ft over the shortest, or your cabinet's height) does that is a moved cup accepted, and the panel's cuts list then says which moved and why. On a door this short the top and bottom hinges are closer together than the door is wide, and **8 · Cuts and holes** marks it **Check**, as Blum asks for more.
+
+The panel's cuts list for the mini drawer and door is the generator's own, with its last column: what is drilled, and what is listed and not drilled (inset hinge plates and runner screws), and why. What a test proves and what to measure follow what is drilled.
 
 ## Parts too big for the bed: the track saw
 
