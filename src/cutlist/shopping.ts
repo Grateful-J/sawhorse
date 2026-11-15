@@ -7,14 +7,22 @@
 //   each of its pieces (`bom`, set on the part in the model), multiplied by the row's quantity.
 //   So a copied cabinet doubles its hardware and a deleted one takes it away. Items with a part
 //   number are added up by part number, the rest by their words; items in metres are banding.
-//   A row left out of the totals (unticked) brings no hardware. An item bought once for the
-//   shop (`once`: a drilling template) is a tool: the most any part asks for, never a sum.
+//   A row left out of the totals (unticked) still brings its hardware unless the shop says
+//   otherwise (`countLeftOut`): a missing hinge is worse than a spare. An item bought once for
+//   the shop (`once`: a drilling template) is a tool: the most any part asks for, never a sum.
+//   A unit this version does not know (from a newer file) is listed as such, never rounded.
+//   A part placed stretched or mirrored keeps the original's hardware, and is named for checking.
 // - Prices are the shop's, not the model's (kept on this device: `shop-store.ts`). A row with no
 //   price is "price not set" and is left out of the total, which says so; never $0.
 // - Bought quantities are rounded up to what can be bought: whole sheets and boards, whole
 //   packs (a pack is 1 piece or 1 pair unless a pack size is set), whole rolls of banding when a
-//   roll length is set. Overage is a percentage per category, added before rounding.
-import type { BomUnit, CutList, Nesting } from "../kernel/types";
+//   roll length is set. Overage is a percentage per category, added to what is needed BEFORE
+//   rounding up, so it only buys more when it reaches past the next whole sheet, pair or pack:
+//   10% on 24 pins in packs of 50 is still one pack. The nesting's sheet count is already whole
+//   and exact, so sheet goods start at 0%.
+// - Each row's cost is rounded to the cent, and the totals add those rounded costs, so the CSV's
+//   columns add up.
+import type { BomUnitRead, CutList, Nesting } from "../kernel/types";
 import { field, withBom } from "./csv";
 
 export type ShopCategory = "sheet" | "lumber" | "banding" | "hardware" | "tools";
@@ -28,12 +36,20 @@ export const SHOP_CATEGORIES: { id: ShopCategory; label: string }[] = [
 ];
 
 /** Overage to start with (percent): assumptions the view states as such, never facts. */
-export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 10, lumber: 20, banding: 15, hardware: 0, tools: 0 };
+export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 0, lumber: 20, banding: 15, hardware: 0, tools: 0 };
+
+/** Why sheet goods start at no overage. */
+export const SHEET_OVERAGE_NOTE = "The nesting's sheet count is exact; add overage for spares or mistakes.";
 
 /** Largest overage accepted (percent). */
 export const MAX_OVERAGE = 500;
 
-export type ShopUnit = "sheet" | "board" | BomUnit;
+export type ShopUnit = "sheet" | "board" | BomUnitRead;
+
+const KNOWN_UNITS = new Set(["sheet", "board", "each", "pair", "m"]);
+/** A unit this version knows how to count and round. */
+export const knownUnit = (u: ShopUnit): boolean => KNOWN_UNITS.has(u);
+export const UNKNOWN_UNIT_NOTE = "unit not known to this version";
 
 export interface ShopRow {
   /** What its price and pack size are kept by: the stock (and material), the part number, or the item's words. */
@@ -54,25 +70,44 @@ export interface ShopRow {
   parts?: { name: string; qty: number }[];
 }
 
+/** A part whose hardware is counted as the original's though a copy of it is placed
+ * stretched (scaled) or mirrored. */
+export interface CheckPart {
+  name: string;
+  why: "scaled" | "mirrored";
+}
+
+export interface ShoppingOptions {
+  /** Count the hardware on parts left out of the cut list's totals (default true). */
+  countLeftOut?: boolean;
+}
+
 export interface ShoppingList {
   rows: ShopRow[];
   /** The nesting was there to read (without it there are no sheet goods or lumber rows). */
   nested: boolean;
   /** Pieces the nesting placed on no stock: in no row. */
   unplaced: number;
-  /** Cut list rows left out of the totals: in no row, and nor is their hardware. */
+  /** Cut list rows left out of the totals: their wood is in no row. */
   excluded: number;
+  /** Of those, the parts whose hardware is counted all the same (`countLeftOut`). */
+  leftOutCounted: string[];
+  /** Parts carrying hardware with copies placed stretched or mirrored. */
+  check: CheckPart[];
 }
 
 /** A hardware item's key: by part number when it has one, else by its words; and its unit. */
-export function itemKey(item: { item: string; sku?: string; unit: BomUnit; once?: boolean }): string {
+export function itemKey(item: { item: string; sku?: string; unit: BomUnitRead; once?: boolean }): string {
   const k = item.sku ? `sku|${item.sku}|${item.unit}` : `item|${item.item.trim().toLowerCase()}|${item.unit}`;
   return item.once ? `${k}|once` : k;
 }
 
 /** The shopping list for a cut list and its nesting (either may be missing). */
-export function shoppingList(list: CutList | null, nesting: Nesting | null): ShoppingList {
+export function shoppingList(list: CutList | null, nesting: Nesting | null, opts: ShoppingOptions = {}): ShoppingList {
+  const countLeftOut = opts.countLeftOut ?? true;
   const rows: ShopRow[] = [];
+  const leftOutCounted: string[] = [];
+  const check: CheckPart[] = [];
   if (nesting) {
     nesting.totals.groups.forEach((g, i) => {
       if (g.count <= 0) return;
@@ -84,7 +119,13 @@ export function shoppingList(list: CutList | null, nesting: Nesting | null): Sho
   }
   const items = new Map<string, ShopRow>();
   for (const row of list?.rows ?? []) {
-    if (row.included === false || row.qty <= 0) continue;
+    if (row.qty <= 0 || !row.bom?.length) continue;
+    if (row.included === false) {
+      if (!countLeftOut) continue;
+      if (!leftOutCounted.includes(row.name)) leftOutCounted.push(row.name);
+    }
+    if ((row.stretched ?? 0) > 0 && !check.some((c) => c.name === row.name && c.why === "scaled")) check.push({ name: row.name, why: "scaled" });
+    if (row.handed > 0 && !check.some((c) => c.name === row.name && c.why === "mirrored")) check.push({ name: row.name, why: "mirrored" });
     for (const b of row.bom ?? []) {
       const key = itemKey(b);
       // A tool is bought once, whatever number of parts ask for it.
@@ -109,7 +150,14 @@ export function shoppingList(list: CutList | null, nesting: Nesting | null): Sho
     nested: !!nesting,
     unplaced: nesting?.totals.unplaced ?? 0,
     excluded: list?.rows.filter((r) => r.included === false).length ?? 0,
+    leftOutCounted,
+    check,
   };
+}
+
+/** What the shopping list says about a part to check. */
+export function checkText(c: CheckPart): string {
+  return c.why === "scaled" ? `${c.name}: scaled copy: hardware counted as the original's; check the hinge count` : `${c.name}: mirrored copy: hardware counted as the original's; check the hinge side`;
 }
 
 // ---- prices -----------------------------------------------------------------------------------
@@ -127,10 +175,13 @@ export interface ShopPrefs {
   currency: string | null;
   /** Labour saved, for fun: hours and an hourly rate. */
   labour: { hours: number | null; rate: number | null };
+  /** Count the hardware on parts left out of the cut list's totals (a missing hinge is worse
+   * than a spare). */
+  countLeftOut: boolean;
 }
 
 export function defaultShopPrefs(currency: string | null = null): ShopPrefs {
-  return { prices: {}, packs: {}, overage: { ...DEFAULT_OVERAGE }, currency, labour: { hours: null, rate: null } };
+  return { prices: {}, packs: {}, overage: { ...DEFAULT_OVERAGE }, currency, labour: { hours: null, rate: null }, countLeftOut: true };
 }
 
 /** Up to the next whole number, shrugging off float noise (10 x 1.1 is 11, not 12). */
@@ -171,7 +222,7 @@ export interface PricedList {
 }
 
 function packOf(row: ShopRow, prefs: ShopPrefs): number | null {
-  if (row.unit === "sheet" || row.unit === "board") return null;
+  if (row.unit === "sheet" || row.unit === "board" || !knownUnit(row.unit)) return null;
   const p = prefs.packs[row.key];
   if (!(typeof p === "number" && Number.isFinite(p) && p > 0)) return null;
   // Pieces and pairs come in whole numbers to a pack.
@@ -181,6 +232,8 @@ function packOf(row: ShopRow, prefs: ShopPrefs): number | null {
 
 /** What is bought for `need` of a row: whole sheets and boards, whole packs or rolls. */
 export function bought(row: ShopRow, need: number, pack: number | null): Bought {
+  // A unit this version does not know: never rounded, as the file says it.
+  if (!knownUnit(row.unit)) return { count: need, amount: need };
   if (row.unit === "sheet" || row.unit === "board") {
     const n = roundUp(need);
     return { count: n, amount: n };
@@ -203,8 +256,11 @@ function perText(row: ShopRow, pack: number | null): string {
       return "bd ft";
     case "m":
       return pack === null ? "m" : `roll of ${trim(pack)} m`;
+    case "each":
+    case "pair":
+      return pack === null || pack === 1 ? row.unit : `pack of ${pack}${row.unit === "pair" ? " pairs" : ""}`;
     default:
-      return pack === null || pack === 1 ? (row.unit === "pair" ? "pair" : "each") : `pack of ${pack}${row.unit === "pair" ? " pairs" : ""}`;
+      return row.unit;
   }
 }
 
@@ -212,9 +268,11 @@ function trim(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
+/** A row's cost, to the cent: the totals add these, so a written list adds up. */
 function costOf(row: ShopRow, b: Bought, price: number): number {
   // Lumber is priced per board foot of the boards bought.
-  return row.unit === "board" ? b.count * (row.boardFeet ?? 0) * price : b.count * price;
+  const c = row.unit === "board" ? b.count * (row.boardFeet ?? 0) * price : b.count * price;
+  return Math.round(c * 100) / 100;
 }
 
 /** Overage clamped to 0..MAX_OVERAGE (a bad value is 0). */
@@ -241,8 +299,9 @@ export function priceList(shop: ShoppingList, prefs: ShopPrefs): PricedList {
   const labour = typeof hours === "number" && typeof rate === "number" && Number.isFinite(hours) && Number.isFinite(rate) && hours >= 0 && rate >= 0 ? hours * rate : null;
   return {
     rows,
-    total: priced.reduce((s, r) => s + r.cost!, 0),
-    totalOver: priced.reduce((s, r) => s + r.costOver!, 0),
+    // In whole cents, so float noise never shows.
+    total: priced.reduce((s, r) => s + Math.round(r.cost! * 100), 0) / 100,
+    totalOver: priced.reduce((s, r) => s + Math.round(r.costOver! * 100), 0) / 100,
     unpriced: rows.filter((r) => r.cost === null),
     labour,
   };
@@ -252,6 +311,7 @@ export function priceList(shop: ShoppingList, prefs: ShopPrefs): PricedList {
 
 /** "3 sheets", "1 pair", "2.35 m". */
 export function amountText(n: number, unit: ShopUnit): string {
+  if (!knownUnit(unit)) return `${trim(n)} ${unit}`;
   const v = unit === "m" ? trim(n) : String(Math.round(n * 1e6) / 1e6);
   if (unit === "m") return `${v} m`;
   const word = unit === "sheet" ? "sheet" : unit === "board" ? "board" : unit === "pair" ? "pair" : "";
@@ -342,7 +402,7 @@ export function shoppingCsv(p: PricedList, prefs: ShopPrefs): string {
       r.cost === null ? "" : money2(r.cost),
       r.costOver === null ? "" : money2(r.costOver),
       (r.parts ?? []).map((x) => `${x.name} (${trim(x.qty)})`).join("; "),
-      [r.saw ? "track saw" : "", r.cost === null ? "left out of the total" : ""].filter(Boolean).join("; "),
+      [r.saw ? "track saw" : "", knownUnit(r.unit) ? "" : UNKNOWN_UNIT_NOTE, r.cost === null ? "left out of the total" : ""].filter(Boolean).join("; "),
     ]);
   }
   if (!p.rows.some((r) => r.category === "banding")) lines.push([label("banding"), "", "", "", "", "", "", "", "", "", "", "", "", BANDING_PLACEHOLDER]);

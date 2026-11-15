@@ -422,6 +422,10 @@ button.chip:hover{border-color:var(--accent)}
 .shop-total span{color:var(--muted);font-size:11px}
 .shopping .note.warn{color:var(--fg);border-left:3px solid var(--warn);padding-left:6px}
 .shop-labour{margin-top:12px;font-size:12px}
+.shopping .amount-err{flex-basis:100%;color:var(--warn);font-size:10.5px}
+.shopping small.warn{color:var(--warn);font-size:10.5px}
+.shopping li[data-stale] .shop-qty,.shopping li[data-stale] .cost{opacity:.55}
+.shopping .shop-leftout{display:flex;gap:6px;align-items:baseline;margin-top:10px;font-size:11.5px}
 .shop-labour small{color:var(--muted)}
 .stock-dialog{width:min(560px,calc(100vw - 32px));top:50%;max-height:calc(100vh - 48px);overflow:auto}
 .stock-dialog header small{color:var(--muted)}

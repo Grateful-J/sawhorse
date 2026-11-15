@@ -16,9 +16,19 @@ import { decimalSteps, formatBoardFeet, formatSteps, GRAIN_WORDS, isMetric, list
 
 export const CSV_TYPE = { description: "Cut list (CSV)", mime: "text/csv", extensions: [".csv"] };
 
-/** One CSV field: quoted when it holds a comma, a quote or a line break. */
+/** A text cell a spreadsheet would run as a formula (=, +, -, @, or a tab or carriage return
+ * first: a part named "=HYPERLINK(...)"), unless it is a plain number or our own text formula
+ * `="3/4"` (`textCell`), which only shows its text. */
+function formulaLike(s: string): boolean {
+  return /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s) && !/^="(?:[^"]|"")*"$/.test(s);
+}
+
+/** One CSV field: a cell that would run as a formula gets a leading ' (shown as text), and a
+ * field with a comma, a quote or a line break is quoted. Every CSV the app writes goes through
+ * here. */
 export function field(v: string | number): string {
-  const s = String(v);
+  let s = String(v);
+  if (formulaLike(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

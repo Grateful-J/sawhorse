@@ -15,7 +15,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const num = (v: unknown, max: number): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
 
 function table(v: unknown, max: number, positive: boolean): Record<string, number> {
-  const out: Record<string, number> = {};
+  // No prototype: a stored key is only ever an own entry; "__proto__" is refused outright,
+  // so a spread of the prices later can never reach an object's prototype.
+  const out = Object.create(null) as Record<string, number>;
   if (!isObj(v)) return out;
   let n = 0;
   for (const [k, x] of Object.entries(v)) {
@@ -41,6 +43,7 @@ export function readShopPrefs(v: unknown, currency: string | null): ShopPrefs {
     overage,
     currency: v.currency === null ? null : (validCurrency(v.currency) ?? currency),
     labour: { hours: num(labour.hours, 100_000), rate: num(labour.rate, MAX_PRICE) },
+    countLeftOut: typeof v.countLeftOut === "boolean" ? v.countLeftOut : d.countLeftOut,
   };
 }
 

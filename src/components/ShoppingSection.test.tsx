@@ -64,12 +64,12 @@ describe("Shopping list section", () => {
     // Banding is a placeholder for now.
     expect(sec.querySelector('[data-category="banding"]')!.textContent).toMatch(/not worked out yet/);
     // Overage defaults are stated as assumptions.
-    expect(screen.getByTestId("shop-assumptions").textContent).toMatch(/10% for sheet goods, 20% for lumber.*assumptions, not facts/);
+    expect(screen.getByTestId("shop-assumptions").textContent).toMatch(/0% for sheet goods \(The nesting's sheet count is exact; add overage for spares or mistakes\), 20% for lumber.*assumptions, not facts/);
   });
 
   it("a price typed is costed with the overage, kept in the prefs, and the total names what it leaves out", () => {
     const spy = vi.fn();
-    render(<Harness spy={spy} />);
+    render(<Harness spy={spy} start={{ ...defaultShopPrefs("USD"), overage: { ...defaultShopPrefs().overage, sheet: 10 } }} />);
     fireEvent.change(screen.getByLabelText("Price per sheet: 4 x 8 sheet, 1/4"), { target: { value: "42.50" } });
     expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ prices: { "sheet|4 x 8 sheet, 1/4|": 42.5 } }));
     const sheet = rowOf("sheet|4 x 8 sheet, 1/4|");
@@ -118,13 +118,85 @@ describe("Shopping list section", () => {
     expect(rowOf(itemKey(HINGE))).toBeTruthy();
   });
 
-  it("reads typed amounts the way people type them", () => {
-    expect(parseAmount("12.50")).toBe(12.5);
-    expect(parseAmount("12,50")).toBe(12.5);
-    expect(parseAmount("$1,234.5")).toBe(1234.5);
-    expect(parseAmount("")).toBeNull();
-    expect(Number.isNaN(parseAmount("abc")!)).toBe(true);
-    expect(Number.isNaN(parseAmount("1.2.3")!)).toBe(true);
+  it("reads typed amounts the locale's way, and refuses what it would have to guess (review M2)", () => {
+    const v = (t: string, l: string) => {
+      const p = parseAmount(t, l);
+      return p.ok ? p.value : `error: ${p.error}`;
+    };
+    expect(v("12.50", "en-US")).toBe(12.5);
+    expect(v("1,250", "en-US")).toBe(1250);
+    expect(v("1,250.50", "en-US")).toBe(1250.5);
+    expect(v("$1,234.5", "en-US")).toBe(1234.5);
+    expect(v("12,345,678", "en-US")).toBe(12345678);
+    expect(v("1.234,50", "de-DE")).toBe(1234.5);
+    expect(v("12,5", "de-DE")).toBe(12.5);
+    expect(v("1.250", "de-DE")).toBe(1250);
+    expect(v("", "en-US")).toBeNull();
+    // Ambiguous for the locale: refused with how to write it, never guessed.
+    expect(v("12,50", "en-US")).toMatch(/^error: Not sure what "12,50" is here: write decimals with "\." and "," only between thousands/);
+    expect(v("12.50", "de-DE")).toMatch(/^error: Not sure what "12\.50" is here: write decimals with ","/);
+    expect(v("1.2.3", "en-US")).toMatch(/^error/);
+    expect(v("abc", "en-US")).toMatch(/^error: Not a number/);
+    expect(v("-4", "en-US")).toBe("error: A price is 0 or more");
+  });
+
+  it("an amount the locale cannot read is refused with its message, not committed", () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    const input = screen.getByLabelText("Price per sheet: 4 x 8 sheet, 1/4");
+    fireEvent.change(input, { target: { value: "1,25" } });
+    expect(spy).not.toHaveBeenCalled();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.parentElement!.querySelector(".amount-err")!.textContent).toMatch(/Not sure what "1,25" is here/);
+    fireEvent.change(input, { target: { value: "1,250" } });
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ prices: { "sheet|4 x 8 sheet, 1/4|": 1250 } }));
+  });
+
+  it("a failed nesting is said even with an older one on screen; stale sheets are marked and the CSV is off (review M1)", () => {
+    render(<Harness problem="The nesting could not be worked out: boom" stale csvBlocked="Nothing was saved: the model changed" onCsv={vi.fn()} />);
+    expect(screen.getByTestId("shop-problem").textContent).toBe("The nesting could not be worked out: boom The sheets and boards below are of the model before that.");
+    const sheet = rowOf("sheet|4 x 8 sheet, 1/4|");
+    expect(sheet.getAttribute("data-stale")).toBe("true");
+    // Hardware is the cut list's, never marked stale here.
+    expect(rowOf(itemKey(HINGE)).getAttribute("data-stale")).toBeNull();
+    const csv = within(screen.getByTestId("shopping")).getByRole("button", { name: "CSV" });
+    expect((csv as HTMLButtonElement).disabled).toBe(true);
+    expect(csv.getAttribute("title")).toBe("Nothing was saved: the model changed");
+    cleanup();
+    // Stale without a failure: said, and the rows marked.
+    render(<Harness stale />);
+    expect(screen.getByTestId("shop-stale").textContent).toMatch(/being worked out again/);
+    expect(rowOf("sheet|4 x 8 sheet, 1/4|").getAttribute("data-stale")).toBe("true");
+    cleanup();
+    render(<Harness />);
+    expect(rowOf("sheet|4 x 8 sheet, 1/4|").getAttribute("data-stale")).toBeNull();
+    expect(screen.queryByTestId("shop-problem")).toBeNull();
+  });
+
+  it("hardware on a part left out of the cut list is counted by default and named; the setting turns it off (review minor 1)", () => {
+    const spy = vi.fn();
+    const l = list();
+    l.rows[0] = { ...l.rows[0], included: false };
+    render(<Harness list={l} spy={spy} />);
+    expect(rowOf(itemKey(HINGE)).textContent).toContain("Needs 4");
+    expect(screen.getByTestId("shop-leftout").textContent).toContain("Hardware counted all the same, on Door.");
+    const box = screen.getByLabelText("Count hardware on parts left out of the cut list") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    fireEvent.click(box);
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ countLeftOut: false }));
+    expect(rowOf(itemKey(HINGE))).toBeNull();
+    expect(screen.getByTestId("shop-leftout").textContent).toContain("Nor is their hardware.");
+  });
+
+  it("a scaled or mirrored copy is named for checking; a unit from a newer file is said (review minor 7, 10)", () => {
+    const l = list();
+    l.rows[0] = { ...l.rows[0], stretched: 1 };
+    l.rows[1] = { ...l.rows[1], bom: [{ item: "Cam lock", qty: 2, unit: "box" }] };
+    render(<Harness list={l} />);
+    expect(screen.getByTestId("shop-check").textContent).toBe("Door: scaled copy: hardware counted as the original's; check the hinge count");
+    const cam = rowOf(itemKey({ item: "Cam lock", unit: "box" }));
+    expect(cam.textContent).toContain("unit not known to this version");
+    expect(within(cam).queryByLabelText(/^Pack size/)).toBeNull();
   });
 
   it("the cut list's Shopping list button opens it", () => {

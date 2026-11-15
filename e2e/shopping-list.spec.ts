@@ -56,7 +56,8 @@ test("the shopping list counts a copied cabinet's hardware and drops a deleted o
   if ((await layoutHead.getAttribute("aria-expanded")) !== "true") await layoutHead.click();
   await page.locator(`[data-panel="${panel}"] [data-field="layout"]`).selectOption("doors");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made Cabinet 1");
+  // The cabinet is in the model (the status line may show the plugin's words or the batch's).
+  await expect.poll(() => tops(page)).toBe(1);
 
   await page.getByRole("tab", { name: "Cut list" }).click();
   await page.locator(".cutlist .btnrow").getByRole("button", { name: "Shopping list ›" }).click();

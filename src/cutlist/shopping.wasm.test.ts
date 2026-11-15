@@ -73,7 +73,8 @@ run("the shopping list through the kernel", () => {
     expect(need(one, p.runner!.part)).toBe(1);
     expect(need(one, "T51.1901 R")).toBe(1);
     expect(need(one, "T51.1901 L")).toBe(1);
-    expect(need(one, "606N")).toBe(4);
+    // Four for the locking devices, two per hinge for the cups: one part number, one row.
+    expect(need(one, "606N")).toBe(4 + 2 * hinges);
     expect(need(one, "662.1150.HG")).toBe(2 * p.runner!.screws.length);
     expect(one.rows.find((r) => r.name === "5 mm shelf pins")!.need).toBe(4);
     expect(one.rows.find((r) => r.sku === "T65.1600.01")).toMatchObject({ category: "tools", need: 1 });
@@ -119,5 +120,24 @@ run("the shopping list through the kernel", () => {
     expect(priced.total).toBe(180);
     expect(priced.unpriced.length).toBe(priced.rows.length - 1);
     expect(priced.unpriced.every((r) => r.cost === null)).toBe(true);
+  }, 60_000);
+
+  it("review M3, M4: exploding a door keeps its hinges; hardware on the whole cabinet is refused", async () => {
+    const m = await mod();
+    const d = m.document_new();
+    const p = plan(applyPreset(defaults(false), "mixed", false), false);
+    const made = JSON.parse(d.apply_named_batch(JSON.stringify(generate(p.parts, "Base 1"))));
+    const cab = made.outcomes[made.outcomes.length - 1].instance as number;
+    const hinges = () => shoppingList(JSON.parse(d.cut_list("{}")) as CutList, null).rows.find((r) => r.sku === "71B3550")?.need ?? 0;
+    expect(hinges()).toBe(4);
+    // On the cabinet (an assembly) it would be counted nowhere: refused, nothing changed.
+    expect(() => d.apply_op(JSON.stringify({ op: "set_bom", part: { node: cab }, bom: [{ item: "Leveling leg", qty: 4, unit: "each" }] }))).toThrow(/holds other parts/);
+    // Explode the left door from inside the cabinet: its hinges go onto its solid.
+    const nodes = (JSON.parse(d.state_json()) as { graph: { nodes: { id: number; parent: number | null; name: string | null }[] } }).graph.nodes;
+    const door = nodes.find((n) => n.parent === cab && n.name === "Left door")!;
+    d.apply_op(JSON.stringify({ op: "set_context", node: cab }));
+    const out = JSON.parse(d.apply_op(JSON.stringify({ op: "explode", node: door.id })));
+    expect(JSON.stringify(out)).toMatch(/Left door's hardware \(5 items\) is now on /);
+    expect(hinges()).toBe(4);
   }, 60_000);
 });
