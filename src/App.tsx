@@ -12,11 +12,12 @@ import { cncSettings, NestingSection } from "./components/NestingSection";
 import { StockDialog } from "./components/StockDialog";
 import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
+import { JOB_SHEET_TYPE, jobFileName, jobSheets, jobSheetText, type JobSheet } from "./nesting/jobsheet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
 import { CNC_BIT, cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingNeeded, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
-import { profileBit } from "./cam/shop";
+import { loadShop, profileBit } from "./cam/shop";
 import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, stampOf, type NestStamp } from "./nesting/exportGuard";
 import { assemblyIndex } from "./lib/assembly";
 import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
@@ -2572,18 +2573,28 @@ export function App() {
         // Every file's text and the hand work list are made before the first save dialog, from
         // the one nesting and the one measurement the questions were asked about.
         const files = n.pieces.map((_, i) => ({ name: cncFileName(cutTitle, n, i, features?.features, ownerOf), text: nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true }) }));
+        // Each file's job sheet, from the same nesting and measurement, saved right after it
+        // under the same name ending in " job.txt", so the two travel together.
+        const jobs = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf).map((js) => ({ name: jobFileName(js.file), text: jobSheetText(js, cutTitle) }));
         const sawSheets = all.pieces.filter((p) => p.saw).length;
         const items = prepared.saw ? handWork(sawShare(all), prepared.saw.measured?.features, nestUnits) : [];
         const hand = prepared.saw ? { parts: items.length, saved: false, note: handWorkNote(prepared.saw.measured) } : null;
         let saved = 0;
+        let jobsSaved = 0;
         let stoppedAt: string | null = null;
-        for (const f of files) {
+        for (const [i, f] of files.entries()) {
           const res = await saveFile(f.name, new TextEncoder().encode(f.text), DXF_TYPE);
           if (!res) {
             stoppedAt = f.name;
             break;
           }
           saved += 1;
+          const job = jobs[i];
+          if (!(await saveFile(job.name, new TextEncoder().encode(job.text), JOB_SHEET_TYPE))) {
+            stoppedAt = job.name;
+            break;
+          }
+          jobsSaved += 1;
         }
         // The track saw's parts with dados and holes: a list of them to do by hand.
         if (stoppedAt === null && hand && items.length) {
@@ -2592,7 +2603,7 @@ export function App() {
         }
         // A save the questions were answered for is not an error: what the files get wrong is
         // in the notes, and was asked about before anything was written.
-        const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets }, cncNotes(all, features, nestUnits));
+        const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets, jobs: jobsSaved }, cncNotes(all, features, nestUnits));
         if (text) setMessage({ text, error: false });
       } catch (e) {
         setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
@@ -2600,14 +2611,35 @@ export function App() {
     },
     [cutTitle, nestUnits, ownerOfItem],
   );
+  // The router's sheets measured for the Nesting section's job sheets: once per nesting of
+  // one model, whichever sheet's job sheet is opened.
+  const jobMeasure = useRef<{ key: string; measured: Promise<MeasuredNest | null> } | null>(null);
+  const jobSheetOf = useCallback(
+    async (piece: StockPiece): Promise<JobSheet | null> => {
+      const n = nesting;
+      if (!n || piece.saw || !n.pieces.includes(piece)) return null;
+      const router = routerShare(n);
+      const key = `${n.hash}:${live.current.scene?.state.stats.hash ?? ""}`;
+      if (jobMeasure.current?.key !== key) jobMeasure.current = { key, measured: measureNesting(router) };
+      const measured = await jobMeasure.current.measured;
+      return jobSheets(n, measured, loadShop(), nestUnits, cutTitle, (q) => ownerOfItem(q.item)).find((js) => js.index === piece.index) ?? null;
+    },
+    [nesting, nestUnits, cutTitle, ownerOfItem, measureNesting],
+  );
   const saveNestPdf = useCallback(async (n: Nesting) => {
     try {
-      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits), PDF_TYPE);
-      if (res) setMessage({ text: `Saved ${res.name}: what to buy, then a page per sheet or board with its diagram and cut sequence.`, error: false });
+      // Each router sheet's job sheet and the part labels, from the router's sheets measured
+      // as CNC files measures them (outlines only when they cannot be).
+      const router = routerShare(n);
+      const measured = router.pieces.length ? await measureNesting(router) : null;
+      const shop = loadShop();
+      const sheets = jobSheets(n, measured, shop, nestUnits, cutTitle, (q) => ownerOfItem(q.item));
+      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, { sheets, prefs: shop.jobs }), PDF_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: what to buy, then a page per sheet or board with its diagram and cut sequence${sheets.length ? ", each router sheet's job sheet, and its part labels at the end" : ""}.`, error: false });
     } catch (e) {
       setMessage({ text: `Could not save the nesting booklet: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [cutTitle, nestUnits]);
+  }, [cutTitle, nestUnits, measureNesting, ownerOfItem]);
 
   const printCut = useCallback(() => {
     const body = document.body;
@@ -3423,6 +3455,7 @@ export function App() {
               handWork={sawWork}
               handWorkNote={sawWorkNote}
               blocked={nestExportBlock}
+              jobSheetOf={jobSheetOf}
             />
           ) : null,
         }}

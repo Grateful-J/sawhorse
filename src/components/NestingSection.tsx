@@ -5,6 +5,8 @@
 // labelled with its tag (hover: its name and size, and the part lights up in the model;
 // click: select it), the cuts in order underneath; and the SVG, DXF and PDF exports.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { onShop } from "../cam/shop";
+import { bitName, orderSummary, stepText, type JobSheet } from "../nesting/jobsheet";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
@@ -49,6 +51,9 @@ export interface NestingSectionProps {
   /** Why no file can be saved from this nesting now (it is not of the model as it is: a new one
    * is being worked out, or could not be). The file buttons are off and say so. */
   blocked?: string | null;
+  /** A router sheet's job sheet (its cuts measured; null when there is none to show). Without
+   * it the sheets have no Job sheet button. */
+  jobSheetOf?: (piece: StockPiece) => Promise<JobSheet | null>;
 }
 
 /** Kerf or trim typed in a field: committed on Enter, on leaving the field, or after a pause. */
@@ -174,6 +179,158 @@ function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: Stoc
   );
 }
 
+/** A router sheet's job sheet, as CNC files writes it beside the sheet's DXF: a box to tick
+ * for each of the file's layers, its bit and feeds, the cut order, the parts. Worked out
+ * again when the nesting or CNC setup changes. The ticks are for this screen only. */
+function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockPiece) => Promise<JobSheet | null> }) {
+  const [js, setJs] = useState<JobSheet | null | undefined>(undefined);
+  const [shopTick, setShopTick] = useState(0);
+  const [ticked, setTicked] = useState<Set<string>>(() => new Set());
+  useEffect(() => onShop(() => setShopTick((t) => t + 1)), []);
+  useEffect(() => {
+    let stale = false;
+    load(piece).then(
+      (r) => !stale && setJs(r),
+      () => !stale && setJs(null),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [piece, load, shopTick]);
+  if (js === undefined) return <p className="note" data-testid="job-sheet">Working out the job sheet…</p>;
+  if (js === null) return <p className="note err" data-testid="job-sheet">No job sheet: this sheet is not one of the router's, or the nesting has changed.</p>;
+  const cut = js.layers.filter((l) => l.cut);
+  const done = cut.filter((l) => ticked.has(l.name)).length;
+  const toggle = (name: string) =>
+    setTicked((t) => {
+      const next = new Set(t);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  return (
+    <section className="job-sheet" data-testid="job-sheet" aria-label={`Job sheet: ${js.number}`}>
+      <dl className="cam-result job-facts">
+        <dt>DXF</dt>
+        <dd data-testid="job-file">{js.file}</dd>
+        <dt>In the file</dt>
+        <dd>{js.label}</dd>
+        <dt>Stock</dt>
+        <dd>{js.stock}</dd>
+        <dt>Thickness</dt>
+        <dd>{js.thickness}</dd>
+        <dt>XY zero</dt>
+        <dd>{js.datum}</dd>
+        <dt>Z zero</dt>
+        <dd>{js.zZero}</dd>
+        <dt>Feeds</dt>
+        <dd>{js.setup}</dd>
+      </dl>
+      {js.notes.length ? (
+        <ul className="cam-warnings" role="alert">
+          {js.notes.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      ) : null}
+      <h5>
+        Layers: {done} of {cut.length} with a toolpath
+      </h5>
+      <p className="note">Every layer except STOCK and LABELS must have a toolpath. Tick each one in your CAM program's layer list as you give it one.</p>
+      <ol className="job-layers">
+        {js.layers.map((l) => (
+          <li key={l.name} data-layer={l.name} data-cut={l.cut ? "true" : "false"} data-fits={l.fits === null ? undefined : String(l.fits)}>
+            <label className="check">
+              <input type="checkbox" checked={ticked.has(l.name)} onChange={() => toggle(l.name)} disabled={!l.cut} aria-label={`${l.name} has its toolpath`} />
+              <b>{l.name}</b> {l.cut ? <small>{`${l.shapes} shape${l.shapes === 1 ? "" : "s"}`}</small> : null}
+            </label>
+            <div className="job-what">{l.toolpath}</div>
+            {l.cut ? (
+              <dl className="job-detail">
+                {l.depth ? (
+                  <>
+                    <dt>Depth</dt>
+                    <dd>{l.depth}</dd>
+                  </>
+                ) : null}
+                <dt>Bit</dt>
+                <dd data-testid="job-bit">{l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : l.toolWhy}</dd>
+                {l.narrowest ? (
+                  <>
+                    <dt>Narrowest</dt>
+                    <dd>
+                      {js.metric ? `${(l.narrowest.width * 1000).toFixed(2)} mm` : `${(l.narrowest.width / 0.0254).toFixed(3)} in (${(l.narrowest.width * 1000).toFixed(2)} mm)`}: <span className="tag">{l.narrowest.tag}</span> {l.narrowest.name}, {l.narrowest.what}
+                    </dd>
+                  </>
+                ) : null}
+                {l.feeds.map((f) => (
+                  <span key={f.label} className="job-feed">
+                    <dt>{f.label}</dt>
+                    <dd>
+                      {f.value}
+                      {f.conf ? <span className="cam-src" data-conf={f.conf} title={f.from}>{f.conf}</span> : null}
+                      {f.from ? <small>{f.from}</small> : null}
+                    </dd>
+                  </span>
+                ))}
+              </dl>
+            ) : null}
+            {l.fitNotes.length || l.warnings.length ? (
+              <ul className="cam-warnings" data-testid="job-warnings">
+                {l.fitNotes.map((t) => (
+                  <li key={t} data-level="fit">
+                    <b>Fit</b> {t}
+                  </li>
+                ))}
+                {l.warnings.map((w, i) => (
+                  <li key={`${w.id}-${i}`} data-warning={w.id} data-level={w.level}>
+                    <b>{w.level === "stop" ? "Stop" : "Check"}</b> {w.text}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      <h5 data-testid="job-order">Cut order: {orderSummary(js)}</h5>
+      <p className="note">Drills and pockets first, cutouts next, profiles last, so the parts stay held down while their inside cuts are made. Layers that share a bit are cut together.</p>
+      <ol className="job-order">
+        {js.order.map((st, k) => (
+          <li key={k} data-change={st.change ? "true" : undefined}>
+            {st.secondSetup ? <small>Second setup: turn the parts over.</small> : st.change ? <small>Change the bit.</small> : null}
+            {stepText(st, k, js.metric).replace(/^\d+\. /, "")}
+          </li>
+        ))}
+      </ol>
+      {js.unordered.length ? <p className="note err">Not in the order, no bit: {js.unordered.join(", ")}.</p> : null}
+      <h5>Parts, smallest first</h5>
+      <p className="note">{js.holdDown}</p>
+      <ul className="job-parts">
+        {js.parts.map((q) => (
+          <li key={q.tag} data-hold={q.holdDown ? "true" : undefined}>
+            {q.holdDown ? <b className="job-hold">Hold down</b> : null} <span className="tag">{q.tag}</span> {q.name}
+            {q.cabinet ? ` (${q.cabinet})` : ""}: {q.size}
+            <small>Face up: {q.faceUp}</small>
+          </li>
+        ))}
+      </ul>
+      {js.flip.length ? (
+        <>
+          <h5>FLIP_ layers</h5>
+          {js.flip.map((t) => (
+            <p key={t} className="note">
+              {t}
+            </p>
+          ))}
+        </>
+      ) : null}
+      {js.compression ? <p className="note job-compression">{js.compression}</p> : null}
+      {js.saw ? <p className="note">{js.saw}</p> : null}
+      <small className="note">CNC files saves this beside the sheet's DXF as a text file (the same name, ending in job.txt), and the PDF has it after the sheet's page, with the part labels at the end.</small>
+    </section>
+  );
+}
+
 /** "2 pockets, 12 holes" for a track saw part's hand work. */
 export function handWorkCounts(w: HandWork): string {
   const plural = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
@@ -192,6 +349,8 @@ export function NestingSection(p: NestingSectionProps) {
   const n = p.nesting;
   // The part last clicked in a diagram: its grain can be set under that diagram.
   const [picked, setPicked] = useState<string | null>(null);
+  // The router sheet whose job sheet is open (its number in the nesting), if any.
+  const [jobFor, setJobFor] = useState<number | null>(null);
   const r = p.rounding;
   const s = n ? nestSummary(n, r) : null;
   const settings = n?.settings;
@@ -361,7 +520,20 @@ export function NestingSection(p: NestingSectionProps) {
                   {pieceYield(piece, r)}
                   {piece.guillotine ? "" : " · not all straight cuts"}
                 </small>
+                {p.jobSheetOf && !piece.saw ? (
+                  <button
+                    type="button"
+                    className="linkish"
+                    data-action="job-sheet"
+                    aria-expanded={jobFor === piece.index}
+                    onClick={() => setJobFor(jobFor === piece.index ? null : piece.index)}
+                    title="What to set in the CAM program for this sheet: each layer's toolpath, bit and feeds, the cut order, the parts and which face is up"
+                  >
+                    Job sheet
+                  </button>
+                ) : null}
               </figcaption>
+              {p.jobSheetOf && jobFor === piece.index && !piece.saw ? <JobSheetView piece={piece} load={p.jobSheetOf} /> : null}
               <PieceDiagram
                 piece={piece}
                 rounding={r}

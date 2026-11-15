@@ -109,6 +109,8 @@ export interface CncSaveReport {
   hand: { parts: number; saved: boolean; note: string | null } | null;
   /** How many of the nesting's sheets the track saw cuts. */
   sawSheets: number;
+  /** The job sheets written beside the files (one per file; absent: none were asked for). */
+  jobs?: number;
 }
 
 /** The status line after CNC files: what was written and, in words, what was not. Never
@@ -122,6 +124,7 @@ export function cncSaveMessage(r: CncSaveReport, notes: string[]): string | null
     return "No CNC files were saved: the first save was cancelled.";
   } else {
     said.push(`${savedCount(r.saved, r.total)} (one per sheet, millimetres, origin at the lower-left corner).`);
+    if (r.jobs !== undefined) said.push(r.jobs >= r.saved ? `${r.saved === 1 ? "It has its" : "Each has its"} job sheet beside it (the same name, ending in job.txt).` : `${r.jobs} of their ${r.saved} job sheets ${r.jobs === 1 ? "was" : "were"} saved.`);
     if (left > 0) said.push(`${left} ${left === 1 ? "sheet was" : "sheets were"} not saved${r.stoppedAt ? `, from ${r.stoppedAt} on` : ""}${r.hand && r.hand.parts ? ", nor the track saw's hand work list" : ""}: save again for the rest.`);
   }
   if (r.hand && left === 0) {
