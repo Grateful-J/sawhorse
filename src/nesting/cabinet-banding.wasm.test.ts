@@ -8,7 +8,7 @@
 // - Off, nothing changes: the same DXF to the byte.
 // - The shopping list counts the band by the metre.
 // Every starting point, inch and metric, overlay and inset, Blum Inc. and Blum Europe, with
-// bands of 0.45, 1, 2 and 3 mm. Needs `npm run wasm`; skipped without the kernel unless
+// bands of 0.018 in, 1, 2 and 3 mm. Needs `npm run wasm`; skipped without the kernel unless
 // REQUIRE_KERNEL is set.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -17,7 +17,7 @@ import DxfParser from "dxf-parser";
 import { applyPreset, defaults, EDGE_AXES, flatImportOp, importOp, MATERIALS, plan, PRESETS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
 import type { CutList, DocState, FaceInfo, Nesting, V3 } from "../kernel/types";
 import { cncSettings } from "../components/NestingSection";
-import { boxOf, cutKeys, cutsDiffer, overlap, type Box, type P3, type WorldFace } from "../plugins/bandingProof";
+import { boxOf, cutKeys, cutsDiffer, holeCentres, overlap, type Box, type P3, type WorldFace } from "../plugins/bandingProof";
 import { defaultShopPrefs, itemKey, priceList, shoppingList } from "../cutlist/shopping";
 import { nestingDxf } from "./dxf";
 import { measureNest } from "./measure";
@@ -66,7 +66,8 @@ function readCabinets(d: Doc, at: Map<string, number>): Map<string, Read> {
           const rings = JSON.parse(d.outline("face", o.id, f.id)) as V3[][];
           // The outer ring: the one that spans the most.
           const outer = rings.reduce((a, r) => (boxSpan(r) > boxSpan(a) ? r : a), rings[0]);
-          faces.push({ normal: f.normal as P3, points: outer.map((p) => [p[0] - dx, p[1], p[2]] as P3) });
+          const local = (r: V3[]) => r.map((p) => [p[0] - dx, p[1], p[2]] as P3);
+          faces.push({ normal: f.normal as P3, points: local(outer), holes: rings.filter((r) => r !== outer).map(local) });
         }
       }
       parts.set(child.name ?? child.label, { faces, box: boxOf(faces.flatMap((f) => f.points)) });
@@ -89,8 +90,8 @@ function expectedEdges(name: string): (keyof typeof EDGE_AXES)[] {
   return [];
 }
 
-const SIZES = ["0.45", "1", "2", "3"] as const;
-const THICK = { "0.45": 0.45 * MM, "1": 1 * MM, "2": 2 * MM, "3": 3 * MM };
+const SIZES = ["0.018in", "1", "2", "3"] as const;
+const THICK = { "0.018in": 0.018 * IN, "1": 1 * MM, "2": 2 * MM, "3": 3 * MM };
 
 /** A cabinet as the plugin makes it, and the same with each band: the boring distance 6 mm, so a
  * 3 mm band on the doors leaves 3 mm of wood beside the cups. */
@@ -120,11 +121,13 @@ async function dxfOf(parts: Part[], name: string, metric: boolean) {
 
 run("edge banding through the kernel", () => {
   // One test per starting point and unit: each overlay and inset, Blum Inc. and Blum Europe,
-  // with bands of 0.45, 1, 2 and 3 mm.
+  // with bands of 0.018 in, 1, 2 and 3 mm.
   for (const metric of [false, true]) {
     for (const p of PRESETS) {
       it(`${p.label} (${metric ? "metric" : "inch"}): every hole, dado and notch at its unbanded place, and each blank plus its bands the unbanded part`, async () => {
         let compared = 0;
+        let cuts = 0;
+        let holes = 0;
         for (const front of ["overlay", "inset"] as const) {
           for (const catalog of ["us", "eu"] as const) {
             // A document each: the kernel's import slows as a document fills. The cabinet, then
@@ -150,7 +153,15 @@ run("edge banding through the kernel", () => {
                 const was = plain.get(name)!;
                 // Every cut where it was.
                 const clip = overlap(was.box, part.box);
-                expect(cutsDiffer(cutKeys(was.faces, clip), cutKeys(part.faces, clip)), `${label} ${name}`).toBeNull();
+                const ka = cutKeys(was.faces, clip);
+                expect(cutsDiffer(ka, cutKeys(part.faces, clip)), `${label} ${name}`).toBeNull();
+                // Never compared blank: every carcass side has its dados and holes to compare.
+                if (/side$/.test(name)) expect(ka.length, `${label} ${name}`).toBeGreaterThan(0);
+                cuts += ka.length;
+                // Every hole, read from its own ring, at its unbanded place on both axes of its face.
+                const ha = holeCentres(was.faces);
+                expect(cutsDiffer(ha, holeCentres(part.faces)), `${label} ${name} holes`).toBeNull();
+                holes += ha.length;
                 // The blank plus the bands, on the edges it should have them, is the part unbanded.
                 const edges = expectedEdges(name);
                 for (let k = 0; k < 3; k++) {
@@ -166,6 +177,9 @@ run("edge banding through the kernel", () => {
         }
         // Four cabinets, four bands each, every part of each (a cabinet has at least 8 parts).
         expect(compared).toBeGreaterThanOrEqual(4 * 4 * 8);
+        expect(cuts).toBeGreaterThan(4 * 4 * 100);
+        // Every cabinet drills holes: shelf pins, plates, cups, runner screws or pull holes.
+        expect(holes).toBeGreaterThan(4 * 4 * 4);
       }, 300_000);
     }
   }
