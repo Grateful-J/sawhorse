@@ -218,7 +218,7 @@ export const RUNNERS_EU = {
 export const runnerLine = (s) => (s.catalog === "eu" ? RUNNERS_EU : RUNNERS)[s.slides];
 
 /** Blum drawer rules shared by both runners (mm). */
-const BLUM = {
+export const BLUM = {
   insideDeduct: 42,
   bottomRecess: 13,
   minInside: 170,
@@ -233,7 +233,7 @@ const BLUM = {
 /** CLIP top: a 35 mm cup 13 mm deep; its centre is 17.5 mm plus the boring distance (3 to 7,
  * Blum's default 4.5) from the hinge edge. System 32 mounting plates sit 37 mm back with their
  * two screws 32 apart. */
-const CUP = { dia: 35, depth: 13, radius: 17.5, minK: 3, maxK: 7, plateSetback: 37, plateSpacing: 32 };
+export const CUP = { dia: 35, depth: 13, radius: 17.5, minK: 3, maxK: 7, plateSetback: 37, plateSpacing: 32 };
 /** CLIP top 110, straight arm, frameless (Blum Inc. hinge catalog (c) 2021 p. 12): overlay = 11 +
  * boring distance - plate height, on plates of 0, 3, 6 or 9 mm (4.5 is for face frames only);
  * the front screw moves the door 2 mm either way (hinge catalog (c) 2016 p. 10). */
@@ -255,12 +255,12 @@ const MAX_LEAF = 36 * IN;
 /** A mounting plate's half height plus clearance: it must not sit across a rail or a shelf. */
 const PLATE_HALF = 26 * MM;
 /** The least wood left between a drilled hole and a cut or an edge. */
-const WEB = 3 * MM;
+export const WEB = 3 * MM;
 /** System 32 screw holes for runners (5 mm, for Blum system screws). */
 const SYS = { dia: 5, depth: 13 };
 /** Hinge mounting plate holes: Blum draws them 5 mm, 11.5 deep, for the plate's pre-mounted
  * system screws (173L8100, 175L8100 ...; the 173L6100 family takes wood screws instead). */
-const PLATE_HOLE = { dia: 5, depth: 11.5 };
+export const PLATE_HOLE = { dia: 5, depth: 11.5 };
 /** A rail's tongue stops this short of the bottom of its dado, so the shoulders close. */
 const RELIEF = 0.5 * MM;
 /** Panels in grooves (backs, drawer bottoms) are this much smaller per edge than groove to groove. */
@@ -269,7 +269,7 @@ const PANEL_GAP = (1 / 32) * IN;
  * door's bumpers, so the door closes on the cabinet and not on the shelf. */
 const DOOR_ROOM = 3 * MM;
 /** Shelf pin holes: 5 mm, 10 deep, on the System 32 grid (37 from the front, 32 apart). */
-const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
+export const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
 /** Pin holes stop this far from the bottom and top of the space they serve. */
 const PIN_END = 64 * MM;
 /** Pin holes around each shelf's place: this many each side of it, 32 mm apart (+-64 mm). */
@@ -609,7 +609,7 @@ export function binRoom(s, metric) {
 }
 
 /** @param {Sizes} s @param {boolean} metric */
-function validate(s, metric) {
+export function validate(s, metric) {
   const t = s.thickness;
   /** A least value in the document's units: inches (with its text) or millimetres.
    * @param {number} inches @param {string} inText @param {number} mms */
@@ -772,7 +772,7 @@ function openings(s) {
  * the hole. On a blank face only (every hole here is): the mesh needs the face flat round it.
  * @param {V3} size @param {Prism[]} prisms @param {Hole} hole
  */
-function holeClear(size, prisms, hole) {
+export function holeClear(size, prisms, hole) {
   const a = hole.axis;
   const axes = [0, 1, 2].filter((k) => k !== a);
   const r = hole.radius;
