@@ -154,9 +154,117 @@ impl Grain {
     }
 }
 
+/// How a bill-of-materials item is counted and bought.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
+pub enum BomUnit {
+    /// One by one (a hinge, a pull).
+    Each,
+    /// Sold in pairs (a runner set, a left and right locking device).
+    Pair,
+    /// Metres (edge banding).
+    M,
+}
+
+impl BomUnit {
+    fn code(self) -> u64 {
+        match self {
+            BomUnit::Each => 0,
+            BomUnit::Pair => 1,
+            BomUnit::M => 2,
+        }
+    }
+}
+
+/// Most bill-of-materials items one part carries.
+pub const MAX_BOM_ITEMS: usize = 32;
+/// Longest item description (characters).
+pub const MAX_BOM_ITEM_CHARS: usize = 128;
+/// Longest part number (characters).
+pub const MAX_BOM_SKU_CHARS: usize = 64;
+/// Most of one item one part takes (pieces, pairs or metres).
+pub const MAX_BOM_QTY: f64 = 10_000.0;
+
+/// One thing bought for a part, beyond its wood (the shopping list): a hinge, a runner pair, shelf pins,
+/// a length of edge banding. It rides on the part, so the shopping list counts it once per
+/// piece of the part: a copied cabinet doubles its hardware, a deleted one takes it away.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct BomItem {
+    /// What it is, in words ("Blum CLIP top 110° hinge, full overlay"), 1 to 128 characters.
+    pub item: String,
+    /// The maker's part number, 1 to 64 characters; absent when none is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sku: Option<String>,
+    /// How many per piece of the part, in `unit`s: more than 0 and at most 10,000; a whole
+    /// number for `each` and `pair`.
+    pub qty: f64,
+    pub unit: BomUnit,
+}
+
+impl BomItem {
+    /// Why this item cannot be kept, or `None`.
+    pub fn problem(&self) -> Option<String> {
+        let item = self.item.trim();
+        if item.is_empty() || item != self.item {
+            return Some("an item needs a description, with no space at either end".into());
+        }
+        if self.item.chars().count() > MAX_BOM_ITEM_CHARS {
+            return Some(format!(
+                "an item's description is over {MAX_BOM_ITEM_CHARS} characters"
+            ));
+        }
+        if let Some(s) = &self.sku
+            && (s.trim().is_empty() || s.trim() != s || s.chars().count() > MAX_BOM_SKU_CHARS)
+        {
+            return Some(format!(
+                "{:?}: a part number must be 1 to {MAX_BOM_SKU_CHARS} characters, with no space at either end",
+                self.item
+            ));
+        }
+        if !(self.qty.is_finite() && self.qty > 0.0 && self.qty <= MAX_BOM_QTY) {
+            return Some(format!(
+                "{:?}: the quantity must be more than 0 and at most {MAX_BOM_QTY}",
+                self.item
+            ));
+        }
+        if self.unit != BomUnit::M && self.qty.fract() != 0.0 {
+            return Some(format!(
+                "{:?}: a quantity counted each or in pairs must be a whole number",
+                self.item
+            ));
+        }
+        None
+    }
+
+    fn hash_into(&self, h: &mut StableHasher) {
+        h.tag(&self.item);
+        match &self.sku {
+            Some(s) => h.tag(s),
+            None => h.u64(u64::MAX),
+        }
+        h.u64(self.qty.to_bits());
+        h.u64(self.unit.code());
+    }
+}
+
+/// Why a part's bill-of-materials list cannot be kept, or `None`.
+pub fn bom_problem(bom: &[BomItem]) -> Option<String> {
+    if bom.len() > MAX_BOM_ITEMS {
+        return Some(format!(
+            "a part carries at most {MAX_BOM_ITEMS} items, not {}",
+            bom.len()
+        ));
+    }
+    bom.iter().find_map(BomItem::problem)
+}
+
 /// What a person said about a part, beyond its geometry: grain and stock. Stored on a
 /// component definition, a group, or a solid (and carried into a definition's members).
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PartAttrs {
     /// Grain direction; absent: along the length.
@@ -174,6 +282,10 @@ pub struct PartAttrs {
     /// nesting (it stays listed, marked, so it can be taken back); absent: included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include: Option<bool>,
+    /// The shopping list: what is bought for each piece of the part beyond its wood (hardware, edge
+    /// banding); empty: nothing. Written only when not empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bom: Vec<BomItem>,
 }
 
 impl PartAttrs {
@@ -195,6 +307,14 @@ impl PartAttrs {
         if let Some(i) = self.include {
             h.tag("include");
             h.u64(u64::from(i));
+        }
+        // The shopping list's items, hashed only when there are any, for the same reason.
+        if !self.bom.is_empty() {
+            h.tag("bom");
+            h.usize(self.bom.len());
+            for b in &self.bom {
+                b.hash_into(h);
+            }
         }
     }
 
@@ -419,6 +539,10 @@ pub struct CutRow {
     pub board_feet: f64,
     /// Area of the counted pieces (sheet goods; 0 for lumber), m², from the exact sizes.
     pub area_m2: f64,
+    /// What is bought for each piece beyond its wood ([`PartAttrs::bom`]): the shopping list
+    /// multiplies it by `qty`. Left out when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bom: Vec<BomItem>,
     /// Every piece, counted or not.
     pub occurrences: Vec<Occurrence>,
 }
@@ -1583,6 +1707,7 @@ impl Model {
                 sheet_set: attrs.sheet.is_some(),
                 board_feet,
                 area_m2,
+                bom: attrs.bom.clone(),
                 occurrences: idx
                     .iter()
                     .map(|&i| Occurrence {
@@ -1740,6 +1865,14 @@ impl CutList {
             match &r.material {
                 Some(m) => h.tag(m),
                 None => h.u64(u64::MAX),
+            }
+            // The shopping list's items, only when there are any: every older list keeps its hash.
+            if !r.bom.is_empty() {
+                h.tag("bom");
+                h.usize(r.bom.len());
+                for b in &r.bom {
+                    b.hash_into(&mut h);
+                }
             }
             h.usize(r.occurrences.len());
             for o in &r.occurrences {
@@ -1920,5 +2053,110 @@ mod tests {
                 assert!(ax[i].dot(ax[j]).abs() < 1e-9);
             }
         }
+    }
+
+    fn item(item: &str, sku: Option<&str>, qty: f64, unit: BomUnit) -> BomItem {
+        BomItem {
+            item: item.into(),
+            sku: sku.map(str::to_string),
+            qty,
+            unit,
+        }
+    }
+
+    #[test]
+    fn a_bom_item_is_checked_before_it_is_kept() {
+        let good = [
+            item("Shelf pin, 5 mm", None, 4.0, BomUnit::Each),
+            item(
+                "Blum TANDEM 563H runners",
+                Some("563H5330B"),
+                1.0,
+                BomUnit::Pair,
+            ),
+            item("Edge banding", None, 2.35, BomUnit::M),
+            item(
+                &"x".repeat(MAX_BOM_ITEM_CHARS),
+                Some(&"9".repeat(MAX_BOM_SKU_CHARS)),
+                MAX_BOM_QTY,
+                BomUnit::Each,
+            ),
+        ];
+        for g in &good {
+            assert_eq!(g.problem(), None, "{g:?}");
+        }
+        assert_eq!(bom_problem(&good), None);
+        let bad = [
+            item("", None, 1.0, BomUnit::Each),
+            item("   ", None, 1.0, BomUnit::Each),
+            item(" Hinge", None, 1.0, BomUnit::Each),
+            item(
+                &"x".repeat(MAX_BOM_ITEM_CHARS + 1),
+                None,
+                1.0,
+                BomUnit::Each,
+            ),
+            item("Hinge", Some(""), 1.0, BomUnit::Each),
+            item("Hinge", Some("71B3550 "), 1.0, BomUnit::Each),
+            item(
+                "Hinge",
+                Some(&"9".repeat(MAX_BOM_SKU_CHARS + 1)),
+                1.0,
+                BomUnit::Each,
+            ),
+            item("Hinge", None, 0.0, BomUnit::Each),
+            item("Hinge", None, -2.0, BomUnit::Each),
+            item("Hinge", None, f64::NAN, BomUnit::Each),
+            item("Hinge", None, f64::INFINITY, BomUnit::M),
+            item("Hinge", None, MAX_BOM_QTY + 1.0, BomUnit::Each),
+            item("Hinge", None, 1.5, BomUnit::Each),
+            item("Runners", None, 0.5, BomUnit::Pair),
+        ];
+        for b in &bad {
+            assert!(b.problem().is_some(), "{b:?} was kept");
+        }
+        let many = vec![item("Shelf pin", None, 1.0, BomUnit::Each); MAX_BOM_ITEMS + 1];
+        assert!(bom_problem(&many).unwrap().contains("at most 32"));
+        assert_eq!(bom_problem(&many[..MAX_BOM_ITEMS]), None);
+    }
+
+    #[test]
+    fn a_bom_is_written_only_when_there_is_one() {
+        let empty = PartAttrs::default();
+        assert!(empty.is_default());
+        assert_eq!(serde_json::to_string(&empty).unwrap(), "{}");
+        // An empty list, and a file without one, read as nothing said.
+        let read: PartAttrs = serde_json::from_str(r#"{"bom":[]}"#).unwrap();
+        assert!(read.is_default());
+        // A field a newer writer adds is ignored, and nothing else is lost.
+        let read: PartAttrs = serde_json::from_str(r#"{"grain":"width","bom":[{"item":"Shelf pin","qty":4,"unit":"each","colour":"brass"}],"later":1}"#).unwrap();
+        assert_eq!(read.grain, Some(Grain::Width));
+        assert_eq!(read.bom, vec![item("Shelf pin", None, 4.0, BomUnit::Each)]);
+        let json = serde_json::to_string(&read).unwrap();
+        assert_eq!(
+            json,
+            r#"{"grain":"width","bom":[{"item":"Shelf pin","qty":4.0,"unit":"each"}]}"#
+        );
+        // The hash of attributes without a list is what it was before lists existed.
+        let mut a = StableHasher::default();
+        let mut b = StableHasher::default();
+        let plain = PartAttrs {
+            grain: Some(Grain::Width),
+            ..PartAttrs::default()
+        };
+        plain.hash_into(&mut a);
+        PartAttrs {
+            bom: Vec::new(),
+            ..plain.clone()
+        }
+        .hash_into(&mut b);
+        assert_eq!(a.finish(), b.finish());
+        let mut c = StableHasher::default();
+        PartAttrs {
+            bom: vec![item("Shelf pin", None, 4.0, BomUnit::Each)],
+            ..plain
+        }
+        .hash_into(&mut c);
+        assert_ne!(a.finish(), c.finish());
     }
 }

@@ -6,7 +6,7 @@
 use glam::DVec3;
 use sawhorse_kernel::Document;
 use sawhorse_kernel::cutlist::{
-    CutList, CutOptions, CutRow, Grain, M_PER_IN, PartKey, PartRef, Rounding,
+    BomItem, BomUnit, CutList, CutOptions, CutRow, Grain, M_PER_IN, PartKey, PartRef, Rounding,
 };
 use sawhorse_kernel::model::{DrawTarget, Model, Op, OpOutcome};
 use sawhorse_kernel::nodes::Item;
@@ -1124,4 +1124,158 @@ fn whole_pieces_drawn_as_solids_are_not_boards() {
         "a board that thick exists now"
     );
     assert_eq!(row(&l, "Bracket").uncounted, None);
+}
+
+fn pins() -> Vec<BomItem> {
+    vec![BomItem {
+        item: "Shelf pin, 5 mm".into(),
+        sku: None,
+        qty: 4.0,
+        unit: BomUnit::Each,
+    }]
+}
+
+/// The shopping list: what is bought for a part rides on the part, so it is counted once
+/// per piece: a copy adds it, a deletion takes it away, undo puts it back.
+#[test]
+fn hardware_rides_on_the_part_and_counts_every_copy() {
+    let (mut d, _, shelves, ..) = bookshelf();
+    let plain = d.model().hash();
+    let plain_list = list(d.model()).hash;
+    // Through an instance: it names its definition, so every shelf carries the pins.
+    ok(
+        &mut d,
+        Op::SetBom {
+            part: PartRef::Node(shelves[0]),
+            bom: pins(),
+        },
+    );
+    let l = list(d.model());
+    let shelf = row(&l, "Shelf");
+    assert_eq!((shelf.qty, shelf.bom.clone()), (4, pins()));
+    assert!(row(&l, "Side").bom.is_empty());
+    assert_ne!(d.model().hash(), plain);
+    assert_ne!(l.hash, plain_list);
+    // A copy of a shelf carries them too; a deleted one takes its pins away.
+    let OpOutcome::Copied { nodes, .. } = ok(
+        &mut d,
+        Op::Copy {
+            objects: vec![],
+            nodes: vec![shelves[1]],
+            xform: by(0.0, 0.0, 9.0),
+        },
+    ) else {
+        panic!()
+    };
+    let shelf = row(&list(d.model()), "Shelf").clone();
+    assert_eq!((shelf.qty, shelf.bom.len()), (5, 1));
+    ok(&mut d, Op::DeleteNode { node: nodes[0] });
+    ok(&mut d, Op::DeleteNode { node: shelves[2] });
+    assert_eq!(row(&list(d.model()), "Shelf").qty, 3);
+    // Cleared, the model and its cut list hash as if nothing had been said.
+    for _ in 0..3 {
+        d.apply(&Op::Undo).unwrap();
+    }
+    ok(
+        &mut d,
+        Op::SetBom {
+            part: PartRef::Node(shelves[0]),
+            bom: vec![],
+        },
+    );
+    assert_eq!(d.model().hash(), plain);
+    assert_eq!(list(d.model()).hash, plain_list);
+    let json = serde_json::to_string(&list(d.model())).unwrap();
+    assert!(
+        !json.contains("\"bom\""),
+        "an empty list is left out: {json}"
+    );
+}
+
+#[test]
+fn a_hardware_list_that_cannot_be_kept_is_refused_and_changes_nothing() {
+    let (mut d, side, ..) = bookshelf();
+    let before = d.hash();
+    let bad = |item: &str, qty: f64, unit: BomUnit| BomItem {
+        item: item.into(),
+        sku: None,
+        qty,
+        unit,
+    };
+    for bom in [
+        vec![bad("", 1.0, BomUnit::Each)],
+        vec![bad("Hinge", 0.0, BomUnit::Each)],
+        vec![bad("Hinge", 2.5, BomUnit::Each)],
+        vec![bad("Hinge", 1.0, BomUnit::Each); 33],
+    ] {
+        let e = d
+            .apply(&Op::SetBom {
+                part: PartRef::Node(side),
+                bom,
+            })
+            .unwrap_err();
+        assert!(e.to_string().starts_with("hardware list: "), "{e}");
+    }
+    assert!(
+        d.apply(&Op::SetBom {
+            part: PartRef::Definition(9999),
+            bom: pins(),
+        })
+        .is_err()
+    );
+    assert_eq!(d.hash(), before);
+    // Metres may be a fraction.
+    ok(
+        &mut d,
+        Op::SetBom {
+            part: PartRef::Node(side),
+            bom: vec![bad("Edge banding, 7/8 in", 1.81, BomUnit::M)],
+        },
+    );
+}
+
+#[test]
+fn hardware_survives_the_snapshot_and_a_bad_one_is_refused_on_load() {
+    let (mut d, side, shelves, ..) = bookshelf();
+    // As the cabinet generator sends it: the op JSON, with and without a part number.
+    let op: Op = serde_json::from_str(&format!(
+        r#"{{"op":"set_bom","part":{{"node":{side}}},"bom":[{{"item":"Blum TANDEM 563H runners","sku":"563H5330B","qty":1,"unit":"pair"}}]}}"#
+    ))
+    .unwrap();
+    ok(&mut d, op);
+    ok(
+        &mut d,
+        Op::SetBom {
+            part: PartRef::Node(shelves[0]),
+            bom: pins(),
+        },
+    );
+    let snap = d.model().snapshot();
+    let json = serde_json::to_string(&snap).unwrap();
+    assert!(
+        json.contains(r#""part":{"bom":[{"item":"Blum TANDEM 563H runners","sku":"563H5330B","qty":1.0,"unit":"pair"}]}"#),
+        "{json}"
+    );
+    let back = Model::from_snapshot(&serde_json::from_str(&json).unwrap()).unwrap();
+    assert_eq!(back.hash(), d.model().hash());
+    assert_eq!(list(&back).hash, list(d.model()).hash);
+    assert_eq!(
+        row(&list(&back), "Side").bom[0].sku.as_deref(),
+        Some("563H5330B")
+    );
+    // A file whose list could not have been made is refused, not repaired.
+    for (from, to) in [
+        (r#""qty":4.0,"unit":"each""#, r#""qty":4.5,"unit":"each""#),
+        (r#""item":"Shelf pin, 5 mm""#, r#""item":"""#),
+        (r#""qty":4.0"#, r#""qty":-4.0"#),
+    ] {
+        assert!(json.contains(from), "{from}");
+        let tampered = json.replacen(from, to, 1);
+        let e = Model::from_snapshot(&serde_json::from_str(&tampered).unwrap()).unwrap_err();
+        assert!(e.to_string().contains("hardware list"), "{e}");
+    }
+    // A model with no list writes none.
+    let (plain, ..) = bookshelf();
+    let json = serde_json::to_string(&plain.model().snapshot()).unwrap();
+    assert!(!json.contains("\"bom\""));
 }

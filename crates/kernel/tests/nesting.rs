@@ -799,6 +799,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
             sheet_set: true,
             board_feet: 0.0,
             area_m2: 0.0,
+            bom: Vec::new(),
             occurrences,
         });
     }

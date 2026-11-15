@@ -515,6 +515,16 @@ pub enum Op {
         part: crate::cutlist::PartRef,
         include: bool,
     },
+    /// The shopping list: what is bought for each piece of a part beyond its wood (hinges, a
+    /// runner pair, shelf pins, edge banding), replacing what was said (empty: nothing).
+    /// Metadata, like grain: allowed anywhere in the tree, and it reaches every copy of a
+    /// component. At most [`crate::cutlist::MAX_BOM_ITEMS`] items, each checked by
+    /// [`crate::cutlist::BomItem::problem`].
+    SetBom {
+        part: crate::cutlist::PartRef,
+        #[serde(default)]
+        bom: Vec<crate::cutlist::BomItem>,
+    },
     /// Lane 15: put each edge-connected piece of non-solid meshes into a group of its own, so
     /// the cut list counts it as a part (loose faces are never parts). `meshes` empty: every
     /// mesh in the open context. One undo step; the geometry does not move or change.
@@ -2368,6 +2378,13 @@ impl Model {
             Op::SetInclude { part, include } => {
                 let v = (!*include).then_some(false);
                 self.set_part(*part, |a| a.include = v)
+            }
+            Op::SetBom { part, bom } => {
+                if let Some(why) = crate::cutlist::bom_problem(bom) {
+                    return Err(DocumentError::BadBom(why).into());
+                }
+                let bom = bom.clone();
+                self.set_part(*part, move |a| a.bom = bom)
             }
             Op::GroupLoose { meshes } => self.group_loose(meshes),
             Op::SetEdgeFlags { edges, set, clear } => self.set_edge_flags(edges, *set, *clear),

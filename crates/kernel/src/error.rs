@@ -250,6 +250,9 @@ pub enum DocumentError {
     /// Lane 15: soft, smooth and hidden edges.
     #[error("{0}")]
     EdgeFlags(String),
+    /// The shopping list: a part's bill-of-materials items that cannot be kept.
+    #[error("hardware list: {0}")]
+    BadBom(String),
 }
 
 /// Errors from groups, components, the editing context, tags and scenes (lane 5). Nothing
