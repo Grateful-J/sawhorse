@@ -334,7 +334,7 @@ const SECTIONS = [
     id: "secFronts",
     label: "3 · Fronts and pulls",
     applies: () => sizes.layout !== "shelves",
-    summary: () => `${sizes.front === "overlay" ? "Full overlay" : "Inset"} · ${f(sizes.gap)} gaps${hasDoors() ? ` · hinged ${sizes.doors === "two" ? "both sides" : sizes.hingeSide}` : ""}`,
+    summary: () => `${sizes.front === "overlay" ? "Full overlay" : "Inset"} · ${f(sizes.gap)} gaps${hasDoors() ? ` · hinged ${sizes.doors === "two" ? "both sides" : sizes.hingeSide}` : ""}${sizes.grainMatch ? " · grain-matched" : ""}`,
   },
   {
     id: "secMaterials",
@@ -416,6 +416,14 @@ function details() {
   } else if (view === "secFronts") {
     out.push(pick("front", "Mounting", s.front, [["overlay", "Full overlay"], ["inset", "Inset"]]), len("gap", "Reveal gap", s.gap));
     out.push(help(s.front === "overlay" ? "Gap between fronts; half of it at the cabinet's edges." : "Gap all round each front, inside the opening."));
+    out.push({ type: "checkbox", id: "grainMatch", label: "Grain-matched fronts", value: s.grainMatch });
+    out.push(
+      help(
+        s.grainMatch
+          ? "Cut from one panel in the order they stand, a kerf apart: the grain runs on from front to front, jumping only by the gap the router leaves between them (Nesting's Kerf; the reveal gap is a separate number). Needs one column of fronts, the grain one way (Materials › Grain) and one thickness. Vertical grain is cut end to end, grain across side by side. A stack longer than the sheet is reported in Nesting, never split."
+          : "Off: each front is nested on its own.",
+      ),
+    );
     if (hasDoors()) {
       out.push(heading("Door pull"));
       out.push(pick("doorPull", "Pull", s.doorPull, [["vertical", "Vertical"], ["horizontal", "Horizontal"], ["none", "None"]]));
@@ -853,7 +861,7 @@ const panel = await ui.registerPanel({
       // Another runner has other lengths: back to Automatic.
       if ((id === "slides" || id === "catalog") && sizes.runner && !runnerLine(sizes).lengths.some((r) => r.nl === sizes.runner)) sizes = { ...sizes, runner: 0 };
       // Fields whose label or options name another choice are rebuilt with it.
-      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "nailers", "base", "drawerPull", "doorPull", "doors"].includes(id) || before.runner !== sizes.runner) shown = "";
+      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "nailers", "base", "drawerPull", "doorPull", "doors", "grainMatch"].includes(id) || before.runner !== sizes.runner) shown = "";
     }
     if (!SECTIONS.some((x) => x.id === view && x.applies())) view = "";
     if (editing === null) {
@@ -1082,7 +1090,8 @@ async function materialsToAdd() {
 /** Add parts to a batch at `frame`, each part's grain and hardware (its `bom`, for the shopping
  * list) set through its first copy; returns the copies, to wrap into a component. Set on the
  * part's component, the hardware is counted once per copy: a copied cabinet doubles it, a
- * deleted one takes it away. @param {import("sawhorse").Batch} batch
+ * deleted one takes it away. A grain-matched front (match.js) is kept together with the
+ * cabinet's other fronts (`set_together`); each is a part of one copy. @param {import("sawhorse").Batch} batch
  * @param {import("./cabinet.js").Part[]} parts @param {Frame} frame
  * @param {{ name: string, color: [number, number, number, number] }[]} materials */
 function addParts(batch, parts, frame, materials) {
@@ -1096,6 +1105,7 @@ function addParts(batch, parts, frame, materials) {
     // "length" is every part's grain until said otherwise.
     if (part.grain !== "length") batch.op({ op: "set_grain", part: { node: first }, grain: part.grain });
     if (part.bom?.length) batch.op({ op: "set_bom", part: { node: first }, bom: part.bom });
+    if (part.together) batch.op({ op: "set_together", part: { node: first }, together: part.together });
   }
   return items;
 }

@@ -17,6 +17,7 @@
 //
 // The parts are built in place (left side, right side, ...), so a part that is the mirror of
 // another is its own part with its own holes, and the DXF draws it from the face it is cut on.
+import { matchFronts } from "./match.js";
 import { partMesh } from "./mesh.js";
 
 const IN = 0.0254;
@@ -55,7 +56,7 @@ const MM = 0.001;
  *   thickness: number, frontThickness: number, drawerThickness: number, backThickness: number,
  *   layout: Layout, shelves: number, shelfType: ShelfType, drawers: number, drawerFronts: DrawerFronts, drawerFront: number,
  *   top: Top, stretcher: number,
- *   grainDoors: Run, grainFronts: Run, grainSides: SideGrain, grainHidden: HiddenGrain,
+ *   grainDoors: Run, grainFronts: Run, grainSides: SideGrain, grainHidden: HiddenGrain, grainMatch: boolean,
  *   base: Base, toeKick: number, toeSetback: number,
  *   back: boolean, backMount: BackMount, backInset: number, backGrooveDepth: number,
  *   front: Front, gap: number,
@@ -90,6 +91,7 @@ const MM = 0.001;
  *   finished?: V3,
  *   offset?: V3,
  *   bands?: PartBand[],
+ *   together?: { key: string, index: number, stack: "along" | "across" },
  * }} Part
  * A banded part (edge banding on) also says what it is when banded: `blank` is then the cut size
  * (what the mesh and the DXF draw), `finished` the size designed (blank plus bands, less any
@@ -592,7 +594,7 @@ export function defaults(metric) {
         thickness: 18 * MM, frontThickness: 18 * MM, drawerThickness: 12 * MM, backThickness: 6 * MM,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 150 * MM,
         top: "full", stretcher: 100 * MM,
-        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any",
+        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any", grainMatch: false,
         base: "toekick", toeKick: 100 * MM, toeSetback: 75 * MM,
         back: true, backMount: "groove", backInset: 12 * MM, backGrooveDepth: 8 * MM,
         front: "overlay", gap: 3 * MM,
@@ -618,7 +620,7 @@ export function defaults(metric) {
         thickness: (23 / 32) * IN, frontThickness: (23 / 32) * IN, drawerThickness: (15 / 32) * IN, backThickness: (7 / 32) * IN,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 6 * IN,
         top: "full", stretcher: 4 * IN,
-        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any",
+        grainDoors: "vertical", grainFronts: "horizontal", grainSides: "vertical", grainHidden: "any", grainMatch: false,
         base: "toekick", toeKick: 4 * IN, toeSetback: 3 * IN,
         back: true, backMount: "groove", backInset: 0.5 * IN, backGrooveDepth: (5 / 16) * IN,
         front: "overlay", gap: 0.125 * IN,
@@ -712,6 +714,7 @@ export function normalize(saved, metric) {
     grainFronts: pick("grainFronts", /** @type {const} */ (["horizontal", "vertical"])),
     grainSides: pick("grainSides", /** @type {const} */ (["vertical", "any"])),
     grainHidden: pick("grainHidden", /** @type {const} */ (["any", "length"])),
+    grainMatch: !!s.grainMatch,
     binWidth: num("binWidth"),
     binLength: num("binLength"),
     binHeight: num("binHeight"),
@@ -805,7 +808,9 @@ export function issue(s, metric) {
  */
 export function plan(s, metric) {
   try {
-    return { error: null, ...build(s, metric) };
+    const built = build(s, metric);
+    // Grain-matched fronts (match.js): each front of the stack its own part, kept together.
+    return { error: null, ...built, parts: matchFronts(built.parts, s) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e), parts: [], rows: [], runner: null, holes: 0, room: null };
   }
