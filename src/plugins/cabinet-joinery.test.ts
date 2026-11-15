@@ -180,15 +180,33 @@ describe("dowel and Confirmat layout (Häfele's case dowelling)", () => {
     }
   });
 
-  it("narrow stretchers are refused with the width that takes three; a full top or wider stretchers build", () => {
-    for (const metric of [false, true]) {
-      const base = applyPreset(defaults(metric), "base", metric);
-      for (const fastener of ["dowels", "confirmat"] as const) {
-        expect(plan(normalize({ ...base, fastener }, metric), metric).error).toMatch(/^The front stretcher is .* deep: .*at least 117 mm \(4\.607 in\) deep\. Make the stretchers wider, use a full top, or use blind dados\.$/);
-        ok(normalize({ ...base, fastener, stretcher: 117 * MM }, metric), metric);
-        ok(normalize({ ...base, fastener, top: "full" }, metric), metric);
-      }
+  it("narrow stretchers are widened to the least that takes three", () => {
+    const base = (metric: boolean) => applyPreset(defaults(metric), "base", metric);
+    const sideNote = (p: ReturnType<typeof plan>) => p.rows.filter((r) => r[0] === "Stretchers" && /^Widened from/.test(r[1])).map((r) => r[1]);
+    for (const fastener of ["dowels", "confirmat"] as const) {
+      const p = ok(normalize({ ...base(true), fastener }, true), true);
+      expect(named(p.parts, "Front stretcher")[0].blank[1]).toBeCloseTo(117 * MM, 9);
+      expect(named(p.parts, "Rear stretcher")[0].blank[1]).toBeCloseTo(117 * MM, 9);
+      expect(sideNote(p)).toHaveLength(1);
+      expect(sideNote(p)[0]).toMatch(/^Widened from 100 mm .* to 117 mm .*Häfele's 3 /);
+      expect(p.rows.find((r) => r[0] === "Front stretcher" && r[4] === "Jig")![1]).toMatch(/3 at 37, 69 and 80 mm from its front edge/);
     }
+    // Inches: 4-5/8 in is 117.475 mm; the holes are at 37, 69 and 80.475 mm from the front.
+    const ip = ok(normalize({ ...base(false), fastener: "confirmat" }, false), false);
+    expect(named(ip.parts, "Front stretcher")[0].blank[1]).toBeCloseTo(4.625 * IN, 9);
+    expect(named(ip.parts, "Rear stretcher")[0].blank[1]).toBeCloseTo(4.625 * IN, 9);
+    const at = dowelLayout(4.625 * IN);
+    expect(Array.isArray(at)).toBe(true);
+    (at as number[]).forEach((y, i) => expect(y).toBeCloseTo([0.037, 0.069, 0.080475][i], 9));
+    expect(ip.rows.find((r) => r[0] === "Front stretcher" && r[4] === "Jig")![1]).toMatch(/3 at 37, 69 and 80\.5 mm \(1\.457, 2\.717 and 3\.168 in\) from its front edge/);
+    // A stretcher already wide enough stays as set, with no note.
+    const wide = ok(normalize({ ...base(true), fastener: "dowels", stretcher: 150 * MM }, true), true);
+    expect(named(wide.parts, "Front stretcher")[0].blank[1]).toBeCloseTo(150 * MM, 9);
+    expect(sideNote(wide)).toEqual([]);
+    // Butt joints (no dowels or screws) keep the width as set.
+    const butt = ok(normalize({ ...base(true), fastener: "none", dados: false }, true), true);
+    expect(named(butt.parts, "Front stretcher")[0].blank[1]).toBeCloseTo(100 * MM, 9);
+    expect(sideNote(butt)).toEqual([]);
   });
 
   it("fixed shelves are joined too, from the shelf's own front and back edges (behind an inset door, too)", () => {

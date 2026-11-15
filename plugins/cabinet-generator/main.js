@@ -469,7 +469,7 @@ function details() {
       out.push(help(`Self-countersinking Confirmat screws (no countersink cut). The router drills a 7 mm through hole in the sides; the rails' 5 mm end pilots are listed for a jig, as deep as the screw maker's instructions give. Placed by ${CONFIRMAT_LAYOUT}.`));
     }
     out.push(pick("top", "Top", s.top, [["full", "Full panel"], ["stretchers", "Two stretchers"]]));
-    if (s.top === "stretchers") out.push(len("stretcher", "Stretcher width", s.stretcher), help("Front and rear, under the countertop: open for a sink."));
+    if (s.top === "stretchers") out.push(len("stretcher", "Stretcher width", s.stretcher), (!s.dados && s.fastener !== "none" ? help("Front and rear, under the countertop: open for a sink. With dowels or Confirmat they are made at least 117 mm (4-5/8 in) wide, for Häfele's three.") : help("Front and rear, under the countertop: open for a sink.")));
     out.push(pick("backType", "Back", !s.back ? "none" : s.backMount, [["groove", "In a groove"], ["butt", "Between the sides"], ["none", "None"]]));
     if (s.back && s.backMount === "groove") {
       out.push(len("backGrooveDepth", "Groove depth", s.backGrooveDepth), len("backInset", "Back inset", s.backInset));

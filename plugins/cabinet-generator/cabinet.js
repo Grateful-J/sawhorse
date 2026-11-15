@@ -919,10 +919,11 @@ export function validate(s, metric) {
     if (!(s.drawerFront >= lowFront.v - 1e-9)) return `The top drawer front must be at least ${lowFront.text} tall.`;
   }
   if (s.top === "stretchers") {
+    const sw = stretcherWidth(s, metric);
     const narrow = least(2, "2 in", 50);
     // The stretchers run from the front to the back's groove (or to the rear edge, past it), or to the back's face.
     const room = !s.back || s.backMount === "groove" ? s.depth : s.depth - s.backThickness;
-    if (!(s.stretcher >= narrow.v - 1e-9 && 2 * s.stretcher < room)) return `Stretchers must be at least ${narrow.text} wide, and two of them narrower than the ${room < s.depth ? `depth in front of the back (${both(room)})` : "depth"}.`;
+    if (!(s.stretcher >= narrow.v - 1e-9 && 2 * sw < room)) return `Stretchers must be at least ${narrow.text} wide, and two of them narrower than the ${room < s.depth ? `depth in front of the back (${both(room)})` : "depth"}.`;
   }
   if (!(s.gap >= 0) || s.gap > 0.5 * IN) return "The gap between fronts must be at most 1/2 in (12.7 mm).";
   // Blum's least reveal, with no door at all (drawer fronts must not rub either), and its table for hinged doors.
@@ -1103,6 +1104,21 @@ export function dowelLayout(d) {
     ks.push(Math.max(ks.length ? ks[ks.length - 1] + 1 : 1, Math.min(most - (n - 2 - i), k)));
   }
   return [e, ...ks.map((k) => e + k * pitch), rear];
+}
+
+/**
+ * The stretchers' width as built (metres). With dowels or Confirmat screws, at least the least
+ * joint that takes Häfele's fewest dowels (DOWEL.upTo[0]): 37 mm from each edge, those between on
+ * the 32 mm grid, 3 mm of wood to the rear one. Rounded up to a millimetre (metric) or a
+ * sixteenth (inches). Blind dados and butt joints keep the width as set.
+ * @param {Sizes} s @param {boolean} metric @returns {number}
+ */
+export function stretcherWidth(s, metric) {
+  if (s.dados || s.fastener === "none") return s.stretcher;
+  const n = DOWEL.upTo[0][1];
+  const need = (2 * DOWEL.setback + (n - 2) * DOWEL.pitch + DOWEL.dia + WEB_MM) * MM;
+  const step = metric ? MM : IN / 16;
+  return Math.max(s.stretcher, Math.ceil(need / step - 1e-6) * step);
 }
 
 /** A rail's name as a sentence says it: "bottom", "front stretcher", "fixed shelf 1". @param {string} name */
@@ -1592,8 +1608,9 @@ function build(s, metric) {
   if (fastener !== "none") {
     /** @type {{ z: number, name: string, ya: number, yb: number }[]} */
     const spans = [];
+    const sw = stretcherWidth(s, metric);
     for (const r of rails) {
-      if (r.name === "Top" && s.top === "stretchers") spans.push({ z: r.z, name: "Front stretcher", ya: 0, yb: s.stretcher }, { z: r.z, name: "Rear stretcher", ya: railEnd - s.stretcher, yb: railEnd });
+      if (r.name === "Top" && s.top === "stretchers") spans.push({ z: r.z, name: "Front stretcher", ya: 0, yb: sw }, { z: r.z, name: "Rear stretcher", ya: railEnd - sw, yb: railEnd });
       else if (r.name === "Top" || r.name === "Bottom") spans.push({ z: r.z, name: r.name, ya: 0, yb: railEnd });
       else spans.push({ z: r.z, name: r.name, ya: shelfFront, yb: shelfDepth });
     }
@@ -2262,11 +2279,12 @@ function build(s, metric) {
   if (s.top === "stretchers") {
     // Two stretchers under the countertop (open for a sink): the front one notched like a top,
     // the rear one carrying the back's groove.
-    const sw = s.stretcher;
+    const sw = stretcherWidth(s, metric);
     if (grooved && !(backY[0] - (railEnd - sw) >= 6 * MM)) throw new Error(`The rear stretcher is too narrow to carry the back's groove ${both(backInsetOf(s))} in from the rear: make it wider.`);
     addRail(s.height - t, "Front stretcher", "Front stretcher", "top", [0, sw]);
     addRail(s.height - t, "Rear stretcher", "Rear stretcher", "top", [railEnd - sw, railEnd], false);
     note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ": in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove" : fastener === "dowels" ? ", dowelled between the sides" : fastener === "confirmat" ? ", screwed between the sides with Confirmat screws" : ", butted between the sides"}`, "-", "-", "CNC (profile)");
+    if (sw > s.stretcher + 1e-9) note("Stretchers", `Widened from ${both(s.stretcher)} to ${both(sw)}, the least that takes Häfele's ${DOWEL.upTo[0][1]} ${fastener === "dowels" ? "dowels" : "Confirmat screws"} (${DOWEL.setback} mm from each edge, one between on the ${DOWEL.pitch} mm grid). The Stretcher width setting is kept as you set it.`, "-", "-", "Check");
   } else addRail(s.height - t, "Top", "Top", "top");
   addRail(kick, "Bottom", "Bottom", "bottom");
   if (fixedShelves) shelfZs.forEach((z, i) => addRail(z, "Shelf", `Shelf ${i + 1}`, "shelf"));
