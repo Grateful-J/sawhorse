@@ -970,8 +970,9 @@ export function validate(s, metric) {
   }
   if (s.fastener === "confirmat") {
     if (!Object.keys(CONFIRMAT.lengths).includes(String(s.confirmatLength))) return "Confirmat screws: 50 or 70 mm, the lengths Häfele lists for its self-countersinking connector.";
-    const least = CONFIRMAT.pilot + 2 * WEB_MM;
-    if (!(t >= least * MM - 1e-9)) return `A Confirmat's pilot hole is ${CONFIRMAT.pilot} mm across, in the middle of the rail's edge: the cabinet stock must be at least ${least} mm thick, for 3 mm of wood each side. Use blind dados, or thicker stock.`;
+    // The through hole is centred on the rail's thickness, so flush with the side's end it needs t/2 - 3.5 >= 3 mm too.
+    const least = Math.max(CONFIRMAT.pilot, CONFIRMAT.through) + 2 * WEB_MM;
+    if (!(t >= least * MM - 1e-9)) return `A Confirmat's ${CONFIRMAT.through} mm through hole in the side and ${CONFIRMAT.pilot} mm pilot in the rail are centred in the rail's thickness: the cabinet stock must be at least ${least} mm thick, for 3 mm of wood each side. Use blind dados, or thicker stock.`;
   }
   // Shelf pins are drilled whenever shelves are adjustable, hardware or not.
   if (hasShelf && s.shelfType === "adjustable" && !(t - PIN.depth * MM >= WEB - 1e-9)) return `Shelf pin holes are ${PIN.depth} mm deep: adjustable shelves need cabinet stock at least ${PIN.depth + 3} mm thick, for 3 mm of wood behind each hole. Use fixed shelves, or thicker stock.`;
@@ -1107,7 +1108,7 @@ export function dowelLayout(d) {
 /** A rail's name as a sentence says it: "bottom", "front stretcher", "fixed shelf 1". @param {string} name */
 const jointWord = (name) => (name.startsWith("Shelf") ? name.replace(/^Shelf/, "fixed shelf") : name.toLowerCase());
 /** The dowels a rail takes, in words: Häfele's assembly dowel's depths are the holes, no part number. */
-const DOWEL_ITEM = `Dowel, ${DOWEL.dia} mm, no longer than ${DOWEL.face + DOWEL.edge} mm (an ${DOWEL.face} mm hole in the side and a ${DOWEL.edge} mm hole in the edge)`;
+const DOWEL_ITEM = `Dowel, ${DOWEL.dia} x 35 mm or shorter (the holes are ${DOWEL.face} mm in the side and ${DOWEL.edge} mm in the edge, ${DOWEL.face + DOWEL.edge} mm together)`;
 
 /**
  * One band of the list, as the planner uses it: its number (1 to 3), thickness and width
@@ -1602,7 +1603,14 @@ function build(s, metric) {
       const at = dowelLayout(j.yb - j.ya);
       const word = jointWord(j.name);
       if (typeof at === "string") throw new Error(`The ${word} is ${at}. ${/stretcher/.test(j.name) ? "Make the stretchers wider, use a full top, or use blind dados." : "Make the cabinet shallower, or use blind dados."}`);
-      for (const y of at) for (const which of /** @type {const} */ (["left", "right"])) sideHole(which, j.ya + y, j.z + t / 2, `${what} for the ${word}`, "Change the sizes, or use blind dados.", kind);
+      // The rear hole (the last of `at`) can land in a grooved back's groove: say so, and say what to change.
+      const grooved = !!s.back && s.backMount === "groove";
+      at.forEach((y, i) => {
+        const fix = grooved && i === at.length - 1
+          ? `Change the back's inset (now ${both(backInsetOf(s))}): the rear hole is ${DOWEL.setback} mm in from the rail's back edge and may land in the back's groove. Or change the sizes, or use blind dados.`
+          : "Change the sizes, or use blind dados.";
+        for (const which of /** @type {const} */ (["left", "right"])) sideHole(which, j.ya + y, j.z + t / 2, `${what} for the ${word}`, fix, kind);
+      });
       joints.push({ ...j, at });
     }
   }
@@ -2302,7 +2310,7 @@ function build(s, metric) {
   for (const nl of nailers) {
     add(nl.name, MATERIALS.carcass.name, [innerW + 2 * tongue, t, nl.z1 - nl.z0], [], [], { at: [t - tongue, s.depth - t, nl.z0], name: nl.name });
   }
-  if (nailers.length) note(nailers.length === 1 ? "Top nailer" : "Nailers", `${both(s.nailerHeight)} tall at the rear edge, behind the back${s.dados ? ", in dados in the sides" : ""}: screw the cabinet to the wall through ${nailers.length === 1 ? "it" : "them"}`, "-", "-", "CNC (profile)");
+  if (nailers.length) note(nailers.length === 1 ? "Top nailer" : "Nailers", `${both(s.nailerHeight)} tall at the rear edge, behind the back${s.dados ? ", in dados in the sides" : ""}${!s.dados && fastener !== "none" ? ", butted between the sides: no dowels or Confirmat screws are drilled for them, so fasten them yourself" : ""}: screw the cabinet to the wall through ${nailers.length === 1 ? "it" : "them"}`, "-", "-", "CNC (profile)");
   if (s.back) {
     if (grooved) {
       add("Back", MATERIALS.back.name, [innerW + 2 * (bgd - PANEL_GAP), bT, zb1 - zb0 - 2 * PANEL_GAP], [], [], { at: [t - bgd + PANEL_GAP, yb0, zb0 + PANEL_GAP], name: "Back" });

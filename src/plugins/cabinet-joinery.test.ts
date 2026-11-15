@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { applyPreset, CONFIRMAT, CONFIRMAT_LAYOUT, defaults, DOWEL, dowelLayout, LINE_BORE, normalize, plan, PRESETS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, CONFIRMAT, CONFIRMAT_LAYOUT, defaults, DOWEL, dowelLayout, LINE_BORE, normalize, plan, PRESETS, type Part, type Sizes, validate } from "../../plugins/cabinet-generator/cabinet.js";
 import { pack, unpack } from "../../plugins/cabinet-generator/keep.js";
 import { ladderCoupons } from "../../plugins/cabinet-generator/testcuts.js";
 
@@ -300,14 +300,35 @@ describe("dowels and Confirmat screws: what the router drills, what a jig does",
     }
   });
 
-  it("thin stock is refused with the least that keeps 3 mm of wood: 14 mm for dowels, 11 mm for Confirmat pilots", () => {
+  it("thin stock is refused with the least that keeps 3 mm of wood: 14 mm for dowels, 13 mm for Confirmat holes", () => {
     expect(plan(wall(true, { fastener: "dowels", thickness: 13.9 * MM, backThickness: 6 * MM, backGrooveDepth: 6 * MM }), true).error).toMatch(/^Dowel holes are 8 mm across and 11 mm deep .* at least 14 mm thick/);
     ok(wall(true, { fastener: "dowels", thickness: 14 * MM, backThickness: 6 * MM, backGrooveDepth: 6 * MM, shelfType: "fixed", hardware: false }), true);
-    expect(plan(wall(true, { fastener: "confirmat", thickness: 10.9 * MM, backThickness: 6 * MM, backGrooveDepth: 5 * MM, shelfType: "fixed", hardware: false }), true).error).toMatch(/^A Confirmat's pilot hole is 5 mm across.* at least 11 mm thick/);
+    const cf = (thickness: number) => wall(true, { fastener: "confirmat", thickness: thickness * MM, backThickness: 6 * MM, backGrooveDepth: 5 * MM, shelfType: "fixed", hardware: false });
+    expect(plan(cf(10.9), true).error).toMatch(/^A Confirmat's 7 mm through hole in the side and 5 mm pilot in the rail are centred in the rail's thickness: .* at least 13 mm thick, for 3 mm of wood each side\. /);
+    // 1/2 in (12.7 mm) is one millimetre short: the through hole's wood runs out flush with the side's end.
+    const half = validate(cf(12.7), true);
+    expect(half).toBe(`A Confirmat's 7 mm through hole in the side and 5 mm pilot in the rail are centred in the rail's thickness: the cabinet stock must be at least 13 mm thick, for 3 mm of wood each side. Use blind dados, or thicker stock.`);
+    expect(validate(cf(13), true)).toBeNull();
+    ok(cf(13), true);
     // Under Häfele's 18 mm for its assembly dowel: built, with a Check row that says so.
     const p = ok(wall(true, { fastener: "dowels", thickness: 16 * MM, backThickness: 6 * MM, shelfType: "fixed", hardware: false }), true);
     expect(p.rows.find((r) => r[4] === "Check" && r[0] === "Dowels")![1]).toMatch(/"for minimum wood thickness 18 mm"; this stock is 16 mm$/);
     expect(ok(wall(true, { fastener: "dowels" }), true).rows.some((r) => r[0] === "Dowels" && r[4] === "Check")).toBe(false);
+  });
+
+  it("with a grooved back, a dowel's rear hole that meets the groove says so: the back's inset is the fix; 12 and 45 mm build", () => {
+    expect(plan(wall(true, { fastener: "dowels", backInset: 30 * MM }), true).error).toMatch(/back's inset/);
+    ok(wall(true, { fastener: "dowels", backInset: 12 * MM }), true);
+    ok(wall(true, { fastener: "dowels", backInset: 45 * MM }), true);
+  });
+
+  it("nailers butted between the sides with dowels or Confirmat screws say they are not fastened; with dados or butt joints the note is as it was", () => {
+    const nailerNote = (s: Sizes) => ok(s, true).rows.find((r) => r[0] === "Top nailer" || r[0] === "Nailers")![1];
+    expect(nailerNote(wall(true, { fastener: "dowels" }))).toMatch(/, butted between the sides: no dowels or Confirmat screws are drilled for them, so fasten them yourself: screw the cabinet/);
+    expect(nailerNote(wall(true, { fastener: "confirmat" }))).toMatch(/fasten them yourself: screw the cabinet/);
+    expect(nailerNote(wall(true, { fastener: "none", dados: false }))).toMatch(/behind the back: screw the cabinet/);
+    expect(nailerNote(wall(true, { fastener: "none", dados: false }))).not.toMatch(/fasten them yourself/);
+    expect(nailerNote(wall(true, { fastener: "none", dados: true }))).toMatch(/behind the back, in dados in the sides: screw the cabinet/);
   });
 
   it("drawers: the runner screws on the 37 mm line, the front dowels' line, keep 3 mm of wood to the joint holes", () => {
@@ -328,7 +349,7 @@ describe("dowels and Confirmat screws: what the router drills, what a jig does",
 describe("dowels and Confirmat screws: the shopping list, banding, storage, test cuts", () => {
   it("each rail carries its two joints' dowels or Confirmat screws (Häfele's part number for the length)", () => {
     const d = ok(wall(false, { fastener: "dowels" }), false);
-    for (const rail of ["Top", "Bottom"]) expect(named(d.parts, rail)[0].bom).toEqual([{ item: "Dowel, 8 mm, no longer than 36 mm (an 11 mm hole in the side and a 25 mm hole in the edge)", qty: 6, unit: "each" }]);
+    for (const rail of ["Top", "Bottom"]) expect(named(d.parts, rail)[0].bom).toEqual([{ item: "Dowel, 8 x 35 mm or shorter (the holes are 11 mm in the side and 25 mm in the edge, 36 mm together)", qty: 6, unit: "each" }]);
     expect(named(d.parts, "Left side")[0].bom).toBeUndefined();
     for (const [len, sku] of [[50, "264.44.190"], [70, "264.44.194"]] as const) {
       expect(CONFIRMAT.lengths[String(len)].sku).toBe(sku);
