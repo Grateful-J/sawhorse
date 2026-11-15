@@ -756,6 +756,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
                         center: [0.0; 3],
                         shaped: false,
                     },
+                    holder: None,
                 }
             })
             .collect();
@@ -801,6 +802,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
             area_m2: 0.0,
             bom: Vec::new(),
             stretched: 0,
+            together: None,
             occurrences,
         });
     }
@@ -2460,4 +2462,81 @@ fn the_nesting_golden_is_this_bookshelf() {
             "golden/nesting.json is not this bookshelf (UPDATE_GOLDEN=1)"
         );
     }
+}
+
+/// A cut list of plain sheet parts of "Front ply" (metres: width, length, copies, grain),
+/// each 0.018288 thick, as a reviewer's property test shrank one.
+fn plain_sheet_list(parts: &[(f64, f64, usize, Grain)]) -> CutList {
+    let mut l = list_of(&[], 0);
+    for (k, &(w, len, qty, grain)) in parts.iter().enumerate() {
+        let mut one = list_of(&[(0.72, 1.0, 1.0, qty, grain, true, 0)], 0);
+        let mut row = one.rows.remove(0);
+        let size = [0.018288, w, len];
+        row.size = size;
+        row.rounded = size;
+        row.nominal_thickness = size[0];
+        row.key = PartKey::Object(k as u64 + 1);
+        row.target = PartRef::Object(k as u64 + 1);
+        row.name = format!("Part {}", k + 1);
+        row.grain_set = true;
+        row.not_solid = false;
+        row.included = true;
+        row.uncounted = None;
+        row.material = Some("Front ply".into());
+        for (c, o) in row.occurrences.iter_mut().enumerate() {
+            o.item = Item::Object((k * 10 + c) as u64 + 1);
+            o.visible = true;
+            o.bbox.size = size;
+        }
+        l.rows.push(row);
+    }
+    l
+}
+
+fn front_ply_on_a_four_by_four() -> StockLibrary {
+    let mut lib = StockLibrary::builtin();
+    lib.defaults.clear();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 sheet, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 23.0 / 32.0 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::Length,
+    });
+    lib.defaults
+        .insert("Front ply".into(), "4 x 4 sheet, 3/4".into());
+    lib
+}
+
+/// Shrunk by a property test of keep-together blocks, though no part is kept: the cuts of
+/// this guillotine layout must free every part ("the cuts do not free 3a").
+#[test]
+fn the_cuts_free_every_part_of_a_shrunk_guillotine_layout() {
+    let l = plain_sheet_list(&[
+        (0.6442612838650706, 0.7363554082871545, 1, Grain::None),
+        (0.0508, 0.6498525976377879, 2, Grain::Width),
+        (0.33855859117933723, 0.3454716150585676, 2, Grain::Length),
+    ]);
+    let st = NestSettings {
+        kerf: 0.00635,
+        trim: 0.0127,
+        algorithm: NestAlgorithm::Guillotine,
+        joint_loss: 0.003175,
+        sheet_size: None,
+        overflow: None,
+    };
+    let lib = front_ply_on_a_four_by_four();
+    let n = nest_list(&l, &lib, st);
+    check_nesting_of(&l, &n).unwrap_or_else(|e| panic!("{e}\n{n:#?}"));
+    let m = nest_list(
+        &l,
+        &lib,
+        NestSettings {
+            algorithm: NestAlgorithm::Maxrects,
+            ..st
+        },
+    );
+    check_nesting_of(&l, &m).unwrap_or_else(|e| panic!("maxrects: {e}\n{m:#?}"));
 }

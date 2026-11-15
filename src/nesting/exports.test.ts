@@ -33,6 +33,12 @@ describe("nesting in shop words", () => {
     expect(reasonText({ ...n.unplaced[0], reason: "too_large" })).toContain("larger than 4/4 x 12 x 96");
     expect(reasonText({ ...n.unplaced[0], reason: "no_stock", sheet: true })).toContain("no sheet in the stock library is this thickness");
     expect(reasonText({ ...n.unplaced[0], reason: "no_stock", sheet: true, asked: [48 * IN, 48 * IN] })).toBe("no 48 × 48 in sheet of this thickness; add one (Stock…), or choose Automatic");
+    // Kept together (grain-matched fronts): the block, and the part's place in it.
+    const kept = { ...n.unplaced[0], sheet: true, stock: "4 x 4 sheet, 3/4", together: { key: "Grain-matched fronts", index: 0, n: 1, of: 4, stack: "along" as const } };
+    expect(reasonText({ ...kept, reason: "together_too_large" })).toBe(
+      "kept together with the 3 other parts of “Grain-matched fronts” (it is 1 of 4): the block, laid out a kerf apart, is larger than 4 x 4 sheet, 3/4; add larger stock, tick \"Track saw what won't fit\", or stop keeping them together (the Cabinet generator: Grain-matched fronts off)",
+    );
+    expect(reasonText({ ...kept, reason: "together", together: { ...kept.together, n: 2, of: 2 } })).toMatch(/^kept together with the other part of “Grain-matched fronts” \(it is 2 of 2\), and the block cannot be cut whole/);
     const s = nestSummary(n, "sixteenth");
     expect([s.sheets, s.boards]).toEqual(["1", "1"]);
     expect(s.sheetsLabel).toBe("sheet: 4 x 8 sheet, 1/4");

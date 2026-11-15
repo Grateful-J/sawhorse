@@ -212,7 +212,20 @@ export function reasonText(u: Unplaced): string {
       return "a solid thicker than any board with more than 30% of its box empty: a whole piece, not a blank; draw each board as its own part";
     case "too_wide":
       return "wider than 4 ft and than any board; mark it sheet goods if it is a sheet, or draw the boards of the glue-up";
+    case "together":
+      // Kept together (grain-matched fronts): a block is never split between sheets.
+      return `kept together with ${blockText(u)}, and the block cannot be cut whole: another part of it has no stock, or its parts want different stock or material, share a place in the order, or run different ways; fix that part, or stop keeping them together (the Cabinet generator: Grain-matched fronts off)`;
+    case "together_too_large":
+      return `kept together with ${blockText(u)}: the block, laid out a kerf apart, is larger than ${u.stock ?? "any stock"}; add larger stock, tick "Track saw what won't fit", or stop keeping them together (the Cabinet generator: Grain-matched fronts off)`;
   }
+}
+
+/** "the 3 other parts of “Cabinet 1 fronts”" (part 2 of 4). */
+function blockText(u: Unplaced): string {
+  const b = u.together;
+  if (!b) return "other parts";
+  const others = b.of - 1;
+  return `the ${others === 1 ? "other part" : `${others} other parts`} of “${b.key}” (it is ${b.n} of ${b.of})`;
 }
 
 export interface NestSummary {
