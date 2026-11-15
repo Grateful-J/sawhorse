@@ -68,6 +68,32 @@ const relative = (a, b) => compose(invert(a.world), b.world);
 /** Turned the same way (within a hair: a rotation typed or snapped). @param {Frame} r */
 export const unturned = (r) => [0, 1, 2].every((i) => [0, 1, 2].every((j) => Math.abs(r.linear[i][j] - (i === j ? 1 : 0)) < 1e-6));
 
+/** Whether a frame only turns and moves (no scale, no mirror): a cabinet scaled or mirrored by
+ * hand cannot be rebuilt from its settings. @param {Frame} m */
+export function rigid(m) {
+  const L = m.linear;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++) {
+      const dot = L[0][i] * L[0][j] + L[1][i] * L[1][j] + L[2][i] * L[2][j];
+      if (!(Math.abs(dot - (i === j ? 1 : 0)) < 1e-6)) return false;
+    }
+  const det = L[0][0] * (L[1][1] * L[2][2] - L[1][2] * L[2][1]) - L[0][1] * (L[1][0] * L[2][2] - L[1][2] * L[2][0]) + L[0][2] * (L[1][0] * L[2][1] - L[1][1] * L[2][0]);
+  return det > 0;
+}
+
+/** The name after this one that is not in use: "Base 1" -> "Base 2" (or "Base 3" when there is a
+ * Base 2); a name without a number at its end stays, unless it is in use ("Sink base" ->
+ * "Sink base 2"). @param {string} name @param {Set<string>} [taken] */
+export function nextName(name, taken = new Set()) {
+  const up = (/** @type {string} */ t) => t.replace(/(\d+)$/, (d) => String(BigInt(d) + 1n));
+  let n = up(name);
+  if (n === name && taken.has(n)) n = `${name} 2`;
+  while (taken.has(n)) n = up(n);
+  return n;
+}
+/** This name, or the next one not in use. @param {string} name @param {Set<string>} taken */
+export const freeName = (name, taken) => (taken.has(name) ? nextName(name, taken) : name);
+
 /** b stands against a's right side: turned the same way, backs in line, on a's floor (or tops level, as wall cabinets).
  * @param {Cab} a @param {Cab} b */
 export function touchesRight(a, b) {
@@ -247,6 +273,10 @@ export function baseIssue(b, depth) {
   return null;
 }
 
+/** The most ladders, and sleepers, a frame is planned with: far more than any kitchen. */
+const MAX_LADDERS = 500;
+const MAX_SLEEPERS = 5000;
+
 /** @param {number} n @returns {string} "A", "B" ... "Z", "AA" */
 const letter = (n) => (n < 26 ? String.fromCharCode(65 + n) : letter(Math.floor(n / 26) - 1) + letter(n % 26));
 
@@ -329,7 +359,17 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   const yf = b.setback;
   const yb = depth - b.backInset;
   const sleeperLen = yb - yf - 2 * T + 2 * Math.max(0, dd - TONGUE_SHORT);
+  /** Why there is no frame to make after all, with the plan's shape (as for a setting refused). @param {string} why */
+  const refuse = (why) => ({ error: why, parts, length, depth, depths, at: /** @type {V3} */ ([0, 0, 0]), ladders: 0, sleepers: 0, notes: /** @type {string[][]} */ ([]), layout: /** @type {Layout} */ ({ ladders: [], front: 0, back: 0, thickness: 0, depth }) });
+  // A row of thousands of ladders or sleepers is a damaged or hostile document, not a kitchen:
+  // planned, it would take the plugin's memory.
+  if (!((x1 - x0) / b.maxLength <= MAX_LADDERS && (x1 - x0) / b.spacing <= MAX_SLEEPERS)) return refuse("This row is too long to plan a base frame for: check the cabinets' widths, the longest piece and the sleeper spacing.");
+  /** The shortest ladder: a sleeper at each end, each in its dado, apart. */
+  const shortest = 2 * T + b.fit + TOUCH;
+  const shown = b.ends !== "none" ? "The ends' setback leaves too short a ladder under this row: set the ends back less, or let fewer ends show." : "A cabinet in this row is too narrow for a ladder of its own: make the longest piece longer.";
+  if (!(x1 - x0 >= shortest)) return refuse(shown);
   const ladders = sections(x0, x1, joints, b.maxLength);
+  if (ladders.some(([a, c]) => !(c - a >= shortest))) return refuse(shown);
   /** Rails by shape, so identical ladders share one part. @type {Map<string, import("./cabinet.js").Part>} */
   const rails = new Map();
   /** @type {{ at: V3, name: string }[]} */

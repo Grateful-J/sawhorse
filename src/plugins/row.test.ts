@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { apply, BASE_LUMBER, baseDefaults, boxesOf, cncLength, compose, cutRows, edgesOf, IDENTITY, invert, ladderPicture, lineUp, normalizeBase, placeNext, planBase, rightOf, rowOf, sawStripDefaults, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
+import { apply, BASE_LUMBER, baseDefaults, boxesOf, cncLength, compose, cutRows, edgesOf, freeName, IDENTITY, invert, ladderPicture, lineUp, nextName, normalizeBase, placeNext, planBase, rightOf, rigid, rowOf, sawStripDefaults, sections, sleepers, touchesRight, translation, type Cab, type Frame } from "../../plugins/cabinet-generator/row.js";
 
 const IN = 0.0254;
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -251,5 +251,64 @@ describe("base frame", () => {
     expect(inches(sleeper.blank[1])).toBe(inches(23.25 * IN - 3 * IN - 2 * 1.5 * IN));
     expect(p.ladders).toBe(1);
   });
+
+  it("a short row with its ends showing: an error, never a throw or sleepers on top of each other", () => {
+    // A 6.69 in cabinet with both ends showing planned a ladder 0.69 in long, its two sleepers overlapping.
+    const short = planBase(row(6.69), b({ ends: "both" }));
+    expect(short.error).toMatch(/setback leaves too short a ladder/);
+    expect(short.parts).toEqual([]);
+    // A 24 in cabinet set back 12 in at both ends threw ("every size must be positive").
+    expect(planBase(row(24), b({ ends: "both", setback: 12 * IN })).error).toMatch(/too short a ladder/);
+    // Every narrow single cabinet, every end, every setback: planned properly or refused.
+    const B = b();
+    for (const w of [3, 4, 5, 6, 6.69, 7, 8, 9, 12])
+      for (const sb of [0, 1, 2, 3, 4, 5, 6])
+        for (const ends of ["none", "left", "right", "both"] as const) {
+          const p = planBase(row(w), b({ ends, setback: sb * IN }));
+          if (p.error) continue;
+          for (const l of p.layout.ladders) {
+            expect(l.x1 - l.x0, `${w} ${sb} ${ends}`).toBeGreaterThanOrEqual(2 * B.thickness + B.fit);
+            for (let i = 1; i < l.sleepers.length; i++) expect(l.sleepers[i] - l.sleepers[i - 1]).toBeGreaterThanOrEqual(B.thickness);
+          }
+        }
+  });
+
+  it("a row too long to be a kitchen (a damaged or hostile document) is refused, not planned", () => {
+    const t0 = Date.now();
+    // 1e300 m planned ladder by ladder ran out of memory.
+    expect(planBase([{ ...cab(1, 24), width: 1e300 }], b()).error).toMatch(/too long to plan/);
+    expect(planBase([{ ...cab(1, 24), width: 1e4 }], b()).error).toMatch(/too long to plan/);
+    // Sleepers a hair apart along an ordinary row: refused too.
+    expect(planBase(row(24, 24), b({ thickness: 1e-6, spacing: 3e-6, maxLength: 1, joints: "butt" })).error).toMatch(/too long to plan/);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    // A long kitchen is not: 40 cabinets, 80 ft.
+    const long = planBase(row(...Array.from({ length: 40 }, () => 24)), b());
+    expect(long.error).toBeNull();
+    expect(long.ladders).toBeGreaterThan(20);
+  });
 });
 
+describe("names and frames", () => {
+  it("the next cabinet's name skips the names in use", () => {
+    expect(nextName("Base 1")).toBe("Base 2");
+    expect(nextName("Cabinet 1", new Set(["Cabinet 1", "Cabinet 2", "Cabinet 3"]))).toBe("Cabinet 4");
+    expect(nextName("Sink base")).toBe("Sink base");
+    expect(nextName("Sink base", new Set(["Sink base", "Sink base 2"]))).toBe("Sink base 3");
+    expect(nextName("Base 007")).toBe("Base 8");
+    // A number past what a double holds still counts up (as a Number it would loop for ever).
+    expect(nextName("Cabinet 9007199254740993", new Set(["Cabinet 9007199254740994"]))).toBe("Cabinet 9007199254740995");
+    expect(freeName("Base frame 2", new Set(["Base frame 1"]))).toBe("Base frame 2");
+    expect(freeName("Base frame 2", new Set(["Base frame 2"]))).toBe("Base frame 3");
+  });
+
+  it("a frame that only turns and moves is rigid; one scaled or mirrored is not", () => {
+    expect(rigid(IDENTITY)).toBe(true);
+    expect(rigid({ linear: [[0, -1, 0], [1, 0, 0], [0, 0, 1]], translation: [3, 4, 5] })).toBe(true);
+    const c = Math.cos(0.3);
+    const sn = Math.sin(0.3);
+    expect(rigid({ linear: [[c, -sn, 0], [sn, c, 0], [0, 0, 1]], translation: [0, 0, 0] })).toBe(true);
+    expect(rigid({ linear: [[2, 0, 0], [0, 2, 0], [0, 0, 2]], translation: [0, 0, 0] })).toBe(false);
+    expect(rigid({ linear: [[1, 0, 0], [0, 1, 0], [0, 0, 1.01]], translation: [0, 0, 0] })).toBe(false);
+    expect(rigid({ linear: [[-1, 0, 0], [0, 1, 0], [0, 0, 1]], translation: [0, 0, 0] })).toBe(false);
+  });
+});
