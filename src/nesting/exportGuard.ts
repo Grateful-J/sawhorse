@@ -50,6 +50,20 @@ export function exportBlock(s: ExportState): string | null {
   return null;
 }
 
+export const CUT_PENDING = "Nothing was saved: the model changed and the cut list is being worked out again. Save again in a moment.";
+
+/**
+ * Why the shopping list must not be saved now, or null: it takes its sheets and boards from the
+ * nesting and its hardware from the cut list, so both must be of the model as it is now (the
+ * nesting by `exportBlock`, the cut list by the stamp it was worked out for). Never hardware of
+ * one state with sheets of another.
+ */
+export function shopExportBlock(s: ExportState & { cutStamp: NestStamp | null | undefined }): string | null {
+  const nest = exportBlock(s);
+  if (nest) return nest;
+  return sameStamp(s.cutStamp, s.now) ? null : CUT_PENDING;
+}
+
 export interface GuardedSave<M, P> {
   /** Why `n` must not be saved now (`exportBlock`, or it is no longer the nesting on screen). */
   blocked(n: Nesting): string | null;
@@ -109,7 +123,12 @@ export interface CncSaveReport {
   hand: { parts: number; saved: boolean; note: string | null } | null;
   /** How many of the nesting's sheets the track saw cuts. */
   sawSheets: number;
+  /** The one job sheets file for every router sheet, saved after the DXFs: its name, whether it
+   * was saved, and how many sheets it covers (absent: not offered). */
+  jobSheets?: { name: string; saved: boolean; sheets: number } | null;
 }
+
+const plural = (k: number, one: string) => `${k} ${k === 1 ? one : `${one}s`}`;
 
 /** The status line after CNC files: what was written and, in words, what was not. Never
  * "Saved 0 CNC files". Null when nothing was written and nothing needs saying. */
@@ -122,12 +141,14 @@ export function cncSaveMessage(r: CncSaveReport, notes: string[]): string | null
     return "No CNC files were saved: the first save was cancelled.";
   } else {
     said.push(`${savedCount(r.saved, r.total)} (one per sheet, millimetres, origin at the lower-left corner).`);
-    if (left > 0) said.push(`${left} ${left === 1 ? "sheet was" : "sheets were"} not saved${r.stoppedAt ? `, from ${r.stoppedAt} on` : ""}${r.hand && r.hand.parts ? ", nor the track saw's hand work list" : ""}: save again for the rest.`);
+    const also = [r.hand && r.hand.parts ? "the track saw's hand work list" : "", r.jobSheets ? "the job sheets" : ""].filter(Boolean).join(" or ");
+    if (left > 0) said.push(`${left} ${left === 1 ? "sheet was" : "sheets were"} not saved${r.stoppedAt ? `, from ${r.stoppedAt} on` : ""}${also ? `, nor ${also}` : ""}: save again for the rest.`);
   }
   if (r.hand && left === 0) {
     if (r.hand.note) said.push(r.hand.note);
     if (r.hand.parts) said.push(r.hand.saved ? `Saved the hand work on ${r.hand.parts} track saw ${r.hand.parts === 1 ? "part" : "parts"}.` : `The hand work list for ${r.hand.parts} track saw ${r.hand.parts === 1 ? "part" : "parts"} was not saved.`);
   }
+  if (r.jobSheets && left === 0 && r.total > 0) said.push(r.jobSheets.saved ? `Saved the job sheets for ${plural(r.jobSheets.sheets, "sheet")} as ${r.jobSheets.name}.` : `The job sheets were not saved (the CNC files were): save the PDF or CNC files again for them.`);
   if (r.saved > 0 || (r.hand?.saved ?? false)) said.push(...notes);
   return said.join(" ");
 }

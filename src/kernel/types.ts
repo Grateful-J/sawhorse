@@ -89,6 +89,8 @@ export type KernelOp =
   | { op: "set_stock"; part: PartRef; stock: string | null; sheet: boolean | null }
   /** Cut list (lane 15): count a part, or drop it from the totals and the nesting (still listed). */
   | { op: "set_include"; part: PartRef; include: boolean }
+  /** The shopping list: what is bought for each piece of a part beyond its wood (replaces what was said; [] clears it). */
+  | { op: "set_bom"; part: PartRef; bom: BomItem[] }
   /** Lane 15: each edge-connected piece of loose non-solid faces into a group of its own (none named: every mesh in the open context). */
   | { op: "group_loose"; meshes: number[] }
   /** Lane 15: soft (1), smooth (2), hidden (4) on edges named by owner and end points. */
@@ -352,7 +354,8 @@ export type OpOutcome =
   | { kind: "context_changed"; context: number | null }
   | { kind: "component_created"; instance: number; definition: number }
   | { kind: "made_unique"; definition: number }
-  | { kind: "exploded"; objects: number[]; nodes: number[] }
+  /** `notes`: where what was said about an exploded part went (its hardware onto a solid). */
+  | { kind: "exploded"; objects: number[]; nodes: number[]; notes?: string[] }
   | { kind: "node_deleted" }
   | { kind: "visibility_set" }
   | { kind: "lock_set" }
@@ -1092,7 +1095,33 @@ export interface CutRow {
   sheet_set: boolean;
   board_feet: number;
   area_m2: number;
+  /** The shopping list: what is bought for each piece beyond its wood (absent: nothing). */
+  bom?: BomItem[];
+  /** Pieces placed under a transform that stretches them (absent: none): their hardware is
+   * still the original's. */
+  stretched?: number;
   occurrences: Occurrence[];
+}
+
+/** How a shopping-list item is counted and bought: one by one, in pairs, or in metres. */
+export type BomUnit = "each" | "pair" | "m";
+/** A unit as read: one of the three, or (from a newer file, kept as it was) another word. */
+export type BomUnitRead = BomUnit | (string & {});
+
+/** One thing bought for a part beyond its wood (crates/kernel/src/cutlist.rs `BomItem`):
+ * `qty` per piece of the part, a whole number for "each" and "pair"; at most 32 per part. */
+export interface BomItem {
+  /** What it is, in words, 1 to 128 characters. */
+  item: string;
+  /** The maker's part number, 1 to 64 characters; absent when none is known. */
+  sku?: string;
+  qty: number;
+  /** A file from a newer version may hold a unit this one does not know: kept, and shown as
+   * such; an edit (`set_bom`) takes only the three. */
+  unit: BomUnitRead;
+  /** Bought once for the shop however many parts carry it (a drilling template): the shopping
+   * list takes the most any part asks for instead of adding them up. */
+  once?: boolean;
 }
 
 /** Lane 15 fixes: why a listed part counts nowhere. */

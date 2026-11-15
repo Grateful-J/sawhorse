@@ -12,12 +12,15 @@
 // to go back to a new cabinet.
 //
 // Every part is a named component on a plywood material with its grain set (doors, faces and
-// sides as asked, the hidden parts free to turn), so the cut list nests it as sheet goods.
+// sides as asked, the hidden parts free to turn), so the cut list nests it as sheet goods, and
+// carries the hardware it takes (hinges on a door, runners on a drawer front, pins on a shelf)
+// for the shopping list.
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
-import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
+import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
 
 const IN = 0.0254;
@@ -50,6 +53,20 @@ const planMetric = () => (editing !== null ? keptUnits : metric());
 let taken = /** @type {Set<string>} */ (new Set());
 /** Which group is open ("" for none). */
 let view = /** @type {string} */ ((await storage.app.get("view")) ?? "");
+
+/** The test the Test cuts group shows (kept for next time). @type {import("./testcuts.js").TestKind} */
+let testKind = /** @type {import("./testcuts.js").TestKind} */ ("machine");
+{
+  const saved = await storage.app.get("testKind");
+  if (saved === "machine" || saved === "ladders" || saved === "drawer" || saved === "door") testKind = saved;
+}
+/** The last joint ladders added to this model, as cut (kept in the document), while they are in it; or null. */
+let ladderCut = /** @type {import("./testcuts.js").LadderRecord | null} */ (null);
+/** The dado picked on each ladder: "1" to "5", "tight", "loose", or "" (not tried). */
+let picks = /** @type {Record<string, string>} */ ({});
+/** The Test cuts group's own fields: not settings of the cabinet. */
+const TEST_FIELDS = ["testKind", "fit_dado", "fit_back", "fit_bottom"];
+const LADDERS = "ladders";
 
 /** @typedef {import("./row.js").Frame} Frame */
 
@@ -100,11 +117,11 @@ const record = (v) => /** @type {Record<string, any>} */ (v && typeof v === "obj
  * instances, the selection (each item as the node it starts from), the open context, and what
  * is kept in the document. A sync used to ask for the whole node list three times and the
  * store five times for each click.
- * @typedef {{ nodes: import("sawhorse").Node[], byId: Map<number, import("sawhorse").Node>, kids: Map<number, number[]>, copies: Map<number, number[]>, starts: (number | null)[], context: number | null, cabinets: Record<string, Kept>, bases: Record<string, any>, last: number | null, legacy: number | null }} Snapshot
+ * @typedef {{ nodes: import("sawhorse").Node[], byId: Map<number, import("sawhorse").Node>, kids: Map<number, number[]>, copies: Map<number, number[]>, starts: (number | null)[], context: number | null, cabinets: Record<string, Kept>, bases: Record<string, any>, last: number | null, legacy: number | null, ladders: import("./testcuts.js").LadderRecord | null }} Snapshot
  * @returns {Promise<Snapshot>}
  */
 async function snapshot() {
-  const [nodes, sel, doc, cabs, bs, last, legacy] = await Promise.all([
+  const [nodes, sel, doc, cabs, bs, last, legacy, ladders] = await Promise.all([
     model.nodes(),
     model.selection(),
     model.document(),
@@ -112,6 +129,7 @@ async function snapshot() {
     storage.document.get(BASES),
     storage.document.get(LAST),
     storage.document.get("cabinet"),
+    storage.document.get(LADDERS),
   ]);
   // A solid or a face selected starts from the group or instance it is in.
   const starts = await Promise.all(
@@ -136,6 +154,7 @@ async function snapshot() {
     bases: record(bs),
     last: typeof last === "number" ? last : null,
     legacy: typeof legacy === "number" ? legacy : null,
+    ladders: validLadderRecord(ladders),
   };
 }
 
@@ -271,12 +290,13 @@ const runnerOptions = () => [
 const read = (values) => {
   const v = { ...values };
   if (typeof v.runner === "string") v.runner = Number(v.runner) || 0;
+  if (typeof v.bandCount === "string") v.bandCount = Number(v.bandCount) || 1;
   // Blum's boring distance is in millimetres whatever the document's units.
   if (typeof v.cupDistance === "string") v.cupDistance = Number(v.cupDistance) * MM;
   if (v.joinery === "dado" || v.joinery === "butt") v.dados = v.joinery === "dado";
   if (v.backType === "groove" || v.backType === "butt") Object.assign(v, { back: true, backMount: v.backType });
   else if (v.backType === "none") v.back = false;
-  for (const k of ["preset", "view", "joinery", "backType", "place", "filler", ...SECTIONS.map((x) => x.id)]) delete v[k];
+  for (const k of ["preset", "view", "joinery", "backType", "place", "filler", ...TEST_FIELDS, ...SECTIONS.map((x) => x.id)]) delete v[k];
   return normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (v) }, metric());
 };
 
@@ -336,7 +356,26 @@ const SECTIONS = [
   },
   { id: "secCnc", label: "7 · CNC", applies: () => true, summary: () => `${exactThickness(sizes.bit, metric())} bit · ${exactThickness(sizes.fit, metric())} joint clearance` },
   { id: "secCuts", label: "8 · Cuts and holes", applies: () => true, summary: () => "Every cut and hole, and how it is made" },
+  { id: "secTests", label: "9 · Test cuts", applies: () => true, summary: () => `${TEST_TITLES[testKind]} · prove the setup before the real sheet` },
+  { id: "secBand", label: "10 · Edge banding", applies: () => true, summary: () => bandSummary() },
 ];
+
+/** What the Edge banding group says while closed: off, or which parts take which band. */
+function bandSummary() {
+  const s = sizes;
+  if (!s.band) return "Off · cut at the finished sizes, no edges banded";
+  const list = bandList(s, planMetric());
+  const mm = (/** @type {import("./cabinet.js").BandPick} */ p) => {
+    const b = list[Number(p) - 1];
+    return b ? `${Math.round((b.thickness / MM) * 100) / 100} mm` : "?";
+  };
+  const on = /** @type {[import("./cabinet.js").BandPick, string][]} */ ([
+    [s.bandFronts, "fronts"],
+    [s.bandCarcass, "carcass edges"],
+    [s.bandShelves, "shelves"],
+  ]).filter(([p]) => p !== "none");
+  return on.length ? on.map(([p, w]) => `${w} ${mm(p)}`).join(" · ") : "On · no part picked";
+}
 
 /** The fields of the open group. @returns {Field[]} */
 function details() {
@@ -440,6 +479,8 @@ function details() {
       const ks = ["3", "3.5", "4", "4.5", "5", "5.5", "6", "6.5", "7"];
       out.push(pick("cupDistance", "Boring distance", k, (ks.includes(k) ? ks : [...ks, k]).map((x) => [x, `${x} mm${x === "5" ? " · 16 mm overlay" : ""}`])));
       out.push(help("The cup's edge to the door's edge. Cuts and holes compares the overlay it gives with your door's."));
+      out.push(pick("hingeClose", "Hinges", s.hingeClose, [["soft", "BLUMOTION (soft close)"], ["self", "Self-closing"]]));
+      out.push(help("Which CLIP top hinge the shopping list names: the holes are the same."));
     }
     if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help("5 mm holes, 10 deep, 32 mm apart, five around each shelf: a row 37 mm from the front and a rear row on the same 32 mm grid. Drilled whenever shelves are adjustable."));
   } else if (view === "secCnc") {
@@ -448,8 +489,266 @@ function details() {
     out.push(help("To cut: Nesting › CNC spacing, then CNC files for a DXF per sheet."));
   } else if (view === "secCuts") {
     out.push({ type: "table", id: "holes", columns: ["Part", "What", "Hole", "Depth", "How"], rows: [], align: ["left", "left", "right", "right", "left"] });
+  } else if (view === "secTests") {
+    out.push(...testFields());
+  } else if (view === "secBand") {
+    out.push(...bandFields());
   }
   return out;
+}
+
+/** The Edge banding group's fields. @returns {Field[]} */
+function bandFields() {
+  const s = sizes;
+  /** @type {Field[]} */
+  const out = [
+    { type: "checkbox", id: "band", label: "Band the edges", value: s.band },
+    help("Each banded edge is cut short by its band's thickness, so the part comes out at its size with the band on. Holes, dados and notches stay where they are in the finished part: Blum gives the boring distance from the door's edge and the 37 mm lines from the side's front edge, and with a band on, that edge is the band's face. No maker's rule for this was found: it is the geometry. The model shows the blanks: a banded edge stands a band short, and a size measured in the model is the cut size."),
+  ];
+  if (!s.band) return out;
+  out.push(pick("bandCount", "Bands", String(s.bandCount), [["1", "One band"], ["2", "Two bands"], ["3", "Three bands"]]));
+  const raw = /** @type {const} */ ([
+    ["band1", s.band1Size, s.band1Thick, s.band1Name, s.band1Width],
+    ["band2", s.band2Size, s.band2Thick, s.band2Name, s.band2Width],
+    ["band3", s.band3Size, s.band3Thick, s.band3Name, s.band3Width],
+  ]).slice(0, Math.max(1, Math.min(3, s.bandCount)));
+  raw.forEach(([id, size, thick, name, width], i) => {
+    out.push(heading(`Band ${i + 1}`));
+    out.push(pick(`${id}Size`, "Thickness", size, [...BAND.sizes.map(([v, , label]) => /** @type {[string, string]} */ ([v, label])), ["custom", "Measured: type it"]]));
+    if (size === "custom") out.push({ type: "number", id: `${id}Thick`, label: "Measured thickness", unit: "length", value: thick, min: BAND.minThick, max: BAND.maxThick });
+    out.push({ type: "text", id: `${id}Name`, label: "Name or colour", value: name, placeholder: "White PVC" }, len(`${id}Width`, "Width", width));
+  });
+  out.push(help(`Measure the band with calipers, as you did the plywood, and type what it measures: REHAU's 1 mm band is made to +-0.1 mm. REHAU sells 0.018 in (0.457 mm), 1, 2 and 3 mm, 15/16 in wide among other widths. Sawhorse's own limits, not sourced rules: at most 1/4 in thick, and at least as wide as the stock it covers.`));
+  const list = bandList(s, planMetric());
+  const which = [["none", "No banding"], ...list.map((b) => /** @type {[string, string]} */ ([String(b.n), `Band ${b.n} · ${b.label}`]))];
+  out.push(heading("Which edges"));
+  out.push(pick("bandFronts", "Doors and drawer fronts, all four edges", s.bandFronts, /** @type {[string, string][]} */ (which)));
+  out.push(pick("bandCarcass", "Front edges of the sides, top, bottom, fixed shelves and front stretcher", s.bandCarcass, /** @type {[string, string][]} */ (which)));
+  out.push(pick("bandShelves", "Adjustable shelves, front edge", s.bandShelves, /** @type {[string, string][]} */ (which)));
+  out.push(help("The starting choices follow the AWS standard (2009): it counts the \"visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers\" as exposed, and an adjustable shelf's three hidden edges as concealed. Nailers are not banded here: they sit behind the back, at the rear edge. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. Finished ends are not made by this plugin yet."));
+  out.push(heading("Edgebander and waste"));
+  out.push(len("bandPremill", "Edgebander pre-mill", s.bandPremill));
+  out.push(help("Edgebanders only: what the jointing cutter takes off each edge before the band goes on (Felder and SCM: 0 to 3 mm). Each banded edge's blank is cut that much larger. Iron-on banding: 0."));
+  out.push(len("bandWasteEnd", "Waste per banded side", s.bandWasteEnd));
+  out.push(help(`Microvellum's default, not a standard: ${metric() ? "25.4 mm" : "1 in"} per banded side, then 5% of the total. Each part carries the ${metric() ? "25.4 mm" : "1 in"} a side; the 5% is the shopping list's banding overage, added once. An edge with a notch at its end (the toe kick, a rail's tongues) counts its whole run: the band runs across the notch and is trimmed by hand at its inside corner.`));
+  out.push(heading("Banded parts"), { type: "table", id: "bandRows", columns: ["Part", "Qty", "Banded edges", "Band", "Finished", "Cut", "Band each"], rows: [], align: ["left", "right", "left", "left", "right", "right", "right"] });
+  out.push({ type: "note", id: "bandTotal", text: "" });
+  return out;
+}
+
+/** Fill in the Edge banding group's table: each banded part, finished and cut, and its band.
+ * @param {Record<string, Record<string, unknown>>} fields @param {ReturnType<typeof plan> | null} planned */
+function explainBand(fields, planned) {
+  if (!sizes.band) return;
+  const m = planMetric();
+  const face = (/** @type {[number, number, number]} */ v) => {
+    const thin = v.indexOf(Math.min(...v));
+    return v.filter((_, k) => k !== thin).map((x) => (m ? `${Math.round((x / MM) * 10) / 10}` : `${(x / IN).toFixed(3)}`)).join(" × ") + (m ? " mm" : " in");
+  };
+  const banded = (planned?.parts ?? []).filter((p) => p.bands);
+  fields.bandRows = {
+    rows: banded.map((p) => {
+      const on = /** @type {import("./cabinet.js").PartBand[]} */ (p.bands);
+      const metres = (p.bom ?? []).filter((x) => x.unit === "m").reduce((t, x) => t + x.qty, 0);
+      const notched = on.some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9);
+      return [p.name, p.copies.length, `${on.length === 4 ? "all four" : on.map((e) => e.edge).join(", ")}${notched ? " (notched end: trim by hand)" : ""}`, [...new Set(on.map((e) => e.band))].map((n) => `Band ${n}`).join(", "), face(/** @type {[number, number, number]} */ (p.finished)), face(p.blank), `${metres.toFixed(3)} m`];
+    }),
+  };
+  /** @type {Map<string, number>} */
+  const total = new Map();
+  for (const p of banded) for (const x of p.bom ?? []) if (x.unit === "m") total.set(x.item, (total.get(x.item) ?? 0) + x.qty * p.copies.length);
+  fields.bandTotal = {
+    text: planned
+      ? banded.length
+        ? `In all, with waste: ${[...total].map(([item, q]) => `${q.toFixed(2)} m of ${item.replace(/^Edge banding, /, "")}`).join("; ")}. Cut sizes are what the CNC files draw, and what the model shows; the shopping list counts the band.${banded.some((p) => (p.bands ?? []).some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9)) ? ` ${END_NOTCH}.` : ""}`
+        : "No part of this cabinet is banded: pick a band for a kind of part above."
+      : "",
+  };
+}
+
+// --- test cuts ------------------------------------------------------------------------------
+//
+// Small pieces that prove a setup before the real sheet (testcuts.js): each planned from the
+// panel's settings, through the same planner and mesh builder as the cabinet.
+
+/** The test the group shows, planned from the panel's settings (kept until they change). */
+let testMemo = { key: "", value: /** @type {import("./testcuts.js").TestCut | null} */ (null) };
+function currentTest() {
+  const m = planMetric();
+  const key = JSON.stringify([testKind, sizes, m]);
+  if (testMemo.key !== key || !testMemo.value) testMemo = { key, value: testCut(testKind, sizes, m) };
+  return /** @type {import("./testcuts.js").TestCut} */ (testMemo.value);
+}
+/** The ladders the picks name: those added to this model (as cut: each dado's width, and the
+ * mating stock then), else those Add would make now. */
+const pickLadders = () => {
+  if (ladderCut) return ladderCut.ladders;
+  const t = currentTest();
+  return testKind === "ladders" && !t.error ? t.coupons.map((c) => ({ kind: c.kind, name: c.name, mating: c.mating, widths: c.widths })) : [];
+};
+
+/** The Test cuts group's fields. @returns {Field[]} */
+function testFields() {
+  const t = currentTest();
+  const m = planMetric();
+  /** @type {Field[]} */
+  const out = [
+    pick("testKind", "Test", testKind, [
+      ["machine", `Machine check · scrap, about ${m ? "130 × 130 mm" : "5 × 5 in"}`],
+      ["ladders", "Joint ladders · the real sheets"],
+      ["drawer", "Mini drawer · its runner and holes"],
+      ["door", "Mini door · hinges and shelf pins"],
+    ]),
+    { type: "note", id: "testProves", text: "", tone: "info" },
+    { type: "note", id: "testStock", text: "" },
+    heading("Measure"),
+    { type: "table", id: "testRows", columns: ["Measure", "Expected", "If it is off"], rows: [], align: ["left", "left", "left"] },
+  ];
+  if (t.columns.length) out.push({ type: "table", id: "testCuts", columns: t.columns, rows: [], align: t.columns.map(() => /** @type {"left"} */ ("left")) });
+  // The picks stay while ladders are in the model, even when the settings now could not make them.
+  const ladders = testKind === "ladders" ? pickLadders() : [];
+  if (ladders.length) {
+    out.push(heading("Which dado fits"));
+    for (const l of ladders) out.push(pick(`fit_${l.kind}`, l.name, picks[l.kind] ?? "", pickOptions(l, sizes, m)));
+    out.push({ type: "button", id: "applyFit", label: "Set Joint clearance" }, { type: "note", id: "fitStatus", text: "" });
+  }
+  out.push({ type: "note", id: "testArea", text: "" });
+  out.push({ type: "button", id: "makeTest", label: `Add the ${TEST_TITLES[testKind].toLowerCase()} to the model` });
+  out.push({ type: "note", id: "testStatus", text: "" });
+  return out;
+}
+
+/** What the ladders' picks come to (testcuts.js fitFromPicks), and which ladders they name. */
+function fitAdvice() {
+  const m = planMetric();
+  const a = fitFromPicks(pickLadders(), picks, sizes, m);
+  const t = currentTest();
+  const c = (/** @type {number} */ v) => clearanceText(v, m);
+  const steps = ladderCut?.steps;
+  const which = !ladderCut
+    ? " No ladders were added to this model: the dados named are those Add makes now."
+    : !t.error && steps && steps.some((v, k) => Math.abs(v - t.steps[k]) > 1e-9)
+      ? ` The ladders in the model were cut at ${c(steps[0])} to ${c(steps[steps.length - 1])} over their stock; Add makes ${c(t.steps[0])} to ${c(t.steps[t.steps.length - 1])} now.`
+      : "";
+  return { ...a, text: `${a.text}${which}` };
+}
+
+/** Fill in the Test cuts group. @param {Record<string, Record<string, unknown>>} fields @param {ReturnType<typeof plan> | null} planned */
+function explainTests(fields, planned) {
+  const t = currentTest();
+  const m = planMetric();
+  fields.testProves = { text: t.proves };
+  fields.testStock = { text: [t.stock ? `Stock: ${t.stock}` : "", t.skipped.length ? `Not made, nothing to fit with these settings: ${t.skipped.join(" ")}` : ""].filter(Boolean).join(" ") };
+  fields.testRows = { rows: t.error ? [] : t.rows };
+  if (t.columns.length) fields.testCuts = { rows: t.error ? [] : t.holes };
+  const cab = planned ? partArea(planned.parts) : 0;
+  const size = t.sizes ? ` (${f(t.sizes.width)} × ${f(t.sizes.height)} × ${f(t.sizes.depth)})` : "";
+  const pieces = t.parts.reduce((n, p) => n + p.copies.length, 0);
+  const pct = cab ? (t.area / cab) * 100 : 0;
+  fields.testArea = { text: t.error ? "" : `${t.name}${size}: ${pieces} ${pieces === 1 ? "part" : "parts"}, ${areaText(t.area, m)} of plywood${cab ? `, ${pct < 1 ? pct.toFixed(1) : Math.round(pct)}% of the ${areaText(cab, m)} in ${sizes.name}` : ""}.` };
+  fields.makeTest = { label: `Add the ${TEST_TITLES[testKind].toLowerCase()} to the model`, disabled: !!t.error };
+  fields.testStatus = t.error
+    ? { text: t.error, tone: "warning" }
+    : { text: `It goes beside the model as ${t.name}, on the tag ${TEST_TAG}, and nests with everything shown. To cut one test alone: hide the cabinets, the base frames and the other tests (Outliner), and tick Visible only in the Cut list. For a test cut from MDF, add your MDF sheet at its measured thickness (Stock…) and give the test's parts that sheet (Cut list, right-click, Stock / material…), or it nests on your plywood. To cut only the cabinets: hide the tag ${TEST_TAG} (Tags pane) and tick Visible only.`, tone: "info" };
+  if (testKind === "ladders" && pickLadders().length) {
+    const a = fitAdvice();
+    fields.fitStatus = { text: a.text, tone: a.tone };
+    fields.applyFit = { label: a.value === null ? "Set Joint clearance" : `Set Joint clearance to ${clearanceText(a.value, m)} (${editing === null ? "new cabinets" : sizes.name})`, disabled: a.value === null };
+  }
+}
+
+/**
+ * Add a test to the model, beside it, as its own assembly on the tag Test cuts: one undo step.
+ * The selection stays where it is, so the panel keeps the cabinet it was showing.
+ * @param {import("./testcuts.js").TestKind} kind @param {Sizes} s
+ */
+async function makeTestNow(kind, s) {
+  const m = planMetric();
+  const snap = await snapshot();
+  // Made in the open context, a test inside one of ours would go with it at its next rebuild.
+  const holder = openPath(snap).find((n) => focusOf(snap, n) || baseOf(snap, n));
+  if (holder) {
+    await ui.notify(`Leave ${holder.name ?? holder.label} first (Esc): a test cut cannot be made inside a cabinet or a base frame.`, { kind: "warning" });
+    return;
+  }
+  const t = testCut(kind, s, m);
+  if (t.error) {
+    await ui.notify(t.error, { kind: "warning" });
+    return;
+  }
+  const b = await model.bounds();
+  /** @type {Frame} */
+  const world = { ...IDENTITY, translation: b ? [b.max[0] + (metric() ? 50 * MM : 2 * IN), b.min[1], 0] : [0, 0, 0] };
+  const frame = compose(invert(await contextFrame()), world);
+  const batch = model.batch(`Test cuts: ${TEST_TITLES[kind]}`);
+  const items = addParts(batch, t.parts, frame, (await materialsToAdd())(Object.values(MATERIALS)));
+  const label = t.sizes ? `${t.name} ${f(t.sizes.width)} x ${f(t.sizes.height)} x ${f(t.sizes.depth)}` : t.name;
+  const ref = batch.makeComponent(items, label);
+  batch.rename({ node: ref.node }, t.name);
+  batch.setTag([{ node: ref.node }], TEST_TAG);
+  /** @type {import("sawhorse").BatchResult} */
+  let result;
+  try {
+    result = await batch.commit();
+  } catch (e) {
+    await ui.notify(`Could not add ${t.name}: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
+    await syncOnce();
+    return;
+  }
+  if (kind === "ladders") {
+    // The picks name the dados of the ladders just made, by the node they were added as: an
+    // Undo of the Add, or the ladders deleted, and the record is no longer used.
+    const record = ladderRecord(t, /** @type {number} */ (result.value(ref.node)));
+    ladderCut = record;
+    picks = {};
+    try {
+      await storage.document.set(LADDERS, record);
+    } catch {
+      // Not kept (the store is full): this session still names these ladders while they are in the model.
+    }
+  }
+  await syncOnce();
+  const parts = t.parts.map((p) => (p.copies.length > 1 ? `${p.name} x ${p.copies.length}` : p.name)).join(", ");
+  await ui.notify(`Added ${t.name} beside the model, on the tag ${TEST_TAG}: ${parts}.`);
+}
+
+/**
+ * Set Joint clearance to the one the ladders agree on: to the cabinet the panel edits (one
+ * rebuild, one undo step, as a change typed in 7 · CNC) or to new cabinets. Says what happened:
+ * a cabinet that is not rebuilt from the panel (an older one, one scaled by hand), or whose
+ * rebuild was refused, keeps its build, and the message says why.
+ * @param {import("sawhorse").Values} values
+ */
+async function applyFit(values) {
+  const a = fitAdvice();
+  if (a.value === null) return;
+  const v = a.value;
+  sizes = { ...read(values), fit: v };
+  picks = {};
+  const c = clearanceText(v, planMetric());
+  if (editing === null) {
+    draft = sizes;
+    void storage.app.set("sizes", sizes);
+    shown = "";
+    await refresh();
+    await ui.notify(`Joint clearance is ${c} for new cabinets. Cabinets already made keep theirs: select each and set it in 7 · CNC.`);
+    return;
+  }
+  const name = sizes.name;
+  if (why) {
+    shown = "";
+    await refresh();
+    await ui.notify(`Joint clearance is ${c} in the panel, but ${name} is not rebuilt: ${why}`, { kind: "warning" });
+    return;
+  }
+  liveUpdate();
+  // Built now, not in a moment, so the message says what was built.
+  await flushEdit();
+  shown = "";
+  await refresh();
+  const built = editing !== null && kept && Math.abs(kept.fit - v) < 1e-12;
+  if (built) await ui.notify(`Joint clearance is ${c} for ${name}, rebuilt with it (Ctrl+Z undoes it). Other cabinets keep theirs: select each and set it in 7 · CNC.`);
+  else await ui.notify(`${name} is not rebuilt with a Joint clearance of ${c}: ${why ?? issue({ ...sizes, fit: v }, planMetric()) ?? "the change was refused (the note under Generate says why)"}`, { kind: "warning" });
 }
 
 /** The whole panel for the sizes and the open group. @returns {Field[]} */
@@ -491,7 +790,8 @@ function body() {
 
 /** The ids the panel shows now, to rebuild it only when they change. */
 let shown = "";
-const idsOf = (/** @type {Field[]} */ fields) => fields.map((x) => ("id" in x && x.id ? `${x.id}:${x.type === "select" ? x.options.map((o) => o.value).join("|") : ""}` : "")).join(",");
+// A select's options by value and label: a label that changes (a ladder's dado, its clearance now) is redrawn.
+const idsOf = (/** @type {Field[]} */ fields) => fields.map((x) => ("id" in x && x.id ? `${x.id}:${x.type === "select" ? x.options.map((o) => `${o.value}=${o.label}`).join("|") : ""}` : "")).join(",");
 
 /** Rebuild the panel when what it shows changes, then say what Generate will do. */
 async function refresh() {
@@ -516,6 +816,18 @@ const panel = await ui.registerPanel({
       void storage.app.set("view", view);
       return refresh();
     }
+    // The Test cuts group's own fields: not settings of the cabinet.
+    if (id === "testKind") {
+      const k = String(values.testKind);
+      if (k === "machine" || k === "ladders" || k === "drawer" || k === "door") testKind = k;
+      void storage.app.set("testKind", testKind);
+      shown = "";
+      return refresh();
+    }
+    if (id.startsWith("fit_")) {
+      picks = { ...picks, [id.slice(4)]: String(values[id] ?? "") };
+      return refresh();
+    }
     // Where the next cabinet goes: not a setting of this one.
     if (id === "place" || id === "filler") {
       if (id === "place") place = /** @type {PlaceNew} */ (String(values.place));
@@ -533,6 +845,11 @@ const panel = await ui.registerPanel({
       shown = "";
     } else {
       sizes = read(values);
+      // Fewer bands: a kind of part that took one no longer listed takes band 1.
+      if (id === "bandCount") {
+        const n = sizes.bandCount;
+        for (const k of /** @type {const} */ (["bandFronts", "bandCarcass", "bandShelves"])) if (sizes[k] !== "none" && Number(sizes[k]) > n) sizes = { ...sizes, [k]: "1" };
+      }
       // Another runner has other lengths: back to Automatic.
       if ((id === "slides" || id === "catalog") && sizes.runner && !runnerLine(sizes).lengths.some((r) => r.nl === sizes.runner)) sizes = { ...sizes, runner: 0 };
       // Fields whose label or options name another choice are rebuilt with it.
@@ -553,6 +870,14 @@ const panel = await ui.registerPanel({
         await flushEdit();
         return generate("new", sizes);
       }
+      if (id === "makeTest") {
+        sizes = read(values);
+        await flushEdit();
+        const s = sizes;
+        const kind = testKind;
+        return exclusive(() => makeTestNow(kind, s));
+      }
+      if (id === "applyFit") return applyFit(values);
       if (id === "replace" && editing !== null && replace) {
         sizes = read(values);
         const s = sizes;
@@ -587,6 +912,8 @@ async function explain() {
   // Each group's heading says what is in it now.
   for (const sec of SECTIONS) if (sec.applies()) fields[sec.id] = { summary: sec.summary() };
   if (view === "secCuts") fields.holes = { rows: planned ? planned.rows : [] };
+  if (view === "secTests") explainTests(fields, planned);
+  if (view === "secBand") explainBand(fields, planned);
   await send(panel, fields);
 }
 
@@ -685,6 +1012,14 @@ async function syncOnce() {
   const key = f ? f.key : null;
   const { list } = await placed(snap);
   taken = new Set(list.map((c) => c.name));
+  // The last joint ladders added, while they are in the model: what the picks name. This session's
+  // record first (its write to the document may have failed), then the document's; one whose
+  // ladders are gone (an Undo of the Add, deleted) names nothing.
+  const cut = liveLadders(ladderCut, snap.ladders, (id) => snap.byId.get(id)?.kind === "instance");
+  if (JSON.stringify(cut) !== JSON.stringify(ladderCut)) {
+    ladderCut = cut;
+    picks = {};
+  }
   // The cabinet a new one goes against: this one, else the last one made or edited (kept in
   // the document only when one is made or rebuilt: a click writes nothing).
   if (id !== null) lastId = id;
@@ -744,8 +1079,10 @@ async function materialsToAdd() {
   };
 }
 
-/** Add parts to a batch at `frame`, each part's grain set through its first copy; returns the
- * copies, to wrap into a component. @param {import("sawhorse").Batch} batch
+/** Add parts to a batch at `frame`, each part's grain and hardware (its `bom`, for the shopping
+ * list) set through its first copy; returns the copies, to wrap into a component. Set on the
+ * part's component, the hardware is counted once per copy: a copied cabinet doubles it, a
+ * deleted one takes it away. @param {import("sawhorse").Batch} batch
  * @param {import("./cabinet.js").Part[]} parts @param {Frame} frame
  * @param {{ name: string, color: [number, number, number, number] }[]} materials */
 function addParts(batch, parts, frame, materials) {
@@ -758,6 +1095,7 @@ function addParts(batch, parts, frame, materials) {
     for (let c = 0; c < part.copies.length; c++) items.push({ node: imported.get(`groups.${k++}`) });
     // "length" is every part's grain until said otherwise.
     if (part.grain !== "length") batch.op({ op: "set_grain", part: { node: first }, grain: part.grain });
+    if (part.bom?.length) batch.op({ op: "set_bom", part: { node: first }, bom: part.bom });
   }
   return items;
 }
@@ -1740,6 +2078,7 @@ events.on("documentOpened", () => {
   editingKey = null;
   editingBase = null;
   baseHeld.clear();
+  picks = {};
   return sync();
 });
 // Lengths in the summaries and the rows panel are in the document's units: say them again.

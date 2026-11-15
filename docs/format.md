@@ -1,6 +1,6 @@
 # The `.shz` file format, version 1
 
-Status: open specification, 2026-10-11 (lane 6; groups, components, tags and scenes added in lane 5, cut-list part attributes in lane 7, the stock library and nesting settings in lane 9, materials, face paint, textures, styles and shadows in lane 10, section planes and drawing sheets in lane 12, a scene's grid switch in lane 26, all as optional fields). License: this document is CC0; the format is free to implement by anyone, for anything.
+Status: open specification, 2026-10-11 (lane 6; groups, components, tags and scenes added in lane 5, cut-list part attributes in lane 7 (and their `bom` hardware list in 2026-11), the stock library and nesting settings in lane 9, materials, face paint, textures, styles and shadows in lane 10, section planes and drawing sheets in lane 12, a scene's grid switch in lane 26, all as optional fields). License: this document is CC0; the format is free to implement by anyone, for anything.
 
 A `.shz` file is a Sawhorse model. It is a ZIP archive (APPNOTE 6.3, Deflate or Stored entries) with these entries:
 
@@ -172,15 +172,26 @@ Nested node placements compose: a member node's `xform` in the world is its inst
 
 ### Part attributes (cut list)
 
-An object, all optional (absent, or `{}`: nothing said). Written on definitions, groups and solids (`objects[]`, `nodes[]` of kind group, `definitions[]`, `definitions[].members[]` of kind solid or group). Readers that do not know them lose nothing but the cut list's overrides.
+An object, all optional (absent, or `{}`: nothing said). Written on definitions, groups and solids (`objects[]`, `nodes[]` of kind group, `definitions[]`, `definitions[].members[]` of kind solid or group). Readers that do not know them lose nothing but the cut list's overrides (and the shopping list's `bom`); a reader that does not know `bom` reads everything else as before.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `grain` | `"length"`, `"width"` or `"none"` | Which way the grain runs: along the part's length (the default; writers leave it out), across it (along its width), or no grain (MDF, painted). Length, width and thickness are the part's minimal box, sorted. |
 | `stock` | string | What the part is cut from, in words ("White oak", "3/4 Baltic birch ply"), at most 64 characters. The cut list shows it instead of the material's name. |
 | `sheet` | boolean | Sheet goods (true) or solid lumber (false). Absent: sheet when the stock or material name reads as sheet stock (ply, MDF, HDF, OSB, particle, melamine, hardboard) or the part is 1/4 in thick or less. |
+| `include` | boolean | `false`: the part is left out of the cut list's totals and the nesting (still listed). Absent: counted. |
+| `bom` | item[] | What is bought for **each piece** of the part beyond its wood: hardware, edge banding. At most 32 items. Absent or empty: nothing; writers leave it out when empty. The cut list carries the list on the part's row, per piece; the shopping list multiplies it by the row's quantity, so a copied component counts its hardware again and a deleted one takes it away. Only a part takes one: on a component or group that holds other groups or components (an assembly, whose pieces the cut list lists instead), `set_bom` is refused. |
+| `bom[].item` | string | What it is, in words ("Blum CLIP top BLUMOTION 110° hinge, full overlay, straight arm, screw-on"), 1 to 128 characters, no space at either end, no control characters (tab, line break). |
+| `bom[].sku` | string, optional | The maker's part number ("71B3550"), 1 to 64 characters, no space at either end, no control characters. Absent when none is known. |
+| `bom[].qty` | number | How many per piece of the part, in `unit`s: more than 0 and at most 10,000; a whole number for `each` and `pair`. |
+| `bom[].unit` | string | `"each"`, `"pair"` or `"m"`: counted one by one, in pairs (a left and right runner set), or in metres (edge banding). A reader keeps a unit it does not know (1 to 16 characters, from a newer writer) and writes it back unchanged; Sawhorse lists it as "unit not known to this version", never rounded. Sawhorse itself writes only these three: an edit naming another is refused. |
+| `bom[].once` | boolean, optional | `true`: bought once for the shop however many parts carry it (a drilling template); a shopping list takes the most any part asks for instead of adding them up. Written only when true. |
 
-Example: `"part": { "grain": "width", "stock": "1/4 birch ply", "sheet": true }`.
+A reader refuses a file whose `bom` breaks these rules (it does not repair it), apart from an unknown unit, which it keeps. `bom` is part of the model hash only when it is present, so a file without one keeps its hash.
+
+**Exploding a part.** When a part (a component or group holding solids and no nested group or component) is exploded, what was said about it goes to the solids that become parts of their own: each takes the `grain`, `stock` and `sheet` and `include` it does not say itself, and the **first** solid (in the order the file lists them) takes the `bom`, added after its own, so nothing bought is dropped. The edit says where the hardware went. It is refused when that would put more than 32 items on the solid, when the part holds no solid to take its hardware, or when an assembly that somehow carries a `bom` (one made into an assembly after its list was set) is exploded.
+
+Example: `"part": { "grain": "width", "stock": "1/4 birch ply", "sheet": true }`; with hardware: `"part": { "bom": [{ "item": "Blum TANDEM 563H runners, 533 mm (21 in), left and right", "sku": "563H5330B", "qty": 1, "unit": "pair" }, { "item": "5 mm shelf pins", "qty": 4, "unit": "each" }] }`.
 
 ### Other tables
 

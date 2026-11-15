@@ -1,6 +1,6 @@
 // How the cut list reads (lane 7): finished sizes from the kernel's rounding steps, so the
 // table, the CSV, the report, the PDF and the labels all say exactly the same thing.
-import type { CutList, CutRow, Grain, Rounding, Uncounted } from "../kernel/types";
+import type { CutList, CutRow, Grain, Item, Rounding, Uncounted } from "../kernel/types";
 import type { UnitSystem } from "../lib/units";
 
 /** What the Round to menu offers: follow the display units (the default), or a fixed step. */
@@ -169,8 +169,44 @@ export function rowNotes(row: CutRow): string[] {
   if (row.handed) notes.push(row.handed === row.total ? "handed" : `${row.handed} of ${row.total} handed`);
   if (row.hidden) notes.push(row.hidden === row.total ? "hidden" : `${row.hidden} hidden`);
   if (row.scaled) notes.push("scaled");
+  const band = bandingText(row);
+  if (band) notes.push(band);
   return notes;
 }
+
+/** A part that carries edge banding (items in metres on its `bom`): "edge banding 1 mm x 15/16
+ * in, 3.001 m", per piece; "" when it carries none. The Cabinet generator draws such a part at
+ * its cut size, before the band (scopeNote). */
+export function bandingText(row: CutRow): string {
+  const bands = (row.bom ?? []).filter((b) => b.unit === "m");
+  if (!bands.length) return "";
+  return `edge banding ${bands.map((b) => `${b.item.replace(/^edge banding,?\s*/i, "")}, ${Math.round(b.qty * 1000) / 1000} m`).join("; ")} a piece`;
+}
+
+/** What a part label says of a part's banding: the bands it carries ("1 mm x 15/16 in, White
+ * PVC"), or "" when none. Which edges take them is not in the cut list: the Cabinet generator's
+ * 10 · Edge banding group lists them. */
+export function labelBandingText(row: CutRow): string {
+  return (row.bom ?? [])
+    .filter((b) => b.unit === "m")
+    .map((b) => b.item.replace(/^edge banding,?\s*/i, ""))
+    .join("; ");
+}
+
+/** Each part's banding, by the model item it is (a placement's `item`), for the part labels:
+ * from a cut list of the model as it is; null for a part with none or not in the list. */
+export function bandingByItem(list: CutList | null | undefined): (item: Item) => string | null {
+  const by = new Map<string, string>();
+  for (const row of list?.rows ?? []) {
+    const text = labelBandingText(row);
+    if (!text) continue;
+    for (const o of row.occurrences) by.set("object" in o.item ? `o${o.item.object}` : `n${o.item.node}`, text);
+  }
+  return (item) => by.get("object" in item ? `o${item.object}` : `n${item.node}`) ?? null;
+}
+
+/** Whether any row carries edge banding. */
+export const anyBanded = (list: CutList | null | undefined): boolean => !!list?.rows.some((r) => bandingText(r));
 
 /** The material column: the part's stock, its material's name, or a dash. */
 export function materialText(row: CutRow): string {
@@ -220,10 +256,15 @@ export function reportCells(row: CutRow, list: CutList): string[] {
   ];
 }
 
-/** The footer every output carries. */
-export function scopeNote(r: Rounding): string {
+/** The footer every output carries. With `banded` (a part carries edge banding), it says that
+ * such a part is listed at the size it is drawn: the Cabinet generator draws one at its cut size,
+ * before the band. */
+export function scopeNote(r: Rounding, banded = false): string {
   const step = r === "sixteenth" ? "1/16 in" : r === "thirty_second" ? "1/32 in" : "0.5 mm";
-  return `Finished sizes, rounded to the nearest ${step}. Grain runs along L unless noted. ${BOARD_FEET_NOTE} Edge banding is not included; the sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).`;
+  const tail = `Grain runs along L unless noted. ${BOARD_FEET_NOTE}`;
+  const sheets = "sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).";
+  if (banded) return `Sizes as drawn, rounded to the nearest ${step}. A part noted "edge banding" is drawn at its cut size, before the band (the Cabinet generator's 10 · Edge banding group gives its finished size and banded edges); the other parts at their finished sizes. ${tail} The ${sheets}`;
+  return `Finished sizes, rounded to the nearest ${step}. ${tail} Edge banding is not included; the ${sheets}`;
 }
 
 /** Lane 15: board feet are bought on the rough thickness, not the finished one. */

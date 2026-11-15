@@ -16,8 +16,19 @@ import { decimalSteps, formatBoardFeet, formatSteps, GRAIN_WORDS, isMetric, list
 
 export const CSV_TYPE = { description: "Cut list (CSV)", mime: "text/csv", extensions: [".csv"] };
 
-function field(v: string | number): string {
-  const s = String(v);
+/** A text cell a spreadsheet would run as a formula (=, +, -, @, or a tab or carriage return
+ * first: a part named "=HYPERLINK(...)"), unless it is a plain number or our own text formula
+ * `="3/4"` (`textCell`), which only shows its text. */
+function formulaLike(s: string): boolean {
+  return /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s) && !/^="(?:[^"]|"")*"$/.test(s);
+}
+
+/** One CSV field: a cell that would run as a formula gets a leading ' (shown as text), and a
+ * field with a comma, a quote or a line break is quoted. Every CSV the app writes goes through
+ * here. */
+export function field(v: string | number): string {
+  let s = String(v);
+  if (formulaLike(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -104,7 +115,12 @@ export function parseCsv(text: string): string[][] {
 
 /** UTF-8 bytes with a byte-order mark, so spreadsheet programs read "×" and "²" right. */
 export function csvBytes(list: CutList): Uint8Array {
-  const body = new TextEncoder().encode(cutListCsv(list));
+  return withBom(cutListCsv(list));
+}
+
+/** CSV text as UTF-8 bytes with a byte-order mark. */
+export function withBom(text: string): Uint8Array {
+  const body = new TextEncoder().encode(text);
   const out = new Uint8Array(body.length + 3);
   out.set([0xef, 0xbb, 0xbf]);
   out.set(body, 3);

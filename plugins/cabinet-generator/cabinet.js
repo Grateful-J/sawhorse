@@ -43,6 +43,11 @@ const MM = 0.001;
 /** @typedef {"center" | "top" | "notch" | "none"} DrawerPull */
 /** @typedef {"vertical" | "horizontal" | "none"} DoorPull */
 /** @typedef {"top" | "bottom"} DoorPullFrom */
+/** Blum CLIP top hinges with BLUMOTION (soft close) or self-closing (a spring, no damper).
+ * @typedef {"soft" | "self"} HingeClose */
+/** A band's thickness: one REHAU sells (0.018 in, 1, 2, 3 mm), or measured and typed.
+ * @typedef {"0.018in" | "1" | "2" | "3" | "custom"} BandSize */
+/** Which band a kind of part takes: none, or band 1 to 3 of the list. @typedef {"none" | "1" | "2" | "3"} BandPick */
 /**
  * @typedef {{
  *   name: string,
@@ -56,12 +61,18 @@ const MM = 0.001;
  *   front: Front, gap: number,
  *   dados: boolean, dadoDepth: number, dadoStop: number, fit: number, bit: number,
  *   slides: Slides, catalog: Catalog, runner: number,
- *   hardware: boolean, hingeInset: number, cupDistance: number,
+ *   hardware: boolean, hingeInset: number, cupDistance: number, hingeClose: HingeClose,
  *   drawerPull: DrawerPull, drawerPullFromTop: number, pullSpacing: number, notchWidth: number, notchDepth: number,
  *   doorPull: DoorPull, doorPullFrom: DoorPullFrom, doorPullEnd: number, doorPullEdge: number, doorPullSpacing: number,
  *   pullHole: number,
  *   doors: DoorCount, hingeSide: HingeSide, nailers: Nailers, nailerHeight: number,
  *   trashBins: TrashBins, bin: Bin, binWidth: number, binLength: number, binHeight: number, trayHeight: number,
+ *   band: boolean, bandCount: number,
+ *   band1Size: BandSize, band1Thick: number, band1Name: string, band1Width: number,
+ *   band2Size: BandSize, band2Thick: number, band2Name: string, band2Width: number,
+ *   band3Size: BandSize, band3Thick: number, band3Name: string, band3Width: number,
+ *   bandFronts: BandPick, bandCarcass: BandPick, bandShelves: BandPick,
+ *   bandPremill: number, bandWasteEnd: number,
  * }} Sizes
  */
 /** @typedef {import("./mesh.js").Prism} Prism */
@@ -75,8 +86,28 @@ const MM = 0.001;
  *   copies: { at: V3, name?: string }[],
  *   mesh: import("./mesh.js").Mesh,
  *   grain: Grain,
+ *   bom?: BomItem[],
+ *   finished?: V3,
+ *   offset?: V3,
+ *   bands?: PartBand[],
  * }} Part
+ * A banded part (edge banding on) also says what it is when banded: `blank` is then the cut size
+ * (what the mesh and the DXF draw), `finished` the size designed (blank plus bands, less any
+ * edgebander pre-mill), `offset` how far the blank's corner sits inside the finished part's (each
+ * copy's `at` is the blank's corner), and `bands` its banded edges. Unbanded parts carry none.
  */
+/** One banded edge of a part: which edge (the part's front edge, or a front's left, right,
+ * bottom or top edge, as it stands in the cabinet), the band (1 to 3, its thickness, width and
+ * name), and the edge's banded length, finished, from `span[0]` to `span[1]` along it (a notch at
+ * an end shortens it: a rail's tongues, a side's toe kick).
+ * `run` is the edge's whole length, notches and all: an edgebander runs the band across a notch at
+ * an end and it is trimmed off by hand at the notch's inside corner, so the band bought is the run.
+ * @typedef {{ edge: EdgeName, band: number, thickness: number, width: number, name: string, length: number, span: [number, number], run: number }} PartBand */
+/** @typedef {"front" | "left" | "right" | "bottom" | "top"} EdgeName */
+/** What is bought for each copy of a part beyond its wood, for the shopping list: the kernel's
+ * part attribute `bom` (docs/format.md), sent with `set_bom`. Part numbers only where this
+ * file already has them (the runner tables, the locking devices).
+ * @typedef {{ item: string, sku?: string, qty: number, unit: "each" | "pair" | "m", once?: boolean }} BomItem */
 
 /**
  * Blum runners (millimetres). Two catalogues: Blum Inc.'s (US, inch lengths) and Blum's
@@ -219,7 +250,7 @@ export const RUNNERS_EU = {
 export const runnerLine = (s) => (s.catalog === "eu" ? RUNNERS_EU : RUNNERS)[s.slides];
 
 /** Blum drawer rules shared by both runners (mm). */
-const BLUM = {
+export const BLUM = {
   insideDeduct: 42,
   bottomRecess: 13,
   minInside: 170,
@@ -234,7 +265,7 @@ const BLUM = {
 /** CLIP top: a 35 mm cup 13 mm deep; its centre is 17.5 mm plus the boring distance (3 to 7,
  * Blum's default 4.5) from the hinge edge. System 32 mounting plates sit 37 mm back with their
  * two screws 32 apart. */
-const CUP = { dia: 35, depth: 13, radius: 17.5, minK: 3, maxK: 7, plateSetback: 37, plateSpacing: 32 };
+export const CUP = { dia: 35, depth: 13, radius: 17.5, minK: 3, maxK: 7, plateSetback: 37, plateSpacing: 32 };
 /** CLIP top 110, straight arm, frameless (Blum Inc. hinge catalog (c) 2021 p. 12): overlay = 11 +
  * boring distance - plate height, on plates of 0, 3, 6 or 9 mm (4.5 is for face frames only);
  * the front screw moves the door 2 mm either way (hinge catalog (c) 2016 p. 10). */
@@ -256,12 +287,12 @@ const MAX_LEAF = 36 * IN;
 /** A mounting plate's half height plus clearance: it must not sit across a rail or a shelf. */
 const PLATE_HALF = 26 * MM;
 /** The least wood left between a drilled hole and a cut or an edge. */
-const WEB = 3 * MM;
+export const WEB = 3 * MM;
 /** System 32 screw holes for runners (5 mm, for Blum system screws). */
 const SYS = { dia: 5, depth: 13 };
 /** Hinge mounting plate holes: Blum draws them 5 mm, 11.5 deep, for the plate's pre-mounted
  * system screws (173L8100, 175L8100 ...; the 173L6100 family takes wood screws instead). */
-const PLATE_HOLE = { dia: 5, depth: 11.5 };
+export const PLATE_HOLE = { dia: 5, depth: 11.5 };
 /** A rail's tongue stops this short of the bottom of its dado, so the shoulders close. */
 const RELIEF = 0.5 * MM;
 /** Panels in grooves (backs, drawer bottoms) are this much smaller per edge than groove to groove. */
@@ -270,11 +301,74 @@ const PANEL_GAP = (1 / 32) * IN;
  * door's bumpers, so the door closes on the cabinet and not on the shelf. */
 const DOOR_ROOM = 3 * MM;
 /** Shelf pin holes: 5 mm, 10 deep, on the System 32 grid (37 from the front, 32 apart). */
-const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
+export const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
 /** Pin holes stop this far from the bottom and top of the space they serve. */
 const PIN_END = 64 * MM;
 /** Pin holes around each shelf's place: this many each side of it, 32 mm apart (+-64 mm). */
 const PIN_REACH = 2;
+/**
+ * What the shopping list names for the hardware, from Blum's own catalogues (read 2026-11-14).
+ * Only part numbers Blum prints are given; anything Blum does not number is named in words.
+ * - Hinges, CLIP top 110°, screw-on: BLUMOTION (soft close) 71B3550, full overlay, straight arm,
+ *   and 71B3750, inset, full-cranked; self-closing 71T3550 and 71T3750. Blum Inc. Concealed
+ *   hinges (c) 2025 pp. 10 and 24; Blum catalogue 2024/2025 p. 76, 2027/2028 p. 70.
+ * - Mounting plate, 0 mm, pre-mounted system screws, for the 5 x 11.5 mm holes drilled here:
+ *   173L8100 (Concealed hinges (c) 2025 p. 48; Blum Inc. lists no 175L8100) and 175L8100 (Blum
+ *   catalogue 2024/2025 p. 155, 2027/2028 p. 149). Blum's inset table is for a 0 mm plate too
+ *   (Concealed hinges (c) 2025 p. 10).
+ * - A screw-on hinge's cup is held to the door with screws: Blum Inc.'s 606N, #6 x 5/8 in
+ *   (Concealed hinges (c) 2025 p. 86), or Blum Europe's 609.1700, 3.5 x 17 mm (catalogue
+ *   2024/2025 p. 76; MD-029/3 gives the same size).
+ * - Blum Inc.'s runner system screw 662.1150.HG, #6 x 11.5 mm, for 5 mm holes (TANDEM plus
+ *   BLUMOTION (c) 2025 pp. 14, 34; MOVENTO (c) 2026 p. 12), and its locking-device screw 606N,
+ *   #6 x 5/8 in, two per device (TANDEM plus BLUMOTION (c) 2025 p. 11).
+ * - Drilling templates, one per shop: T65.1600.01 with its drill bits DB-2.5mm and DB-6mm
+ *   (TANDEM plus BLUMOTION (c) 2025 pp. 11, 35) and T65.1000.02 (Blum catalogue 2024/2025 p. 682,
+ *   2027/2028 p. 698; Blum Europe's page names no bits), each with tool set T65.9000.
+ * - Blum sells no shelf pins.
+ * The plate's part number is given only where this plugin drills its holes (overlay doors with
+ * hardware holes on): for holes drilled by hand, or an inset door, the plate is named in words.
+ * Blum Europe's runner screw: TD-127/3 p. 24 names system screw 661.1450.HG (6 x 14.5 mm) for
+ * the 560H, but Blum gives no hole depth for it through a runner, and this plugin drills 5 x 13
+ * mm holes, so it is left in words; so are Blum Europe's locking-device screws, which the pages
+ * read do not name. Blum gives no pack sizes: everything is each or pair.
+ */
+const HARDWARE = {
+  hinge: {
+    soft: {
+      overlay: { item: "Blum CLIP top BLUMOTION 110° hinge, full overlay, straight arm, screw-on", sku: "71B3550" },
+      inset: { item: "Blum CLIP top BLUMOTION 110° hinge, inset, full-cranked, screw-on", sku: "71B3750" },
+    },
+    self: {
+      overlay: { item: "Blum CLIP top 110° hinge, self-closing, full overlay, straight arm, screw-on", sku: "71T3550" },
+      inset: { item: "Blum CLIP top 110° hinge, self-closing, inset, full-cranked, screw-on", sku: "71T3750" },
+    },
+  },
+  plate: { item: "Blum CLIP mounting plate, 0 mm, pre-mounted system screws", us: "173L8100", eu: "175L8100" },
+  // Two per hinge, one through each screw hole of the cup; Blum's pages read give the screw's
+  // size, not the count.
+  hingeScrew: {
+    us: { item: "Blum wood screw, #6 x 5/8 in", sku: "606N" },
+    eu: { item: "Blum chipboard screw, 3.5 x 17 mm, hinge cup to door", sku: "609.1700" },
+    perHinge: 2,
+  },
+  runnerScrewUs: { item: "Blum system screw, #6 x 11.5 mm, runner to a 5 mm hole", sku: "662.1150.HG" },
+  // The same 606N as the hinge screws: one row on the shopping list, with both parts named.
+  lockScrewUs: { item: "Blum wood screw, #6 x 5/8 in", sku: "606N" },
+  templates: {
+    us: [
+      { item: "Blum concealed runner template", sku: "T65.1600.01" },
+      { item: "Blum drill bit, 2.5 mm, for the runner template", sku: "DB-2.5mm" },
+      { item: "Blum drill bit, 6 mm, for the runner template", sku: "DB-6mm" },
+      { item: "Blum tool set for the runner template", sku: "T65.9000" },
+    ],
+    eu: [
+      { item: "Blum drilling template for MOVENTO | TANDEM", sku: "T65.1000.02" },
+      { item: "Blum tool set for the drilling template", sku: "T65.9000" },
+    ],
+  },
+  shelfPin: "5 mm shelf pins",
+};
 /** A door wider than this is a pair. */
 const MAX_DOOR = 24 * IN;
 /**
@@ -297,6 +391,74 @@ const BIN_FLOOR = 0.25 * IN;
 
 /** Room for fingers behind a finger notch: the sub-front is cut this far below the notch. */
 const FINGER_ROOM = 25 * MM;
+
+/**
+ * Edge banding (docs/research/edge-banding-sources.md has every source, quoted).
+ *
+ * The rule is geometry, not a maker's: a part is designed at its finished size, and each banded
+ * edge's blank is cut short by that band's thickness, so blank plus band comes out at the size
+ * designed. No edgeband or machine maker's rule for deducting the band from the cut size was
+ * found. Of the trade software read, OptiCut deducts the edging thickness "when working in net
+ * dimensions"; Mozaik's help says to set the band to 0 mm when the bander pre-mills it, "to
+ * ensure Mozaik is not deducting anything"; Promob's worked example subtracts the band; Microvellum
+ * offers pre-mill modes. Every cut (holes, dados, notches) stays where it is in the finished part:
+ * Blum gives the cup's boring distance from the door's edge, and the plates and runner screws
+ * 37 mm from the side's front edge; with a band on, that edge is the band's face. On the blank
+ * each cut is then the band's thickness nearer the raw edge, and the planner's 3 mm of wood (WEB)
+ * is kept to that raw edge (after any pre-mill).
+ *
+ * - Thicknesses: REHAU's stock sizes, .018 in (0.457 mm), 1 mm, 2 mm and 3 mm, in 15/16 in among
+ *   other widths (REHAU edgeband technical data, p. 2); Ostermann's standard widths include 23 mm.
+ *   Measure your band with calipers: REHAU's tolerance is +-0.10 to +-0.15 mm.
+ * - Which edges (AWI/AWMAC/WI Architectural Woodwork Standards, 2009, sec. 10): frameless
+ *   "TYPE A" cabinets band the front edges of the body; the "visible front edges of stretchers,
+ *   ends, divisions, tops, bottoms, shelves, and nailers" are exposed; "the three non-visible
+ *   edges of adjustable shelves" are concealed. Nailers are not banded here: they sit behind the
+ *   back, at the rear edge, and show no front edge. Doors and drawer fronts: one owner's spec
+ *   (University of Maryland, section 123200) bands "all exposed edges", 3 mm PVC at doors and
+ *   drawer fronts and 1 mm elsewhere: one spec, not a standard.
+ * - Waste: Microvellum's edgeband report adds 1 in per banded side, then 5%: a software default,
+ *   not a standard. Each part carries the 1 in per banded side (the end trim, per edge); the 5% is
+ *   the shopping list's banding overage, applied once to the total.
+ * - Pre-mill: an edgebander's jointing cutter takes 0 to 3 mm off the edge before the band goes
+ *   on (Felder tempora F1000 0-3, SCM olimpic K360 up to 3); the blank is cut that much larger.
+ *   An iron-on band takes none.
+ */
+export const BAND = {
+  /** The thicknesses offered, mm, with what the select says. */
+  sizes: /** @type {[Exclude<BandSize, "custom">, number, string][]} */ ([
+    // REHAU prints the thin band as .018 in, not in millimetres: 0.4572 mm.
+    ["0.018in", 0.018 * 25.4, "0.018 in (0.457 mm)"],
+    ["1", 1, "1 mm"],
+    ["2", 2, "2 mm"],
+    ["3", 3, "3 mm"],
+  ]),
+  /** A typed thickness: at least this... (Sawhorse's limit, not a sourced rule) */
+  minThick: 0.1 * MM,
+  /** ... and at most 1/4 in: Sawhorse's limit, not a sourced rule (thicker is solid-wood edging). */
+  maxThick: 0.25 * IN,
+  /** The widest band: 4 in (Ostermann cuts edging to any width from 12 to 100 mm). */
+  maxWidth: 4 * IN,
+  /** The deepest edgebander pre-mill (Felder tempora F1000, SCM olimpic K360). */
+  maxPremill: 3 * MM,
+  /** A waste allowance per banded side of at most a foot. */
+  maxWasteEnd: 12 * IN,
+  /** The longest name a band may have. */
+  maxName: 40,
+  /** Microvellum's default waste per banded side: 1 in. (Its 5% is the shopping list's overage.) */
+  wasteEnd: 1 * IN,
+};
+/** Where each edge is on a part's blank: its axis, and the low (0) or high (1) end of it. Fronts
+ * are [width, thickness, height]; sides [thickness, depth, height]; rails and shelves
+ * [length, depth, thickness]: a front edge is low on the depth.
+ * @type {Record<EdgeName, [0 | 1 | 2, 0 | 1]>} */
+export const EDGE_AXES = { front: [1, 0], left: [0, 0], right: [0, 1], bottom: [2, 0], top: [2, 1] };
+/** What a banded edge with a notch at an end asks of you. */
+export const END_NOTCH = "The edge has a notch at its end (the toe kick, or the tongues): on an edgebander the band runs across the notch; trim it off by hand at the notch's inside corner (the band counted is the edge's whole run)";
+/** The four edges of a door or drawer front. @type {EdgeName[]} */
+const FRONT_EDGES = ["left", "right", "bottom", "top"];
+/** Parts that move: a band on a front is never "against" them, nor theirs against the carcass. */
+const MOVING = new Set(["Door", "Left door", "Right door", "Drawer front"]);
 
 const rgba = (/** @type {number[]} */ c) => /** @type {[number, number, number, number]} */ (c);
 export const MATERIALS = {
@@ -398,6 +560,27 @@ export function summary(s, planned, metric) {
 /** @param {string} system */
 export const isMetric = (system) => system === "mm" || system === "cm" || system === "m";
 
+/**
+ * Edge banding as a new cabinet starts: off, so a cabinet is what it was before banding came.
+ * Turned on, it follows the AWS rule (the front edges of the carcass and of adjustable shelves)
+ * and bands doors and drawer fronts all round (one owner's spec: all exposed edges), all with one
+ * 1 mm band: REHAU sells 1 mm in 15/16 in; Ostermann's standard widths include 23 mm. The waste is
+ * Microvellum's default. A second and third band are there to pick (3 mm, the spec's for fronts,
+ * and 2 mm), unused until chosen.
+ * @param {number} width
+ */
+function bandDefaults(width) {
+  return {
+    band: false,
+    bandCount: 1,
+    band1Size: /** @type {BandSize} */ ("1"), band1Thick: 1 * MM, band1Name: "", band1Width: width,
+    band2Size: /** @type {BandSize} */ ("3"), band2Thick: 3 * MM, band2Name: "", band2Width: width,
+    band3Size: /** @type {BandSize} */ ("2"), band3Thick: 2 * MM, band3Name: "", band3Width: width,
+    bandFronts: /** @type {BandPick} */ ("1"), bandCarcass: /** @type {BandPick} */ ("1"), bandShelves: /** @type {BandPick} */ ("1"),
+    bandPremill: 0, bandWasteEnd: BAND.wasteEnd,
+  };
+}
+
 /** @param {boolean} metric @returns {Sizes} */
 export function defaults(metric) {
   return metric
@@ -415,7 +598,7 @@ export function defaults(metric) {
         front: "overlay", gap: 3 * MM,
         dados: true, dadoDepth: 6 * MM, dadoStop: 12 * MM, fit: 0.2 * MM, bit: 6 * MM,
         slides: "tandem", catalog: "eu", runner: 0,
-        hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM,
+        hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 38 * MM, pullSpacing: 96 * MM, notchWidth: 100 * MM, notchDepth: 25 * MM,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 64 * MM, doorPullEdge: 38 * MM, doorPullSpacing: 96 * MM,
         pullHole: 5 * MM,
@@ -423,6 +606,7 @@ export function defaults(metric) {
         // Placeholders (measure your bins): two 180 mm cutouts front to back fit the 457 mm runner
         // a 560 mm box takes.
         trashBins: "deep", bin: "rv35", binWidth: 280 * MM, binLength: 180 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
+        ...bandDefaults(23 * MM),
       }
     : {
         name: "Cabinet 1",
@@ -440,7 +624,7 @@ export function defaults(metric) {
         front: "overlay", gap: 0.125 * IN,
         dados: true, dadoDepth: 0.25 * IN, dadoStop: 0.5 * IN, fit: 0.008 * IN, bit: 0.25 * IN,
         slides: "tandem", catalog: "us", runner: 0,
-        hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM,
+        hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 1.5 * IN, pullSpacing: 3 * IN, notchWidth: 4 * IN, notchDepth: 1 * IN,
         doorPull: "vertical", doorPullFrom: "top", doorPullEnd: 2.5 * IN, doorPullEdge: 1.5 * IN, doorPullSpacing: 3 * IN,
         // 3/16 in: the usual drill for the 8-32 screws US pulls take.
@@ -448,6 +632,7 @@ export function defaults(metric) {
         doors: "auto", hingeSide: "left", nailers: "none", nailerHeight: 3 * IN,
         // Bin cutouts are placeholders: measure your bins just under the lip.
         trashBins: "deep", bin: "rv35", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN,
+        ...bandDefaults((15 / 16) * IN),
       };
 }
 
@@ -501,6 +686,7 @@ export function normalize(saved, metric) {
     hardware: !!s.hardware,
     hingeInset: num("hingeInset"),
     cupDistance: num("cupDistance"),
+    hingeClose: pick("hingeClose", /** @type {const} */ (["soft", "self"])),
     drawerPull: oldPull ?? pick("drawerPull", /** @type {const} */ (["center", "top", "notch", "none"])),
     drawerPullFromTop: num("drawerPullFromTop"),
     pullSpacing: num("pullSpacing"),
@@ -530,8 +716,32 @@ export function normalize(saved, metric) {
     binLength: num("binLength"),
     binHeight: num("binHeight"),
     trayHeight: num("trayHeight"),
+    band: !!s.band,
+    bandCount: Math.round(num("bandCount")),
+    band1Size: pick("band1Size", BAND_SIZES),
+    band1Thick: num("band1Thick"),
+    band1Name: bandName(s.band1Name),
+    band1Width: num("band1Width"),
+    band2Size: pick("band2Size", BAND_SIZES),
+    band2Thick: num("band2Thick"),
+    band2Name: bandName(s.band2Name),
+    band2Width: num("band2Width"),
+    band3Size: pick("band3Size", BAND_SIZES),
+    band3Thick: num("band3Thick"),
+    band3Name: bandName(s.band3Name),
+    band3Width: num("band3Width"),
+    bandFronts: pick("bandFronts", /** @type {const} */ (["none", "1", "2", "3"])),
+    bandCarcass: pick("bandCarcass", /** @type {const} */ (["none", "1", "2", "3"])),
+    bandShelves: pick("bandShelves", /** @type {const} */ (["none", "1", "2", "3"])),
+    bandPremill: num("bandPremill"),
+    bandWasteEnd: num("bandWasteEnd"),
   };
 }
+
+const BAND_SIZES = /** @type {const} */ (["0.018in", "1", "2", "3", "custom"]);
+/** A band's name or colour as typed: text without control characters, trimmed, at most 40
+ * characters (it goes into the shopping list's item, which takes 128). @param {unknown} v */
+const bandName = (v) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, BAND.maxName).trim() : "");
 
 /** The back's inset from the rear edge: at least a nailer's thickness when there are nailers
  * (they sit behind it). @param {Sizes} s */
@@ -548,6 +758,9 @@ const mm = (/** @type {number} */ m) => Math.round(m * 1e4) / 10;
 const fmtMm = (/** @type {number} */ m) => `${mm(m)} mm`;
 const fmtIn = (/** @type {number} */ m) => `${(m / IN).toFixed(3)} in`;
 const both = (/** @type {number} */ m) => `${fmtMm(m)} (${fmtIn(m)})`;
+/** A part's face, as a cut list says it: millimetres, or inches to 0.001 with millimetres.
+ * @param {number} a @param {number} b @param {boolean} metric */
+const pairText = (a, b, metric) => (metric ? `${mm(a)} x ${mm(b)} mm` : `${(a / IN).toFixed(3)} x ${(b / IN).toFixed(3)} in (${mm(a)} x ${mm(b)} mm)`);
 /** A least (up) or most (down) value as both units say it, rounded the safe way in each, so
  * the value a message names is one it takes. @param {number} m @param {boolean} up */
 const bound = (m, up) => {
@@ -610,7 +823,7 @@ export function binRoom(s, metric) {
 }
 
 /** @param {Sizes} s @param {boolean} metric */
-function validate(s, metric) {
+export function validate(s, metric) {
   const t = s.thickness;
   /** A least value in the document's units: inches (with its text) or millimetres.
    * @param {number} inches @param {string} inText @param {number} mms */
@@ -699,7 +912,7 @@ function validate(s, metric) {
     if (!(s.pullHole > 0 && s.pullHole <= 12 * MM)) return "The pull hole must be more than 0 and at most 12 mm.";
     if (!(s.pullSpacing >= 0 && s.doorPullSpacing >= 0)) return "Pull spacing cannot be negative.";
   }
-  return null;
+  return bandIssue(s, metric);
 }
 
 /**
@@ -773,7 +986,7 @@ function openings(s) {
  * the hole. On a blank face only (every hole here is): the mesh needs the face flat round it.
  * @param {V3} size @param {Prism[]} prisms @param {Hole} hole
  */
-function holeClear(size, prisms, hole) {
+export function holeClear(size, prisms, hole) {
   const a = hole.axis;
   const axes = [0, 1, 2].filter((k) => k !== a);
   const r = hole.radius;
@@ -788,6 +1001,251 @@ function holeClear(size, prisms, hole) {
     if (!(hi[a] > d0 + 1e-9 && lo[a] < d1 - 1e-9)) return true;
     return axes.some((k, i) => hi[k] <= hole.center[i] - r - WEB + 1e-9 || lo[k] >= hole.center[i] + r + WEB - 1e-9);
   });
+}
+
+/**
+ * One band of the list, as the planner uses it: its number (1 to 3), thickness and width
+ * (metres), name, and how a shopping list or a row names it ("1 mm x 15/16 in, White PVC").
+ * @typedef {{ n: number, thickness: number, width: number, name: string, label: string }} Band
+ */
+/**
+ * The bands listed (1 to `bandCount`, at most 3), each with its thickness: the preset picked, or
+ * the one typed. @param {Sizes} s @param {boolean} metric @returns {Band[]}
+ */
+export function bandList(s, metric) {
+  const raw = [
+    { size: s.band1Size, thick: s.band1Thick, name: s.band1Name, width: s.band1Width },
+    { size: s.band2Size, thick: s.band2Thick, name: s.band2Name, width: s.band2Width },
+    { size: s.band3Size, thick: s.band3Thick, name: s.band3Name, width: s.band3Width },
+  ];
+  const count = Math.max(1, Math.min(3, Number.isInteger(s.bandCount) ? s.bandCount : 1));
+  return raw.slice(0, count).map((b, i) => {
+    const preset = BAND.sizes.find((x) => x[0] === b.size);
+    const thickness = preset ? preset[1] * MM : b.thick;
+    const thick = preset ? (preset[0] === "0.018in" ? "0.018 in" : `${preset[1]} mm`) : `${Math.round((thickness / MM) * 100) / 100} mm`;
+    return { n: i + 1, thickness, width: b.width, name: b.name, label: `${thick} x ${exactThickness(b.width, metric)}${b.name ? `, ${b.name}` : ""}` };
+  });
+}
+
+/** The band a kind of part takes, or null (banding off, or that kind not banded). Undefined
+ * when it names a band past the list (validate refuses that).
+ * @param {Sizes} s @param {"fronts" | "carcass" | "shelves"} kind @param {boolean} metric @returns {Band | null | undefined} */
+export function bandFor(s, kind, metric) {
+  if (!s.band) return null;
+  const pick = kind === "fronts" ? s.bandFronts : kind === "carcass" ? s.bandCarcass : s.bandShelves;
+  if (pick === "none") return null;
+  return bandList(s, metric)[Number(pick) - 1];
+}
+
+/** "Band 1 (1 mm)": how a message names a band. @param {Band} b */
+const bandWord = (b) => `Band ${b.n} (${Math.round((b.thickness / MM) * 1000) / 1000} mm)`;
+
+/** The edge banding settings, checked: null, or what is wrong. Off, nothing is checked.
+ * @param {Sizes} s @param {boolean} metric @returns {string | null} */
+function bandIssue(s, metric) {
+  if (!s.band) return null;
+  // Nothing picked: nothing is banded, and nothing of the list is used.
+  if (s.bandFronts === "none" && s.bandCarcass === "none" && s.bandShelves === "none") return null;
+  if (!Number.isInteger(s.bandCount) || s.bandCount < 1 || s.bandCount > 3) return "Edge banding: list 1 to 3 bands.";
+  const list = bandList(s, metric);
+  for (const b of list) {
+    if (!(b.thickness >= BAND.minThick - 1e-9 && b.thickness <= BAND.maxThick + 1e-9)) return `Band ${b.n} must be at least 0.1 mm and at most 6.35 mm (1/4 in) thick, Sawhorse's limits: thicker is solid-wood edging, not a band.`;
+    if (!(b.width > 0 && b.width <= BAND.maxWidth + 1e-9)) return `Band ${b.n} must be more than 0 and at most 101.6 mm (4 in) wide.`;
+  }
+  const hasDoor = s.layout === "doors" || s.layout === "mixed";
+  const hasDrawer = s.layout === "drawers" || s.layout === "mixed" || s.layout === "trash";
+  const hasShelf = (s.layout === "shelves" || s.layout === "doors" || s.layout === "mixed") && s.shelves > 0 && s.shelfType === "adjustable";
+  /** @type {[BandPick, string, string, number, boolean][]} which band each kind takes, what it is, what its edges are, the stock, and whether the cabinet has it */
+  const kinds = [
+    [s.bandFronts, "Doors and drawer fronts", "the doors and drawer fronts", Math.max(hasDoor ? s.thickness : 0, hasDrawer ? s.frontThickness : 0), hasDoor || hasDrawer],
+    [s.bandCarcass, "The carcass's front edges", "the carcass", s.thickness, true],
+    [s.bandShelves, "Adjustable shelves", "the adjustable shelves", s.thickness, hasShelf],
+  ];
+  for (const [pick, what, of, stock, applies] of kinds) {
+    if (pick === "none") continue;
+    const b = list[Number(pick) - 1];
+    if (!b) return `${what} take Band ${pick}, but the list has ${list.length === 1 ? "one band" : `${list.length} bands`}: pick another, or list more.`;
+    if (applies && b.width < stock - 1e-9) return `Band ${b.n} is ${both(b.width)} wide: too narrow to cover the ${exactThickness(stock, metric)} edges of ${of}. Use a band at least as wide as the stock (Sawhorse's rule: a narrower band leaves the edge bare).`;
+  }
+  if (!(s.bandPremill >= 0 && s.bandPremill <= BAND.maxPremill + 1e-9)) return "The edgebander pre-mill must be 0 to 3 mm (the most Felder's and SCM's edgebanders take off). Iron-on banding: 0.";
+  if (!(s.bandWasteEnd >= 0 && s.bandWasteEnd <= BAND.maxWasteEnd + 1e-9)) return "The banding waste per banded side must be 0 to 12 in (305 mm).";
+  // A blind dado stops short of the side's front edge; under a band, the wood in front of it is
+  // the band's thickness less, and the planner keeps 3 mm there.
+  const carcass = bandFor(s, "carcass", metric);
+  if (carcass && s.dados && s.dadoStop - carcass.thickness < WEB - 1e-9) return `The blind dados stop ${both(s.dadoStop)} from the sides' finished front edge; under ${bandWord(carcass)} that leaves ${both(s.dadoStop - carcass.thickness)} of wood in front of them, less than the 3 mm the planner keeps: set Dado stop to at least ${atLeast(carcass.thickness + WEB)}, or use a thinner band on the carcass.`;
+  const fronts = bandFor(s, "fronts", metric);
+  if (fronts && hasDrawer && s.drawerPull === "notch") return "A finger notch cuts into each drawer front's top edge, and an edgebander runs the band straight across it: choose another drawer pull, or set Doors and drawer fronts to No banding.";
+  return null;
+}
+
+/** What a hole is, for a message. @param {Hole} h */
+const holeWhat = (h) => {
+  if (Math.abs(h.radius - CUP.radius * MM) < 1e-9) return "hinge cup";
+  if (h.through) return "pull hole";
+  if (Math.abs(h.depth - PIN.depth * MM) < 1e-9) return "shelf pin hole";
+  if (Math.abs(h.depth - PLATE_HOLE.depth * MM) < 1e-9) return "hinge plate hole";
+  if (Math.abs(h.depth - SYS.depth * MM) < 1e-9) return "runner screw hole";
+  return "hole";
+};
+
+/**
+ * A part's blank with its banded edges cut short, every cut kept where it is in the finished
+ * part. `size`, `prisms` and `holes` are the finished part's (the planner's, unchanged); the
+ * blank is `size` less each banded edge's band (plus the edgebander's pre-mill, which it takes
+ * off again), and the prisms and holes are moved by what came off the low edges, so each stays
+ * at its absolute place. `offset` is that move: a copy's corner goes that far in.
+ *
+ * Refused, with what to change, where banding would change the part or a joint:
+ * - a dado or groove (a cut through part of the thickness) that runs out of a banded edge: the
+ *   band would cover it; bands go only on exposed edges;
+ * - a notch in the middle of a banded edge (an edgebander runs the band across it), or one at an
+ *   end no deeper than the band (it would be gone from the blank);
+ * - a hole drilled into a banded edge;
+ * - a cut or a hole that keeps 3 mm of wood (WEB) to the finished edge but would not to the raw
+ *   edge under the band: the planner's rule, kept to the wood.
+ * @param {string} name @param {V3} size @param {Prism[]} prisms @param {Hole[]} holes
+ * @param {{ edge: EdgeName, band: Band }[]} edges @param {number} premill
+ * @returns {{ blank: V3, prisms: Prism[], holes: Hole[], offset: V3, bands: PartBand[] }}
+ */
+export function bandPart(name, size, prisms, holes, edges, premill) {
+  const thin = size.indexOf(Math.min(...size));
+  const cuts = prisms
+    .map((p) => ({ min: p.min.map((v, k) => Math.max(0, Math.min(size[k], v))), max: p.max.map((v, k) => Math.max(0, Math.min(size[k], v))) }))
+    .filter((p) => p.min.every((v, k) => p.max[k] - v > 1e-9));
+  /** @type {PartBand[]} */
+  const bands = [];
+  for (const { edge, band } of edges) {
+    const [k, hi] = EDGE_AXES[edge];
+    if (k === thin) throw new Error(`${name}: its ${edge} is a face, not an edge.`);
+    const long = /** @type {0 | 1 | 2} */ ([0, 1, 2].find((j) => j !== k && j !== thin));
+    const b = band.thickness;
+    let a = 0;
+    let z = size[long];
+    for (const p of cuts) {
+      const gap = hi ? size[k] - p.max[k] : p.min[k];
+      if (gap > 1e-9) {
+        if (gap - b < WEB - 1e-9) throw new Error(`${name}: a dado or groove comes ${both(gap)} from its finished ${edge} edge; under ${bandWord(band)} that leaves ${both(gap - b)} of wood to the raw edge, less than the 3 mm the planner keeps. Use a thinner band.`);
+        continue;
+      }
+      if (!(p.min[thin] <= 1e-9 && p.max[thin] >= size[thin] - 1e-9)) throw new Error(`${name}: a dado or groove runs out of its ${edge} edge, where a band would cover it and change the joint. Bands go only on exposed edges.`);
+      const depth = hi ? size[k] - p.min[k] : p.max[k];
+      if (p.min[long] <= 1e-9) a = Math.max(a, p.max[long]);
+      else if (p.max[long] >= size[long] - 1e-9) z = Math.min(z, p.min[long]);
+      else throw new Error(`${name}: a notch cuts into the middle of its banded ${edge} edge, and an edgebander runs the band straight across it. Do not band that edge, or leave the notch out.`);
+      if (!(depth > b + 1e-9)) throw new Error(`${name}: a notch in its banded ${edge} edge is ${both(depth)} deep, no deeper than ${bandWord(band)}: it would be gone from the blank. Use a thinner band, or a deeper notch.`);
+    }
+    for (const h of holes) if (h.axis === k && Math.abs(h.at - (hi ? size[k] : 0)) < 1e-9) throw new Error(`${name}: a hole is drilled into its ${edge} edge, where a band would cover it. Bands go only on exposed edges.`);
+    if (!(z - a > 1e-9)) throw new Error(`${name}: its ${edge} edge is all notches, with nothing to band.`);
+    bands.push({ edge, band: band.n, thickness: b, width: band.width, name: band.name, length: z - a, span: [a, z], run: size[long] });
+  }
+  /** What comes off each axis's low and high end. @param {(b: Band) => number} off */
+  const trims = (off) => {
+    const lo = /** @type {V3} */ ([0, 0, 0]);
+    const hi = /** @type {V3} */ ([0, 0, 0]);
+    for (const { edge, band } of edges) {
+      const [k, h] = EDGE_AXES[edge];
+      (h ? hi : lo)[k] = off(band);
+    }
+    return { lo, hi };
+  };
+  /** The blank with `lo` and `hi` off, its cuts moved so they stay where they were. A cut that ran
+   * out of an edge still does (when the edge moves out, a pre-mill larger than the band, it runs
+   * out of the new one). @param {{ lo: V3, hi: V3 }} t */
+  const shift = ({ lo, hi }) => {
+    const blank = /** @type {V3} */ (size.map((v, k) => v - lo[k] - hi[k]));
+    const ps = prisms.map((p) => ({
+      min: /** @type {V3} */ (p.min.map((v, k) => (v <= 1e-9 ? Math.min(v - lo[k], v) : v - lo[k]))),
+      max: /** @type {V3} */ (p.max.map((v, k) => (v >= size[k] - 1e-9 ? Math.max(v - lo[k], blank[k] + v - size[k]) : v - lo[k]))),
+    }));
+    const hs = holes.map((h) => {
+      const axes = [0, 1, 2].filter((k) => k !== h.axis);
+      return /** @type {Hole} */ ({ ...h, at: h.at - lo[h.axis], center: [h.center[0] - lo[axes[0]], h.center[1] - lo[axes[1]]] });
+    });
+    return { blank, prisms: ps, holes: hs };
+  };
+  // The wood under the band, once the edgebander has milled its pre-mill off: the planner's 3 mm
+  // to every edge is kept there.
+  const wood = trims((band) => band.thickness);
+  const under = shift(wood);
+  under.holes.forEach((h, i) => {
+    if (holeClear(under.blank, under.prisms, h)) return;
+    const was = holes[i];
+    const axes = [0, 1, 2].filter((k) => k !== was.axis);
+    const at = edges.find(({ edge, band }) => {
+      const [k, hi] = EDGE_AXES[edge];
+      const j = axes.indexOf(k);
+      if (j < 0) return false;
+      const fin = hi ? size[k] - was.center[j] - was.radius : was.center[j] - was.radius;
+      return fin - band.thickness < WEB - 1e-9;
+    });
+    const what = holeWhat(was);
+    if (!at) throw new Error(`${name}: under its bands the ${what} lands on a cut or an edge. Use a thinner band.`);
+    const [k, hi] = EDGE_AXES[at.edge];
+    const j = axes.indexOf(k);
+    const fin = hi ? size[k] - was.center[j] - was.radius : was.center[j] - was.radius;
+    const b = at.band.thickness;
+    const most = CUP.maxK * MM - WEB;
+    const fix =
+      what === "hinge cup"
+        ? b + WEB <= CUP.maxK * MM + 1e-9
+          ? `Set Boring distance to at least ${Math.ceil(((b + WEB) / MM) * 2 - 1e-6) / 2} mm, or band the doors with a thinner band.`
+          : `No boring distance Blum gives (3 to 7 mm) leaves that: band the doors with a band of at most ${Math.round((most / MM) * 100) / 100} mm.`
+        : what === "pull hole"
+          ? `Keep the pull holes at least ${atLeast(b + WEB + was.radius)} from the edge (to their centres), or use a thinner band.`
+          : "Use a thinner band.";
+    throw new Error(`${name}: the ${what} is ${both(fin)} from the finished ${at.edge} edge; under ${bandWord(at.band)} that leaves ${both(fin - b)} of wood to the raw edge, less than the 3 mm the planner keeps. ${fix}`);
+  });
+  const t = trims((band) => band.thickness - premill);
+  const cut = shift(t);
+  if (!cut.blank.every((v) => v > 1e-9)) throw new Error(`${name}: its bands leave no blank.`);
+  return { ...cut, offset: t.lo, bands };
+}
+
+/**
+ * Whether a banded edge sits against another part (or in its dado or groove), where a band
+ * would change the joint: null, or what. Every copy of every banded part, at its finished size:
+ * no other part may reach across the edge's plane from outside the part, over the band's
+ * length and the part's thickness. Doors and drawer fronts move: they never count against a
+ * carcass part's edge (an overlay door closes in front of the sides), but every part counts
+ * against a front's edge.
+ *
+ * No edge the panel offers can be banded into a joint (each is a front edge, or a front's edge,
+ * that nothing sits against), so from plan() this never fires today: it is a safety net for part
+ * kinds added later, and has its own tests.
+ * @param {Part[]} parts @returns {string | null}
+ */
+export function bandClash(parts) {
+  const boxes = parts.flatMap((p) =>
+    p.copies.map((c) => {
+      const off = p.offset ?? [0, 0, 0];
+      const size = p.finished ?? p.blank;
+      const min = /** @type {V3} */ (c.at.map((v, k) => v - off[k]));
+      return { part: p, name: c.name ?? p.name, min, max: /** @type {V3} */ (min.map((v, k) => v + size[k])), moving: MOVING.has(p.name) };
+    }),
+  );
+  const E = 1e-6;
+  for (const box of boxes) {
+    const bands = box.part.bands;
+    if (!bands?.length) continue;
+    const size = /** @type {V3} */ (box.part.finished);
+    const thin = size.indexOf(Math.min(...size));
+    for (const e of bands) {
+      const [k, hi] = EDGE_AXES[e.edge];
+      const long = /** @type {number} */ ([0, 1, 2].find((j) => j !== k && j !== thin));
+      const plane = hi ? box.max[k] : box.min[k];
+      const l0 = box.min[long] + e.span[0];
+      const l1 = box.min[long] + e.span[1];
+      for (const o of boxes) {
+        if (o === box || (o.moving && !box.moving)) continue;
+        const across = hi ? o.max[k] > plane + E && o.min[k] <= plane + E : o.min[k] < plane - E && o.max[k] >= plane - E;
+        if (!across) continue;
+        const along = Math.min(l1, o.max[long]) - Math.max(l0, o.min[long]);
+        const through = Math.min(box.max[thin], o.max[thin]) - Math.max(box.min[thin], o.min[thin]);
+        if (along > E && through > E) return `${box.name}: its banded ${e.edge} edge sits against the ${o.name}, where a band would change the joint. Bands go only on exposed edges: do not band it.`;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -874,27 +1332,69 @@ function build(s, metric) {
   /**
    * One definition per distinct part: same name, blank and cuts. Parts that differ (the top
    * drawer front is taller) are separate definitions with the same name.
-   * @param {string} name @param {string} material @param {V3} blank @param {Prism[]} prisms @param {Hole[]} holes
-   * @param {{ at: V3, name?: string }} copy
+   *
+   * Sizes, cuts and the copy's place are the finished part's. With banded `edges`, the part
+   * becomes its blank (bandPart): each banded edge cut short by its band, every cut where it was,
+   * the copy moved in to the blank's corner; and it carries its banding (the edges, and the band
+   * by the metre, with waste, for the shopping list).
+   * @param {string} name @param {string} material @param {V3} size @param {Prism[]} prisms @param {Hole[]} holes
+   * @param {{ at: V3, name?: string }} copy @param {BomItem[]} [bom] what is bought for each copy (hardware)
+   * @param {{ edge: EdgeName, band: Band }[]} [edges] its banded edges
    */
-  const add = (name, material, blank, prisms, holes, copy) => {
+  const add = (name, material, size, prisms, holes, copy, bom = [], edges = []) => {
+    let blank = size;
+    let cuts = prisms;
+    let drills = holes;
+    let place = copy;
+    /** @type {{ finished?: V3, offset?: V3, bands?: PartBand[] }} */
+    let banded = {};
+    if (edges.length) {
+      const b = bandPart(name, size, prisms, holes, edges, s.bandPremill);
+      blank = b.blank;
+      cuts = b.prisms;
+      drills = b.holes;
+      place = { ...copy, at: /** @type {V3} */ (copy.at.map((v, k) => v + b.offset[k])) };
+      banded = { finished: size, offset: b.offset, bands: b.bands };
+      bom = [...bom, ...bandBom(b.bands)];
+    }
     // Rounded to a micrometre: two fronts a float apart are the same part.
-    const key = JSON.stringify([name, blank, prisms, holes], (_k, v) => (typeof v === "number" ? Math.round(v * 1e6) : v));
+    const key = JSON.stringify(edges.length ? [name, blank, cuts, drills, bom, banded] : [name, blank, cuts, drills, bom], (_k, v) => (typeof v === "number" ? Math.round(v * 1e6) : v));
     let part = /** @type {Part & { key?: string } | undefined} */ (parts.find((p) => /** @type {Part & { key?: string }} */ (p).key === key));
     if (!part) {
       let mesh;
       try {
-        mesh = partMesh(name, blank, prisms, holes);
+        mesh = partMesh(name, blank, cuts, drills);
       } catch (e) {
         throw new Error(`${name}: ${e instanceof Error ? e.message : String(e)}`);
       }
-      part = { name, material, blank, copies: [], mesh, grain: grainFor(s, name, blank) };
+      part = { name, material, blank, copies: [], mesh, grain: grainFor(s, name, blank), ...(bom.length ? { bom } : {}), ...banded };
       Object.defineProperty(part, "key", { value: key, enumerable: false });
       parts.push(part);
     }
-    part.copies.push(copy);
+    part.copies.push(place);
     drilled += holes.length;
   };
+  // --- edge banding: which band each kind of part takes (bandFor), and what it buys -----------
+  const bandFronts = bandFor(s, "fronts", metric) ?? null;
+  const bandCarcass = bandFor(s, "carcass", metric) ?? null;
+  const bandShelves = bandFor(s, "shelves", metric) ?? null;
+  /** A front's four edges, or a part's front edge, in a band (none when it is not banded).
+   * @param {Band | null} band @param {EdgeName[]} which */
+  const edgesIn = (band, which) => (band ? which.map((edge) => ({ edge, band })) : []);
+  const bandSet = bandList(s, metric);
+  /**
+   * Each band a part takes, by the metre for each copy: every banded edge's whole run (an
+   * edgebander runs the band across a notch at an end, a side's toe kick or a rail's tongue, and
+   * it is trimmed off by hand there) plus the waste per banded side (Microvellum's 1 in to start),
+   * rounded up to the millimetre. Microvellum's 5% is the shopping list's banding overage, applied
+   * once to the total. @param {PartBand[]} on @returns {BomItem[]}
+   */
+  const bandBom = (on) =>
+    [...new Set(on.map((e) => e.band))].map((n) => {
+      const edges = on.filter((e) => e.band === n);
+      const metres = edges.reduce((m, e) => m + e.run + s.bandWasteEnd, 0);
+      return /** @type {BomItem} */ ({ item: `Edge banding, ${bandSet[n - 1].label}`, qty: Math.ceil(metres * 1000 - 1e-6) / 1000, unit: "m" });
+    });
   let drilled = 0;
   /** @param {string} part @param {string} where @param {string} hole @param {string} depth @param {string} how */
   const note = (part, where, hole, depth, how) => rows.push([part, where, hole, depth, how]);
@@ -967,6 +1467,63 @@ function build(s, metric) {
     sideHoles[which].push(placeHole(part, sideSize, sidePrisms(inner), h, what, fix));
     sideWhat[which].push(what);
   };
+
+  // --- the shopping list: hardware that rides on the part it goes on (HARDWARE) -------------
+  /**
+   * A door's hinges, their mounting plates (one each) and the screws that hold a screw-on hinge's
+   * cup to the door. @param {number} count @returns {BomItem[]}
+   */
+  const hingeBom = (count) => {
+    const hinge = HARDWARE.hinge[s.hingeClose][overlay ? "overlay" : "inset"];
+    const screw = HARDWARE.hingeScrew[s.catalog];
+    return [
+      { item: hinge.item, sku: hinge.sku, qty: count, unit: "each" },
+      plateBom(count),
+      { item: screw.item, sku: screw.sku, qty: HARDWARE.hingeScrew.perHinge * count, unit: "each" },
+    ];
+  };
+  /**
+   * One mounting plate per hinge. Its part number only where this plugin drills its two 5 x 11.5
+   * mm holes (an overlay door, hardware holes on) and the Overlay row settles on a 0 mm plate;
+   * otherwise in words, as the runner screws are when their holes are not drilled here.
+   * @param {number} count @returns {BomItem}
+   */
+  const plateBom = (count) => {
+    if (!overlay) return { item: "Blum CLIP mounting plate for an inset door, as Blum's inset table gives", qty: count, unit: "each" };
+    const plate = overlayPlate();
+    const height = plate === null ? "height to match the overlay" : `${plate} mm`;
+    if (!s.hardware) return { item: `Blum CLIP mounting plate, frameless, ${height}, fixing to suit the holes you drill`, qty: count, unit: "each" };
+    if (plate === 0) return { item: HARDWARE.plate.item, sku: HARDWARE.plate[s.catalog], qty: count, unit: "each" };
+    return { item: `Blum CLIP mounting plate, frameless, ${height}, system screws`, qty: count, unit: "each" };
+  };
+  /**
+   * The plate height an overlay door's hinges go on (mm), as the Overlay row works it out
+   * (overlayText): 0 when the overlay is matched on a 0 mm plate, the hinge's reach is the limit
+   * (worked out on a 0 mm plate), a boring distance on a 0 mm plate matches it, or the side screw
+   * takes up the rest; the thinnest plate that matches with a boring distance otherwise; null when
+   * none does.
+   */
+  const overlayPlate = () => {
+    const want = t - g / 2;
+    const reach = (OVERLAY.base + OVERLAY.side) * MM + s.cupDistance;
+    if (s.hardware && want > reach + 1e-9) return 0;
+    const got = OVERLAY.base * MM + s.cupDistance;
+    if (Math.abs(want - got) <= 0.5 * MM || Math.abs(want - got) <= OVERLAY.side * MM + 1e-9) return 0;
+    const way = OVERLAY.plates.find((h) => want / MM - OVERLAY.base + h >= CUP.minK - 1e-9 && want / MM - OVERLAY.base + h <= CUP.maxK + 1e-9);
+    return way ?? null;
+  };
+  /**
+   * A pull and its two screws, on the front it goes through. Named by hole spacing and the
+   * front's thickness (the screw's length depends on it); no part numbers.
+   * @param {boolean} has @param {number} spacing @param {number} thick @returns {BomItem[]}
+   */
+  const pullBom = (has, spacing, thick) =>
+    has
+      ? [
+          { item: `Pull, ${both(spacing)} hole centres`, qty: 1, unit: "each" },
+          { item: `Pull screw, through a ${both(thick)} front`, qty: 2, unit: "each" },
+        ]
+      : [];
 
   // --- fronts --------------------------------------------------------------------------------
   const last = bands.length - 1;
@@ -1154,7 +1711,7 @@ function build(s, metric) {
           note(name, `Pull, 2 holes ${both(s.doorPullSpacing)} apart, ${s.doorPull}, the nearer ${both(s.doorPullEnd)} from the ${s.doorPullFrom} and ${both(s.doorPullEdge)} from the opening edge`, fmtMm(s.pullHole), "through", "CNC");
         }
       }
-      add(name, MATERIALS.doors.name, size, [], holes, { at: [leaf.x0, fb.y, fb.z0], name });
+      add(name, MATERIALS.doors.name, size, [], holes, { at: [leaf.x0, fb.y, fb.z0], name }, [...hingeBom(count), ...pullBom(s.doorPull !== "none", s.doorPullSpacing, t)], edgesIn(bandFronts, FRONT_EDGES));
     }
 
     /**
@@ -1221,6 +1778,47 @@ function build(s, metric) {
     const gz = /** @type {[number, number]} */ ([recess, recess + bT + s.fit]);
     note("Drawer", `${R.name} ${rl.part}, ${rl.nl} mm${s.catalog === "us" ? ` (${(rl.nl / 25.4).toFixed(0)} in)` : ""} runners; the box is ${mm(nl)} mm long`, "-", "-", "Hardware");
     note("Drawer", R.lock, "-", "-", "Hand");
+    // Each drawer's runners, locking devices and their screws ride on its front (one front per
+    // drawer); the drilling template and tool set are bought once for the shop.
+    const lockPart = R.lock.match(/^T\d+\.\d+(?:\.\d+)?/)?.[0] ?? "";
+    const drilled = s.hardware && overlay;
+    const us = s.catalog === "us";
+    const holes = 2 * rl.screws.length;
+    // A trash pull-out's bins ride on its front, in words: BINS has the sizes from each maker's
+    // drawing, not an order number.
+    const binSpec = s.bin === "custom" ? null : BINS[s.bin];
+    /** @type {BomItem[]} */
+    const binBom =
+      s.layout !== "trash"
+        ? []
+        : [
+            {
+              item: binSpec ? `Waste bin, ${binSpec.label}: rim ${binSpec.rim[0]} x ${binSpec.rim[1]} in, ${binSpec.height} in tall` : `Waste bin hung by its rim in a ${both(s.binWidth)} x ${both(s.binLength)} cutout (as measured)`,
+              qty: s.trashBins === "one" ? 1 : 2,
+              unit: "each",
+            },
+          ];
+    /** @type {BomItem[]} */
+    const drawerBom = [
+      { item: `${R.name} runners, ${rl.nl} mm${us ? ` (${(rl.nl / 25.4).toFixed(0)} in)` : ""}, left and right`, sku: rl.part, qty: 1, unit: "pair" },
+      // Blum Inc. numbers the right and left devices; Blum Europe orders one number left and right.
+      ...(us
+        ? /** @type {BomItem[]} */ ([
+            { item: `${R.name} locking device, right`, sku: `${lockPart} R`, qty: 1, unit: "each" },
+            { item: `${R.name} locking device, left`, sku: `${lockPart} L`, qty: 1, unit: "each" },
+            { item: HARDWARE.lockScrewUs.item, sku: HARDWARE.lockScrewUs.sku, qty: 4, unit: "each" },
+          ])
+        : /** @type {BomItem[]} */ ([
+            { item: `${R.name} locking devices, left and right (order one of each)`, sku: lockPart, qty: 1, unit: "pair" },
+            { item: "Locking-device screws for a left and a right device, as Blum's instructions give", qty: 1, unit: "pair" },
+          ])),
+      drilled
+        ? us
+          ? { item: HARDWARE.runnerScrewUs.item, sku: HARDWARE.runnerScrewUs.sku, qty: holes, unit: "each" }
+          : { item: "Runner screw for a drilled 5 mm System 32 hole, as Blum's instructions give", qty: holes, unit: "each" }
+        : { item: "Runner screws for a pair of runners, as Blum's instructions give", qty: 1, unit: "pair" },
+      ...HARDWARE.templates[s.catalog].map((x) => /** @type {BomItem} */ ({ item: x.item, sku: x.sku, qty: 1, unit: "each", once: true })),
+    ];
     note("Drawer box", `Bottom slides in from the back in grooves ${both(bT + s.fit)} wide, ${both(recess)} up; the back sits on it, so the runner passes under the back (no notch)`, "-", both(gd), "CNC (pocket)");
 
     drawerBands.forEach((band, i) => {
@@ -1276,7 +1874,7 @@ function build(s, metric) {
         }
         note("Drawer front", `Pull, 2 holes ${both(s.pullSpacing)} apart, ${s.drawerPull === "center" ? "centred" : `${both(s.drawerPullFromTop)} down from the top`}`, fmtMm(s.pullHole), "through", "CNC");
       }
-      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` });
+      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` }, [...drawerBom, ...binBom, ...pullBom(s.drawerPull === "center" || s.drawerPull === "top", s.pullSpacing, tf)], edgesIn(bandFronts, FRONT_EDGES));
 
       // Box: sides run the full length; the sub-front and back sit between them. The bottom
       // slides in under the back, in grooves in the sides and the sub-front.
@@ -1459,8 +2057,8 @@ function build(s, metric) {
   }
 
   // --- carcass parts ---------------------------------------------------------------------------
-  add("Left side", MATERIALS.carcass.name, sideSize, sidePrisms(t), sideHoles.left, { at: [0, 0, 0], name: "Left side" });
-  add("Right side", MATERIALS.carcass.name, sideSize, sidePrisms(0), sideHoles.right, { at: [s.width - t, 0, 0], name: "Right side" });
+  add("Left side", MATERIALS.carcass.name, sideSize, sidePrisms(t), sideHoles.left, { at: [0, 0, 0], name: "Left side" }, [], edgesIn(bandCarcass, ["front"]));
+  add("Right side", MATERIALS.carcass.name, sideSize, sidePrisms(0), sideHoles.right, { at: [s.width - t, 0, 0], name: "Right side" }, [], edgesIn(bandCarcass, ["front"]));
 
   /**
    * A rail between the sides. The top and the bottom run to the back edge and carry the back's
@@ -1469,8 +2067,9 @@ function build(s, metric) {
    */
   /** Where the top and the bottom end at the rear: the rear edge when they carry the back's groove. */
   const railEnd = grooved ? s.depth : innerD;
-  /** @param {number} z @param {string} name @param {string} copyName @param {"top" | "bottom" | "shelf"} kind @param {[number, number]} [ys] its front and rear (a stretcher) */
-  const addRail = (z, name, copyName, kind, ys) => {
+  /** @param {number} z @param {string} name @param {string} copyName @param {"top" | "bottom" | "shelf"} kind @param {[number, number]} [ys] its front and rear (a stretcher)
+   * @param {boolean} [shows] its front edge shows, and takes the carcass's band (the rear stretcher's does not) */
+  const addRail = (z, name, copyName, kind, ys, shows = true) => {
     const len = innerW + 2 * tongue;
     const [ya, yb] = ys ?? (kind === "shelf" ? [shelfFront, shelfDepth] : [0, railEnd]);
     /** @type {Prism[]} */
@@ -1484,7 +2083,7 @@ function build(s, metric) {
       const [g0, g1] = [backY[0] - ya, backY[1] - ya];
       prisms.push(kind === "top" ? { min: [0, g0, 0], max: [len, g1, bgd] } : { min: [0, g0, t - bgd], max: [len, g1, t] });
     }
-    add(name, MATERIALS.carcass.name, [len, yb - ya, t], prisms, [], { at: [t - tongue, ya, z], name: copyName });
+    add(name, MATERIALS.carcass.name, [len, yb - ya, t], prisms, [], { at: [t - tongue, ya, z], name: copyName }, [], shows ? edgesIn(bandCarcass, ["front"]) : []);
   };
   if (s.top === "stretchers") {
     // Two stretchers under the countertop (open for a sink): the front one notched like a top,
@@ -1492,7 +2091,7 @@ function build(s, metric) {
     const sw = s.stretcher;
     if (grooved && !(backY[0] - (railEnd - sw) >= 6 * MM)) throw new Error(`The rear stretcher is too narrow to carry the back's groove ${both(backInsetOf(s))} in from the rear: make it wider.`);
     addRail(s.height - t, "Front stretcher", "Front stretcher", "top", [0, sw]);
-    addRail(s.height - t, "Rear stretcher", "Rear stretcher", "top", [railEnd - sw, railEnd]);
+    addRail(s.height - t, "Rear stretcher", "Rear stretcher", "top", [railEnd - sw, railEnd], false);
     note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ": in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove" : ", butted between the sides"}`, "-", "-", "CNC (profile)");
   } else addRail(s.height - t, "Top", "Top", "top");
   addRail(kick, "Bottom", "Bottom", "bottom");
@@ -1501,7 +2100,7 @@ function build(s, metric) {
     // Loose shelves on pins, a sliver narrower than the opening so they lift out, each resting
     // on its pins (placed with the pin holes).
     shelfZs.forEach((z, i) => {
-      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth - shelfFront, t], [], [], { at: [t + PANEL_GAP, shelfFront, rests[i] ?? z], name: `Shelf ${i + 1}` });
+      add("Shelf", MATERIALS.carcass.name, [innerW - 2 * PANEL_GAP, shelfDepth - shelfFront, t], [], [], { at: [t + PANEL_GAP, shelfFront, rests[i] ?? z], name: `Shelf ${i + 1}` }, [{ item: HARDWARE.shelfPin, qty: 4, unit: "each" }], edgesIn(bandShelves, ["front"]));
     });
   }
   if (shelfFront) note(shelfZs.length === 1 ? "Shelf" : "Shelves", `Set back ${both(shelfFront)} from the cabinet's front: behind the inset door (${both(t)}) and its bumpers`, "-", "-", "CNC (profile)");
@@ -1527,6 +2126,27 @@ function build(s, metric) {
   // How the box comes out square.
   const squares = [s.dados ? "the bottom in its dados" : "the bottom", ...(s.back && grooved ? ["the back in its grooves"] : [])].join(" and ");
   note("Assembly", `${squares[0].toUpperCase()}${squares.slice(1)} hold the box square${s.top === "stretchers" ? "; the stretchers add little on their own" : ""}. Glue it up with the back in place and check the diagonals (equal within 1/32 in, 1 mm) before the glue sets.`, "-", "-", "Hand");
+
+  // Edge banding: what each banded part is cut at and finished at, and its edges.
+  const banded = parts.filter((p) => p.bands);
+  if (banded.length) {
+    const clash = bandClash(parts);
+    if (clash) throw new Error(clash);
+    note("Edge banding", `Each banded edge's blank is cut short by its band${s.bandPremill > 0 ? ` less the ${both(s.bandPremill)} the edgebander pre-mills off` : ""}, so blank plus band is the size designed. Holes, dados and notches stay where they are in the finished part, each the band's thickness nearer the raw edge (Blum gives the boring distance from the door's edge and the 37 mm lines from the side's front edge; with a band on, that edge is the band's face). Band after the router; type the thickness your band measures. The model shows the blanks, so a banded edge stands a band short of its neighbours and a size measured in the model is the cut size`, "-", "-", "Hand");
+    for (const p of banded) {
+      const fin = /** @type {V3} */ (p.finished);
+      const thin = fin.indexOf(Math.min(...fin));
+      const [a, b] = [0, 1, 2].filter((k) => k !== thin);
+      const on = /** @type {PartBand[]} */ (p.bands);
+      const where = on.length === 4 ? "all four edges" : on.length === 1 ? `the ${on[0].edge} edge` : `${on.map((e) => e.edge).join(", ")} edges`;
+      const which = [...new Set(on.map((e) => e.band))].map((n) => bandSet[n - 1].label).join("; ");
+      const metres = (p.bom ?? []).filter((x) => x.unit === "m").map((x) => x.qty).reduce((m, q) => m + q, 0);
+      // A notch at an end of a banded edge (a side's toe kick, a rail's tongues): an edgebander
+      // runs the band across it, and it is trimmed off by hand at the notch's inside corner.
+      const notched = on.some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9);
+      note(p.name, `Edge band ${where} (${which}): finished ${pairText(fin[a], fin[b], metric)}, cut ${pairText(p.blank[a], p.blank[b], metric)}; ${Math.round(metres * 1000) / 1000} m of band each, with waste${notched ? `. ${END_NOTCH}` : ""}`, "-", "-", "Edge band");
+    }
+  }
 
   // A groove narrower than the bit cannot be cut with it.
   const narrow = (s.back && grooved) || drawerBands.length ? bT + s.fit : Infinity;

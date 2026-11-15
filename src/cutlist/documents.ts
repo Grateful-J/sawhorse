@@ -3,7 +3,7 @@
 // 5160-style sheets: 30 labels, 3 across and 10 down, 2 5/8 x 1 in).
 import type { CutList } from "../kernel/types";
 import { fit, LETTER, PdfDoc, textWidth, type PdfPage } from "./pdf";
-import { formatArea, formatBoardFeet, formatSize, formatSteps, geometryNote, GRAIN_WORDS, listStyle, materialText, NOT_SOLID_NOTE, REPORT_COLUMNS, reportCells, scopeNote, sizeUnit, summary } from "./format";
+import { anyBanded, formatArea, formatBoardFeet, formatSize, formatSteps, geometryNote, GRAIN_WORDS, listStyle, materialText, NOT_SOLID_NOTE, REPORT_COLUMNS, reportCells, scopeNote, sizeUnit, summary } from "./format";
 
 const IN = 72;
 
@@ -110,7 +110,7 @@ export function reportPdf(list: CutList, title: string): Uint8Array {
   }
   // The note, on every page's foot.
   doc.pages.forEach((p, i) => {
-    const lines = wrap(scopeNote(list.rounding), 7.5, W - 80);
+    const lines = wrap(scopeNote(list.rounding, anyBanded(list)), 7.5, W - 80);
     lines.forEach((l, k) => p.text(40, 40 - k * 10 + (lines.length - 1) * 10, l, 7.5, { gray: 0.4 }));
     p.text(W - 40, 22, `Page ${i + 1} of ${doc.pages.length} · Sawhorse`, 7.5, { align: "right", gray: 0.4 });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Nesting } from "../kernel/types";
-import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_FAILED, NEST_PENDING, NEST_REPLACED, NOT_NESTED, sameStamp, savedCount, stampOf, type GuardedSave, type NestStamp } from "./exportGuard";
+import { cncSaveMessage, CUT_PENDING, exportBlock, guardedSave, handWorkNote, NEST_FAILED, NEST_PENDING, NEST_REPLACED, NOT_NESTED, sameStamp, savedCount, shopExportBlock, stampOf, type GuardedSave, type NestStamp } from "./exportGuard";
 import { smallNesting } from "./fixture";
 
 const state = (hash: string, log: string) => ({ stats: { hash } as never, log_hash: log });
@@ -172,5 +172,23 @@ describe("what CNC files says it saved", () => {
     expect(handWorkNote(null)).toMatch(/could not be measured, so their dados and holes are not listed/);
     expect(handWorkNote({ skipped: ["Left side"] })).toBe("The cuts on Left side could not be measured, so it is missing from the hand work list: mark it from the model.");
     expect(handWorkNote({ skipped: ["Left side", "Door"] })).toContain("they are missing from the hand work list: mark them from the model.");
+  });
+});
+
+describe("whether the shopping list may be saved (review M1)", () => {
+  const n = smallNesting();
+  const at: NestStamp = { model: "m1", log: "l1", visibleOnly: false };
+  const ok = { nesting: n, stamp: at, cutStamp: { ...at }, now: { ...at }, pending: false, failed: false };
+
+  it("only with a nesting and a cut list both of the model as it is now: never hardware of one state with sheets of another", () => {
+    expect(shopExportBlock(ok)).toBeNull();
+    // The nesting is of the model before an edit (or of the last document), the cut list is new.
+    expect(shopExportBlock({ ...ok, stamp: { ...at, log: "l0" } })).toBe(NEST_PENDING);
+    // The nesting is new, the cut list is from before.
+    expect(shopExportBlock({ ...ok, cutStamp: { ...at, log: "l0" } })).toBe(CUT_PENDING);
+    expect(shopExportBlock({ ...ok, cutStamp: undefined })).toBe(CUT_PENDING);
+    expect(shopExportBlock({ ...ok, failed: true })).toBe(NEST_FAILED);
+    expect(shopExportBlock({ ...ok, pending: true })).toBe(NEST_PENDING);
+    expect(shopExportBlock({ ...ok, nesting: null })).toBe(NOT_NESTED);
   });
 });
