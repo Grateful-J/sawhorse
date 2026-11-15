@@ -10,6 +10,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyPreset, defaults, flatImportOp, importOp, MATERIALS, plan } from "../../plugins/cabinet-generator/cabinet.js";
 import { baseDefaults, IDENTITY, placeNext, planBase, type Cab } from "../../plugins/cabinet-generator/row.js";
+import { clearanceSteps, TEST_KINDS, TEST_TAG, testCut } from "../../plugins/cabinet-generator/testcuts.js";
 import type { DocState, FaceInfo, Nesting, V3 } from "../kernel/types";
 import { cncSettings } from "../components/NestingSection";
 import DxfParser from "dxf-parser";
@@ -681,5 +682,106 @@ run("the track saw's hand work and metric sheets, through the kernel", () => {
     expect(sawn.flatMap((p) => p.placements.map((q) => q.name))).toEqual(expect.arrayContaining(["Left side", "Right side"]));
     expect(m.pieces.filter((p) => !p.saw).every((p) => p.stock.startsWith("1220 x 1220 sheet, "))).toBe(true);
     expect(m.library.stocks.some((x) => /8\.01|3\/4 \(2\)/.test(x.name))).toBe(false);
+  }, 120_000);
+
+  it("test cuts: the coupons on the cabinet's layers at their widths and depths, and the tag Test cuts with Visible only nests the cabinets or the tests alone", async () => {
+    const d = await doc();
+    const IN = 0.0254;
+    const MM = 0.001;
+    const s = applyPreset(defaults(false), "drawers", false);
+    const p = plan(s, false);
+    expect(p.error).toBeNull();
+    d.apply_named_batch(JSON.stringify({ name: "Generate cabinet", ops: [importOp(p.parts, [0, 0, 0], s.name, s.name, Object.values(MATERIALS))] }));
+    // Each test as the panel adds it: its own assembly beside the model, on the tag Test cuts.
+    let x = s.width + 2 * IN;
+    let testPieces = 0;
+    for (const kind of TEST_KINDS) {
+      const t = testCut(kind, s, false);
+      expect(t.error, kind).toBeNull();
+      d.apply_named_batch(JSON.stringify({ name: `Test cuts: ${kind}`, ops: [importOp(t.parts, [x, 0, 0], t.name, t.name, Object.values(MATERIALS))] }));
+      x += t.size![0] + 2 * IN;
+      testPieces += t.parts.reduce((k, q) => k + q.copies.length, 0);
+    }
+    const st0 = JSON.parse(d.state_json()) as DocState;
+    const tops = st0.graph.nodes.filter((nd) => nd.parent === null);
+    const tests = tops.filter((nd) => (nd.name ?? "").startsWith(`${TEST_TAG} · `));
+    expect(tests.map((nd) => nd.name)).toEqual(["Test cuts · Machine check", "Test cuts · Joint ladders", "Test cuts · Mini drawer", "Test cuts · Mini door"]);
+    d.apply_op(JSON.stringify({ op: "tag_items", items: tests.map((nd) => ({ node: nd.id })), tag: TEST_TAG }));
+
+    const lib = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify(sheetSetOps(lib, 48 * IN, 48 * IN).op));
+    const lib2 = (JSON.parse(d.nest("{}")) as Nesting).library;
+    d.apply_op(JSON.stringify({ op: "set_nest_settings", settings: { ...lib2.settings, ...cncSettings(false) } }));
+    const n = JSON.parse(d.nest("{}")) as Nesting;
+    expect(n.unplaced).toEqual([]);
+    expect(thicknessMismatches(n)).toEqual([]);
+    expect(spacingProblem(n, "sixteenth")).toBeNull();
+    const st = JSON.parse(d.state_json()) as DocState;
+    const measured = await measureNest(measurer(d), st.graph.objects, n);
+    expect(measured.skipped).toEqual([]);
+    expect(measured.flipped).toEqual([]);
+    const placements = n.pieces.flatMap((q) => q.placements);
+    const feat = (name: string) => {
+      const q = placements.filter((pl) => pl.name === name);
+      expect(q, name).toHaveLength(1);
+      return measured.features.get(q[0].tag)!;
+    };
+    const ext = (loop: [number, number][]) => {
+      const xs = loop.map((v) => v[0]);
+      const ys = loop.map((v) => v[1]);
+      return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)].sort((a, b) => a - b);
+    };
+    // The machine check: the slot one bit wide, 2 in long, 1/8 in deep; the pocket 1 1/4 in square, 1/4 in deep.
+    const mc = feat("Machine check");
+    expect(mc.drills).toEqual([]);
+    const slot = mc.pockets.find((k) => Math.abs(k.depth - 0.125 * IN) < 1e-9)!;
+    expect(ext(slot.loop)[0]).toBeCloseTo(s.bit, 9);
+    expect(ext(slot.loop)[1]).toBeCloseTo(2 * IN, 9);
+    const pocket = mc.pockets.find((k) => Math.abs(k.depth - 0.25 * IN) < 1e-9)!;
+    expect(ext(pocket.loop)).toEqual([expect.closeTo(1.25 * IN, 9), expect.closeTo(1.25 * IN, 9)]);
+    // Each ladder: five pockets at the joint's depth, the mating stock plus each step wide, and
+    // fifteen dimples a millimetre wider than the bit, 2 mm deep.
+    const steps = clearanceSteps(s.fit, false);
+    const ladders: [string, number, number][] = [
+      ["Dado ladder", s.thickness, s.dadoDepth],
+      ["Back groove ladder", s.backThickness, s.backGrooveDepth],
+      ["Drawer bottom ladder", s.backThickness, Math.min(s.drawerThickness / 2, 0.25 * IN)],
+    ];
+    for (const [name, mating, depth] of ladders) {
+      const f = feat(name);
+      expect(f.pockets, name).toHaveLength(5);
+      for (const k of f.pockets) expect(k.depth, name).toBeCloseTo(depth, 9);
+      const widths = f.pockets.map((k) => ext(k.loop)[0]).sort((a, b) => a - b);
+      widths.forEach((w, i) => expect(w, `${name} dado ${i + 1}`).toBeCloseTo(mating + steps[i], 9));
+      expect(f.drills, name).toHaveLength(15);
+      for (const h of f.drills) {
+        expect(h.diameter).toBeCloseTo(s.bit + 1 * MM, 9);
+        expect(h.depth).toBeCloseTo(2 * MM, 9);
+        expect(h.through).toBe(false);
+      }
+    }
+    const all = n.pieces.map((_, i) => nestingDxf(n, "lwpolyline", measured.features, { piece: i })).join("\n");
+    // The slot and the dimples on layers of their own; the ladders' grooves on the cabinet's.
+    for (const layer of ["PROFILE_THRU", "POCKET_3.18MM", "POCKET_6.35MM", "POCKET_7.94MM", "POCKET_5.95MM", "DRILL_D7.35MM_2MM", "DRILL_D5MM_13MM", "DRILL_D6MM_10MM", "DRILL_D35MM_13MM", "DRILL_D5MM_10MM"]) expect(all, layer).toContain(layer);
+    expect(all.split("\nCIRCLE\n").length - 1).toBe([...measured.features.values()].reduce((k, f) => k + f.drills.length + f.flip.drills.length, 0));
+
+    // Visible only, with the tag Test cuts hidden: the cabinet's parts alone.
+    const cabinetPieces = p.parts.reduce((k, q) => k + q.copies.length, 0);
+    const count = (m: Nesting) => m.pieces.reduce((k, q) => k + q.placements.length, 0);
+    expect(count(n)).toBe(cabinetPieces + testPieces);
+    d.apply_op(JSON.stringify({ op: "set_tag_visible", tag: TEST_TAG, visible: false }));
+    const cabOnly = JSON.parse(d.nest(JSON.stringify({ visible_only: true }))) as Nesting;
+    expect(cabOnly.unplaced).toEqual([]);
+    expect(count(cabOnly)).toBe(cabinetPieces);
+    expect(cabOnly.pieces.flatMap((q) => q.placements.map((pl) => pl.name))).not.toContain("Machine check");
+    // Without Visible only, hidden or not, everything nests.
+    expect(count(JSON.parse(d.nest("{}")) as Nesting)).toBe(cabinetPieces + testPieces);
+    // The tag shown and the cabinet hidden: the tests alone.
+    d.apply_op(JSON.stringify({ op: "set_tag_visible", tag: TEST_TAG, visible: true }));
+    const cab = tops.find((nd) => nd.name === s.name)!;
+    d.apply_op(JSON.stringify({ op: "set_hidden", items: [{ node: cab.id }], hidden: true }));
+    const testsOnly = JSON.parse(d.nest(JSON.stringify({ visible_only: true }))) as Nesting;
+    expect(testsOnly.unplaced).toEqual([]);
+    expect(count(testsOnly)).toBe(testPieces);
   }, 120_000);
 });
