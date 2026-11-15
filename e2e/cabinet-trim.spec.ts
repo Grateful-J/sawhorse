@@ -91,7 +91,7 @@ test("ends, fillers and openings: an end panel is a part; a dishwasher opening i
   await expect(note(page, panel, "trimChecks")).toContainText("at least 36 in wide (Kohler's spec sheets)");
   await expect(page.locator(`[data-panel="${panel}"] [data-action="generate"]`)).toBeEnabled();
 
-  // Base 2 an inch lower: the countertop over the dishwasher would be under GE's 34 1/2 in.
+  // Base 2 an inch lower: the countertop over the dishwasher would be under GE's 34 1/4 in (34 1/2 in ± 1/4 in).
   await field(page, "secSize", "height", "33.5");
   await expect(note(page, rows, "rowChecks")).toContainText("Dishwasher (GE) beside Base 1 and Base 2");
   await expect(note(page, rows, "rowChecks")).toContainText("34 1/4 in to 34 3/4 in");
