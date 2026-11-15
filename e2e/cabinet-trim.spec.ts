@@ -94,7 +94,7 @@ test("ends, fillers and openings: an end panel is a part; a dishwasher opening i
   // Base 2 an inch lower: the countertop over the dishwasher would be under GE's 34 1/2 in.
   await field(page, "secSize", "height", "33.5");
   await expect(note(page, rows, "rowChecks")).toContainText("Dishwasher (GE) beside Base 1 and Base 2");
-  await expect(note(page, rows, "rowChecks")).toContainText("approximately 34 1/2 in");
+  await expect(note(page, rows, "rowChecks")).toContainText("34 1/4 in to 34 3/4 in");
 
   // The end panel is in the Cut list, a part of its own.
   await page.getByRole("tab", { name: "Cut list" }).click();

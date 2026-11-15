@@ -14,7 +14,7 @@ export interface Appliance {
   kind: "dishwasher" | "range" | "fridge" | "other";
   start: Printed | null;
   width?: { min: Printed; max?: Printed };
-  height?: { min: Printed; max?: Printed; approx?: boolean };
+  height?: { min: Printed; max?: Printed };
   overhead?: number;
   source: string;
 }

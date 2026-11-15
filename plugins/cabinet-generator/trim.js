@@ -35,10 +35,10 @@ const E = 1e-6;
  * - `start`: the width an opening takes when the preset is picked (0: type it).
  * - `width`: the least width, and the most where the maker gives a range.
  * - `height`: the height under the countertop, least and most (the top of the cabinets beside
- *   the opening above the floor); `approx` when the maker says "approximately".
+ *   the opening above the floor).
  * - `overhead`: the deepest cabinet over it, inches (Frigidaire's 13 in).
  * Inches are the maker's; millimetres only where the maker prints them, used in a metric document.
- * @type {Record<Exclude<OpenKind, "none">, { label: string, short: string, maker: string, kind: "dishwasher" | "range" | "fridge" | "other", start: Printed | null, width?: { min: Printed, max?: Printed }, height?: { min: Printed, max?: Printed, approx?: boolean }, overhead?: number, source: string }>}
+ * @type {Record<Exclude<OpenKind, "none">, { label: string, short: string, maker: string, kind: "dishwasher" | "range" | "fridge" | "other", start: Printed | null, width?: { min: Printed, max?: Printed }, height?: { min: Printed, max?: Printed }, overhead?: number, source: string }>}
  */
 export const APPLIANCES = {
   "dw-ge": {
@@ -48,8 +48,8 @@ export const APPLIANCES = {
     kind: "dishwasher",
     start: { in: 24 },
     width: { min: { in: 24 } },
-    height: { min: { in: 34.5 }, approx: true },
-    source: 'GE installation instructions 31-31546: an opening "at least 24" deep, 24" wide and approximately 34-1/2" high from floor to underside of the countertop".',
+    height: { min: { in: 34.25 }, max: { in: 34.75 } },
+    source: 'GE installation instructions 31-31546: an opening "at least 24" deep, 24" wide and approximately 34-1/2" high from floor to underside of the countertop"; Figure A gives 34-1/2" ± 1/4", Figure B 33-1/2" to 34-3/4" (which models each figure is for is not stated in the text read).',
   },
   "dw-bosch": {
     label: "Dishwasher, Bosch (US guide), 24 in (610 mm)",
@@ -359,7 +359,8 @@ export function trimChecks(s, metric) {
     }
   }
   if (s.otr) {
-    if (Math.abs(s.width - OTR.width * IN) > SAME) out.push(`An over-the-range microwave: GE asks for the space between the cabinets to be 30 in (762 mm) wide (a Filler Panel Kit if wider); this cabinet over it is ${len(s.width, metric)}. Check your microwave's installation guide.`);
+    if (s.width < OTR.width * IN - SAME) out.push(`An over-the-range microwave: GE asks for a 30 in (762 mm) space between the cabinets; this cabinet over it is ${len(s.width, metric)}, narrower. Check your microwave's installation guide.`);
+    if (s.width > OTR.width * IN + SAME) out.push(`An over-the-range microwave under a ${len(s.width, metric)} cabinet: GE's microwaves take a 30 in (762 mm) space, and GE says a Filler Panel Kit may be used where it is wider. Check your microwave's installation guide.`);
     if (s.depth > OTR.depth * IN + E) out.push(`The cabinet over an over-the-range microwave is ${len(s.depth, metric)} deep: GE's standard installation takes at most 13 in (330.2 mm). Check your microwave's installation guide.`);
   }
   for (const side of /** @type {const} */ (["left", "right"])) {
@@ -418,7 +419,7 @@ export function rowChecks(row, all, metric) {
         const lo = printed(a.height.min, metric);
         const hi = a.height.max ? printed(a.height.max, metric) : Infinity;
         if (h < lo - E || h > hi + E) {
-          const want = a.height.max ? `${printedText(a.height.min, metric)} to ${printedText(a.height.max, metric)}` : `${a.height.approx ? "approximately" : "at least"} ${printedText(a.height.min, metric)}`;
+          const want = a.height.max ? `${printedText(a.height.min, metric)} to ${printedText(a.height.max, metric)}` : `at least ${printedText(a.height.min, metric)}`;
           out.push(`${open.label} beside ${beside.map((x) => x.name).join(" and ")}: the countertop's underside would be ${len(h, metric)} above the floor (the cabinets' tops); ${a.maker} asks for ${want}. Check your dishwasher's installation guide.`);
         }
       }

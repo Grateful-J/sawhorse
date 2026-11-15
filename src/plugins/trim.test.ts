@@ -278,8 +278,14 @@ describe("checks, at their cited boundaries", () => {
       const b = cab(2, base(m, { height: height * u }), placeNext(a, base(m), "right"));
       return rowChecks([a, b], [a, b], m);
     };
+    // GE's printed tolerance, 34-1/2" plus or minus 1/4" (Figure A): 34-1/4" to 34-3/4".
+    expect(row("dw-ge", 34.25)).toEqual([]);
     expect(row("dw-ge", 34.5)).toEqual([]);
-    expect(row("dw-ge", 34.49).join()).toMatch(/approximately 34 1\/2 in/);
+    expect(row("dw-ge", 34.24).join()).toMatch(/34 1\/4 in to 34 3\/4 in/);
+    expect(row("dw-ge", 34.75)).toEqual([]);
+    expect(row("dw-ge", 34.76).join()).toMatch(/34 3\/4 in/);
+    expect(row("dw-ge", 870, true)).toEqual([]);
+    expect(row("dw-ge", 869, true).join()).toMatch(/869 mm/);
     expect(row("dw-bosch", 33 + 7 / 8)).toEqual([]);
     expect(row("dw-bosch", 33.87).join()).toMatch(/at least 33 7\/8 in/);
     expect(row("dw-bosch", 860, true)).toEqual([]);
@@ -291,7 +297,7 @@ describe("checks, at their cited boundaries", () => {
     const lo = cab(1, base(false, { openRight: "dw-ge", openRightWidth: 24 * IN }));
     const hi = (h: number) => cab(2, base(false, { height: h * IN }), placeNext(lo, base(), "right"));
     expect(rowChecks([lo, hi(34.5)], [lo, hi(34.5)], false)).toEqual([]);
-    expect(rowChecks([lo, hi(34.49)], [lo, hi(34.49)], false).join()).toMatch(/beside Cab 1 and Cab 2: the countertop's underside would be 34.49 in/);
+    expect(rowChecks([lo, hi(34.24)], [lo, hi(34.24)], false).join()).toMatch(/beside Cab 1 and Cab 2: the countertop's underside would be 34.24 in/);
     // Lifted onto a frame, the tops are higher: the check reads where they stand.
     const a = cab(1, base(false, { height: 30.5 * IN, base: "none", openRight: "dw-ge", openRightWidth: 24 * IN }), translation([0, 0, 4 * IN]));
     expect(rowChecks([a], [a], false)).toEqual([]);
@@ -313,7 +319,13 @@ describe("checks, at their cited boundaries", () => {
     };
     expect(otr(66)).toEqual([]);
     expect(otr(65.99).join()).toMatch(/66 in/);
-    expect(otr(66, 30.1).join()).toMatch(/30 in \(762 mm\) wide/);
+    expect(otr(66, 30.1).join()).toMatch(/Filler Panel Kit/);
+    expect(otr(66, 29).join()).toMatch(/29 in, narrower/);
+    expect(otr(66, 29).join()).not.toMatch(/Filler Panel Kit/);
+    expect(otr(66, 30.1).join()).not.toMatch(/narrower/);
+    expect(otr(66, 36).join()).toMatch(/Filler Panel Kit/);
+    expect(otr(66, 36).join()).not.toMatch(/narrower/);
+    expect(otr(66, 30).join()).not.toMatch(/narrower|Filler Panel Kit/);
     expect(otr(66, 30, 13.01).join()).toMatch(/at most 13 in/);
   });
 });
