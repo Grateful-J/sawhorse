@@ -168,6 +168,20 @@ export function defaults(metric: boolean): Sizes;
 export function normalize(saved: (Partial<Sizes> & Record<string, unknown>) | null | undefined, metric: boolean): Sizes;
 export function phrase(s: Sizes, format: (m: number) => string, metric: boolean): string;
 export function issue(s: Sizes, metric: boolean): string | null;
+/** The planner's checks on the settings alone, before any part is laid out: the message, or null. */
+export function validate(s: Sizes, metric: boolean): string | null;
+/** A hole keeps 3 mm of wood (WEB) to the part's edges and to every cut that reaches it. */
+export function holeClear(size: V3, prisms: import("./mesh.js").Prism[], hole: import("./mesh.js").Hole): boolean;
+/** The least wood left between a drilled hole and a cut or an edge (metres). */
+export const WEB: number;
+/** Blum drawer rules shared by both runners (mm). */
+export const BLUM: { insideDeduct: number; bottomRecess: number; minInside: number; hookDia: number; hookDepth: number; hookIn: number; hookUp: number };
+/** CLIP top: cup size, its centre's distance from the hinge edge less the boring distance, and the mounting plate's holes (mm). */
+export const CUP: { dia: number; depth: number; radius: number; minK: number; maxK: number; plateSetback: number; plateSpacing: number };
+/** Hinge mounting plate holes (mm). */
+export const PLATE_HOLE: { dia: number; depth: number };
+/** Shelf pin holes (mm). */
+export const PIN: { dia: number; depth: number; setback: number; pitch: number };
 export interface BinRoom {
   across: number;
   deep: number;
