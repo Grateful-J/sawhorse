@@ -20,7 +20,7 @@ A free, local-first, open-source push/pull 3D modeler for woodworkers and makers
 
 **For the shop**
 - **Cut list**: parts from components, solids and groups, with quantities through nesting, finished T x W x L, grain, stock, board feet on the rough (nominal) lumber you buy, sheet goods by area; parts that are not watertight (most hand-made SketchUp furniture) are sized from their bounds and flagged. CSV, a printable report, PDF, and labels.
-- **Nesting**: parts laid out on real sheets and boards from a stock library that knows nominal and actual thickness (3/4 ply is 23/32, 4/4 S4S is 3/4), with kerf, trim and grain; cutting diagrams and the cut order as SVG, DXF (for CNC and laser) and a PDF booklet.
+- **Nesting**: parts laid out on real sheets and boards from a stock library that knows nominal and actual thickness (3/4 ply is 23/32, 4/4 S4S is 3/4), with kerf, trim and grain; parts kept together as one block (grain-matched drawer fronts, in order, a kerf apart, never split); cutting diagrams and the cut order as SVG, DXF (for CNC and laser) and a PDF booklet.
 
 **Files**
 - Opens `.skp` (SketchUp 2013 and later, read on your machine by the MIT-licensed openskp library, its circles and arcs arriving as curves; [what comes across](docs/skp-compat.md)), STL, 3MF, glTF/GLB, OBJ, DXF and SVG.
