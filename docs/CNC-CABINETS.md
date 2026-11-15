@@ -328,7 +328,7 @@ Click **CNC files**. If something is wrong, Sawhorse asks first in **The nesting
 - **Parts on no stock** or the wrong stock: fix them in **Stock…** first.
 
 Two things to know about these questions:
-- **The spacing check reads your profile bit.** Choose it in **CNC setup** > **Tools** (**Profile bit**). The check passes when Kerf is the bit's diameter plus 1/16 in or more: 5/16 in for a 1/4 in bit, 3/16 in for a 1/8 in bit. With no profile bit chosen it assumes 1/4 in and says so. It does not read the cabinet panel's **Bit diameter**, which sizes the joints. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type, and does not offer **Use CNC spacing**.
+- **The spacing check reads your profile bit.** Choose it in **CNC setup** > **Tools** (**Profile bit**). The check passes when Kerf is the bit's diameter plus 1/16 in or more: 5/16 in for a 1/4 in bit, 3/16 in for a 1/8 in bit. With no profile bit chosen it assumes 1/4 in and says so. It does not read the cabinet panel's **Bit diameter**, which sizes the joints. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type, and does not offer **Use CNC spacing**. Kerf goes up to 1/2 in, so a bit wider than 7/16 in cannot be spaced at all: the question says so and names the largest bit that can.
 - **A part drawn at a thickness its sheet is not** (more than 0.1 mm apart) is asked about when the file holds machined cuts: a pocket, a hole, a cutout or a notch somewhere. The line reads, for a cabinet drawn at 3/4 in on 23/32 in plywood: "drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4 (23/32 in), a sheet 1/32 in thinner: joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut". Take it seriously, and fix it before you save. A file of plain rectangles has nothing sized to the thickness and is not asked about.
 
 You get one DXF for each sheet the router cuts (and for each board, when the model has solid-lumber parts such as a lumber base frame), ready for one CAM job per sheet:
@@ -419,13 +419,13 @@ If a size is off, look at the CAM job first: the scale, the bit's real diameter,
 ## Feeds, speeds and your bits
 
 **CNC setup…**, in the Nesting section beside **Stock…**, gives you a place to start: a dial setting, a feed and a depth per pass for your bit in your material. Treat each value as a starting point, never the answer:
-- the bit makers' own charts disagree with each other by 3 to 5 times for the same job;
+- the bit makers' own charts disagree with each other: the research found them 3 to 5 times apart for a 1/4 in compression bit, and the panel works out the spread for your bit and material;
 - every one of those charts is written for an industrial machine at 18,000 RPM;
 - Carbide 3D publishes no feeds and speeds for the Shapeoko 5 Pro on the web, and no maximum feed.
 
 The number that suits your bit, your sheet and your machine comes from a test cut in scrap ([Find your number](#find-your-number)).
 
-Every built-in number shows where it comes from and how far to trust it. Hover the small label beside it for the document, the page and the address. The labels mean:
+Every built-in number shows where it comes from and how far to trust it. Click or tap the small label beside it (or Tab to it and press Enter) for the document, the page and the address. The labels mean:
 - **high**: a maker's chart, manual, or spec page;
 - **medium**: a maker's blog, Carbide 3D staff on the forum, or a reseller;
 - **low**: forums and the community e-book.
@@ -475,23 +475,23 @@ Your bits, each editable. Sawhorse starts you with three:
 
 The compression bit is that one Amana bit. Other compression bits have other up-cut lengths. If yours is not a 46170, type its own: the maker's drawing gives it, or measure from the tip to where the flutes change direction.
 
-Each bit has a name, a type (up-cut, down-cut, compression, end mill or O-flute), a cutting diameter, flutes, a shank, a cutting length, and for a compression bit its up-cut length and tolerance. A size left empty is unknown, and Sawhorse then says what it cannot check: a collet for an unknown shank, a hole deeper than unknown flutes. A size you type over loses its source label, since it is now yours. **Built-in bits** puts the three back.
+Each bit has a name, a type (up-cut, down-cut, compression, end mill or O-flute), a **Maker** (Amana Tool, Onsrud, Freud, or unknown: the chipload is then checked against that maker's own figures), a cutting diameter, flutes, a shank, a cutting length, and for a compression bit its up-cut length and tolerance. A size left empty is unknown, and Sawhorse then says what it cannot check: a collet for an unknown shank, a hole deeper than unknown flutes. A size you type over loses its source label, since it is now yours. **Built-in bits** puts the three back, after asking: bits you added or changed are lost.
 
 **Profile bit** is the bit you cut the outlines with. The spacing check before **CNC files** saves reads its diameter ([Save the CNC files](#save-the-cnc-files)). With none chosen, it assumes 1/4 in.
 
 ### Feeds
 
 Choose a **Bit**, a **Material** and a **Cut**:
-- **Materials:** raw MDF, melamine / TFL on MDF, HPL on MDF, Baltic birch, and laminate-faced Baltic birch (read from the Baltic birch rows, as the research does).
+- **Materials:** raw MDF, melamine / TFL on MDF, HPL on MDF, Baltic birch, and laminate-faced Baltic birch. Laminate-faced Baltic birch reads Amana's and Freud's plywood rows, as the research's starting values do, but Onsrud's row for it is its Laminated Plywood sheet (.015–.017 in/tooth for a 1/4 in compression bit), not the Hard Plywood sheet plain Baltic birch reads (.014–.016); the research could not tell whether that sheet means laminate-faced plywood.
 - **Cuts:** a profile through the sheet, a pocket or dado, or a hole pocketed with an end mill. For a hole, pick its layer (`DRILL_D35MM_13MM`, `DRILL_D5MM_10MM` and the others from [the layer table](#2-give-each-layer-its-toolpath)).
-- **Optional:** the sheet's thickness, the pocket's depth, your depth per pass, a compression bit's first pass, a dial of your own, and **Check a feed** to check a feed from Carbide Create.
+- **Optional:** the sheet's thickness, the pocket's depth, your depth per pass, a compression bit's first pass, a dial of your own, and **Check a feed** to check a feed from Carbide Create. With a compression bit and no first pass typed, your depth per pass is the first pass, and must be deeper than the up-cut part.
 
 It shows:
-- **Chipload:** the starting value and where it comes from, then each maker's figure for this bit and material, with the lowest and highest and how far apart they are.
-- **Speed:** the dial and its RPM. **Automatic** picks the dial nearest the research's speed for this job, then turns it down while the feed would be over the machine's warning. Pick a dial yourself and the feed follows it. On the Compact Router the panel also shows what Carbide's other table says at that dial.
-- **Feed** = RPM × flutes × chipload, in IPM and mm/min (Amana, Onsrud, Freud). A pass deeper than the bit's diameter takes 25% off the feed, and one deeper than twice the diameter takes 50% off (the same three charts).
+- **Chipload:** the starting value, where it comes from and which rule of the research chose it, then each maker's figure for this bit and material, with the lowest and highest and how far apart they are. Amana's Spektra rows are shown for every compression bit but count only for a bit named Spektra (or an Amana 467xx).
+- **Speed:** the dial and its RPM. **Automatic** picks the dial nearest the research's speed for this job, then turns it down while the feed would be over the machine's warning. Pick a dial yourself and the feed follows it. On the Compact Router the panel also shows what Carbide's other table says at that dial, and a dial outside the range the maker states (the shop page's dial 1 and 6) is noted.
+- **Feed** = RPM × flutes × chipload, in IPM and mm/min (Amana, Onsrud, Freud). A pass deeper than the bit's diameter takes 25% off the feed, and one deeper than twice the diameter takes 50% off (the same three charts). Under the feed, each of its inputs (the chipload, the dial, any of those cuts) is listed with its source, or as yours, and the feed's confidence is the lowest of them: the 1/8 in end mill's feed is low, because its chipload is.
 - **Plunge and ramp:** ramp at the feed ÷ flutes (Amana; high). ToolsToday says many users plunge or ramp at about half the feed (medium). The Shapeoko e-book says a straight plunge at 30–40% of the feed (low). A forum user ramps in at about 20° (low). No bit maker's ramp angle was found.
-- **Depth per pass**, with its confidence. For a compression bit, the first pass first.
+- **Depth per pass**, with its confidence. For a compression bit, the first pass first. The community's half-diameter rule is for later passes, never for a compression bit's first pass.
 - **Stepover**, for pockets and holes: roughing 40–100% of the diameter, finishing 5–10% (the e-book; low). No bit maker's stepover was found.
 
 The Shapeoko figures for depth per pass, stepover and ramp are all community advice, low confidence: no bit maker and no Carbide 3D page gives them. The panel says so under the results.
@@ -512,7 +512,10 @@ How the research chose them:
 - **Two rows are exceptions.** HPL is derived, as the table says. The 1/8 in end mill starts below every bit maker's figure (Amana's .0040, Freud's .003), from the e-book's range for a light machine. The panel marks that row below the makers on purpose.
 - **The light machine is allowed for in the depth per pass**, not in the chipload.
 - **On another router**, Automatic takes the dial nearest the same RPM. On a Makita, the Baltic birch row is dial 3, 17,000 RPM: 17,000 × 2 × .0031 = 105 IPM.
-- **For a bit with no row** (a 3-flute bit, a 1/8 in down-cut), the start is the lowest bit maker's figure, at the dial nearest 18,000 RPM, the charts' own speed.
+- **For a bit with no row**, the panel says which rule it follows:
+  - a 1/8 in bit starts at half of Amana's printed figure (§8b, "on a light machine, start at half of it"), but never under the 0.001 in/tooth rubbing floor the research keeps to (§8a). A 1/8 in down-cut in Baltic birch: half of Amana's .0040 is .002, 73 IPM at dial 3.
+  - any other bit starts at the lowest bit maker's figure (§8a, rule 1). A 1/4 in end mill in Baltic birch: Amana's .0050.
+  - it runs at the dial §8a uses for its nearest row (the same diameter and material, the same type, else an up-cut, down-cut or end mill row for the others): the 1/4 in end mill at dial 2, 135 IPM. With no near row, near 18,000 RPM, the charts' own speed (§8b).
 
 ### The warnings
 
@@ -520,15 +523,18 @@ Each warning says **Stop** (do not cut like this) or **Check** (look before you 
 
 | Warning | When | Why |
 |---|---|---|
-| Compression first pass (Stop) | A compression bit's first pass, or the whole cut (the pocket's depth, the sheet's thickness, the hole's depth), is not deeper than its up-cut length plus its tolerance | The up-cut part lifts the top face and it chips. A 1/4 in dado is shallower than the 46170's 0.2756 in up-cut part: cut dados with the down-cut bit. |
-| Feed over the machine's warning (Check) | Over 200 IPM on the Shapeoko (low confidence), or over the figure you typed for a custom machine | Turn the dial down: the feed drops and the chipload stays the same. |
-| Chipload under the makers' (Check) | Under the lowest bit maker's figure for this bit and material (lowered with the feed for a deep pass) | The bit rubs, heats the edge and dulls. Under 0.001 in/tooth, the commonly cited minimum (low), it is a Stop. |
-| Chipload over the makers' (Check) | Over every bit maker's figure | The bit can break. |
-| Collet (Stop) | The shank is larger than the router takes (1/4 in on the Compact Router), or no listed collet is its size (a 6 mm shank in a 1/4 in collet) | A bit in the wrong collet can slip or fly out. An unknown shank, or a router whose collets were not found, is a Check. |
+| Compression first pass (Stop) | A compression bit's first pass (with none typed, your depth per pass), or the whole cut (the pocket's depth, the sheet's thickness, the hole's depth), is not deeper than its up-cut length plus its tolerance | The up-cut part lifts the top face and it chips. A 1/4 in dado is shallower than the 46170's 0.2756 in up-cut part: cut dados with the down-cut bit. For a sheet no thicker than the up-cut part, the down-cut keeps the top face but can chip the bottom face: cut it on a flat spoilboard. |
+| Pocket depth needed (Check) | A compression bit in a pocket, with no pocket depth typed | Sawhorse cannot judge the up-cut rule without it. Dados shallower than the up-cut part want the down-cut bit. |
+| Feed over the machine's warning (Check) | Over 200 IPM on the Shapeoko (low confidence), or over the figure you typed for a custom machine; also a compression bit's first pass on its own | Turn the dial down: the feed drops and the chipload stays the same. |
+| Chipload under the makers' (Check) | Under the lowest bit maker's figure for this bit and material (lowered with the feed for a deep pass) | The bit rubs, heats the edge and dulls. Where the starting value itself is under it (HPL, the 1/8 in end mill), the warning gives that row's own reason and confidence. |
+| Rubbing (Stop or Check) | Under 0.001 in/tooth, the commonly cited minimum (low), for the cut or a compression bit's first pass. The same source says it may drop to 0.0005 for 1/8 in and smaller bits, so for those it is a Check down to 0.0005 and a Stop below. | The bit rubs instead of cutting: it heats, dulls, and wood can burn. |
+| Chipload over the makers' (Check) | Over the bit's own maker's figure for this material (the 46170 is Amana's: .0031 in Baltic birch), or for a bit of unknown make, over the most conservative maker's highest figure, named | The bit can break or the cut tear. Onsrud's figures run far higher, but for Onsrud's own bits. |
+| Collet (Stop) | The shank is larger than the router takes (1/4 in on the Compact Router), or no listed collet is its size (a 6 mm shank in a 1/4 in collet) | A bit in the wrong collet can slip or fly out. An unknown shank, a router whose collets were not found, or a router whose RPM you typed (with no shank limit typed in a Custom machine), is a Check. |
 | Hole size (Stop) | The bit is not smaller than the hole | Only a bit smaller than the hole can pocket it. A 1/4 in bit cannot make a 5 or 6 mm hole: use the 1/8 in end mill. |
 | Hole depth (Stop) | The flutes are shorter than the hole is deep (for a hole through the sheet, the sheet's thickness) | Past its flutes the bit's shank rubs. An unknown flute length, or an unknown thickness for a through hole, is a Check. |
-| Forstner or hinge-boring bit (Stop) | A bit named Forstner or hinge-boring | Amana's 35 mm hinge-boring bit is rated 8,000 RPM at most and "Not to be used in … hand held routers"; Würth runs a Forstner over 35 mm at 900 rpm in MDF. The Compact Router's slowest dial is 10,000 or 11,000 RPM. Pocket the 35 mm cups with an end mill: the panel says so for that layer. |
-| Up-cut on a laminate face (Check) | An up-cut bit or an end mill in melamine, HPL or laminate-faced Baltic birch | An up-cut bit lifts the face and chips it. Use a down-cut or a compression bit for a finished face. |
+| Forstner or hinge-boring bit (Stop) | A bit whose name says Forstner, hinge, cup or 35 mm | Amana's 35 mm hinge-boring bit is rated 8,000 RPM at most and "Not to be used in … hand held routers"; Würth runs a Forstner over 35 mm at 900 rpm in MDF. The Compact Router's slowest dial is 10,000 or 11,000 RPM. Pocket the 35 mm cups with an end mill: the panel says so for that layer. |
+| Up-cut on a laminate face (Stop) | An up-cut bit in melamine, HPL or laminate-faced Baltic birch. An end mill there is a Check: it chips the same way if it is an up-cut spiral. | The research: never on a laminate top face. An up-cut bit lifts the face and chips it. Use a down-cut or a compression bit for a finished face. |
+| Down-cut through a laminate face (Check) | A down-cut bit cutting a profile or cutout through melamine, HPL or laminate-faced Baltic birch | It pushes the skin off the bottom face, where nothing supports it. Cut through-profiles in a faced sheet with a compression bit, on a flat spoilboard. |
 | Too deep (Stop) | A pass deeper than 3 × the bit's diameter | No chart goes that deep. |
 
 ### Find your number
