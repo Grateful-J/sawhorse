@@ -190,7 +190,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 
 | Field | Starts at (in / mm) | Limits | Notes |
 |---|---|---|---|
-| Joinery | Blind dados | | **Butt joints** for screws only. |
+| Joinery | Blind dados | | **Butt joints** for screws only. **Dowels** or **Confirmat screws** in place of the dados ([Joinery: dowels and Confirmat screws](#joinery-dowels-and-confirmat-screws)). |
+| Confirmat length | 50 mm | 50 or 70 mm | With Confirmat screws: the lengths Häfele lists for its self-countersinking connector (264.44.190, 264.44.194). |
 | Dado depth | 1/4 / 6 | at most half the stock | |
 | Dado stop | 1/2 / 12 | at least 1/8 in (3 mm) | How far short of the front the dado stops, so it never shows. |
 | Top | Full panel (**Two stretchers** after a base preset) | | **Two stretchers** (front and rear) for a countertop or a sink. |
@@ -199,6 +200,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | Groove depth | 5/16 / 8 | at most half the stock | Must differ from the dado depth, so each gets its own DXF layer and toolpath. |
 | Back inset | 1/2 / 12 | 0, or enough to leave 3 mm of wood behind the groove; under a third of the depth | The groove's distance from the rear edge. At 0 the groove is a rabbet along the rear edge of the sides, top and bottom. With nailers, an inset that leaves a sliver under 3 mm between the back's groove and the nailers' dados is refused, and the message gives the values that work. |
 | Rear nailers | None (**Top and bottom** after Wall cabinet, **Top** after Tall pantry) | | **Top**, or **Top and bottom**, with **Nailer height** (3 in, 75 mm). Needs the back in a groove, or no back. |
+| Line boring | Around each shelf | | With adjustable shelves. **Full height** drills the pin rows the height of the shelves' space on Blum Process 32's grid ([Full-height line boring](#full-height-line-boring)). |
 
 **6 · Hardware**
 - **Drill hinge, runner and pull holes** (on): the router drills 35 x 13 mm hinge cups, the plates' 5 mm system-screw holes, the runners' screw holes, the rear hook holes in each drawer back, and the pull holes. Turn it off to drill by hand or with a jig.
@@ -213,6 +215,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | CNC, CNC (pocket), CNC (profile), CNC (inside profile) | In the CNC files: a hole, a dado or groove, an outline, an opening through a part. |
 | Hardware | What to buy and fit: the runners, how many hinges, and the overlay they give. |
 | Hand | Yours to do: the locking devices' pilot holes, drilled with Blum's template, and the glue-up. |
+| Jig | Holes a 3-axis router cannot drill, in a rail's end: dowel holes or Confirmat pilots, with each one's distance from the rail's front edge, for a doweling jig. |
 | Change bit | A groove or a hole smaller than your **Bit diameter**: its layer needs a smaller bit. |
 | Check | A warning. Act on it before you cut: the row says what to change. |
 | Not drilled | Left out of the files, with the reason (inset hinge plates and runner screws). |
@@ -221,6 +224,42 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 **9 · Test cuts** makes small pieces that prove the setup before the real sheet: a machine check, joint ladders, a mini drawer and a mini door ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)).
 
 **10 · Edge banding** bands the edges that show: doors and drawer fronts all round, the carcass's front edges, the adjustable shelves' front edges. It starts off ([Edge banding](#edge-banding)).
+
+### Joinery: dowels and Confirmat screws
+
+**5 · Construction > Joinery** has four choices: **Blind dados** (the default), **Butt joints**, **Dowels** and **Confirmat screws**. Dowels and Confirmat screws join the top (or the two stretchers), the bottom and each fixed shelf to the sides, and turn the blind dados off: the rails are plain boxes the inside width long, with no tongues and no notches. The back's groove, the nailers and everything else are as before. The sources, quoted with their addresses, are in [docs/research/joinery-sources.md](research/joinery-sources.md).
+
+**Where the holes go.** Each joint's holes are laid out as Häfele's case-dowelling drawing places dowels (Häfele America catalogue, ch. 11, FC 11.124):
+- one 37 mm from the joint's front edge and one 37 mm from its back edge (the rail's own edges: a fixed shelf behind an inset door starts further back, and its holes with it);
+- at least 3 a joint up to 18 in (457.2 mm) deep, at least 4 up to 24 in (609.6 mm). Sawhorse drills exactly that many. Häfele gives no count past 24 in, so a deeper joint is refused rather than guessed;
+- the ones between on the 32 mm grid counted from the front one, the grid points nearest to evenly spaced, each keeping 3 mm of wood to the back one. AWS says dowel joints are "often based on" 32 mm spacing: a description, not a rule. The 23 1/4 in base's bottom gets 37, 197, 389 and 553.6 mm; a 12 in wall cabinet's top and bottom 37, 165 and 267.8 mm.
+- A joint too shallow for its count is refused with the least depth: 117 mm (4.607 in) for three, so a base's 4 in stretchers need widening to 117 mm, or a full top.
+
+| | Dowels | Confirmat screws |
+|---|---|---|
+| In the sides (router) | 8 mm, 11 mm deep, inner face: `DRILL_D8MM_11MM` | 7 mm, through: `DRILL_D7MM_THRU`. No countersink is cut: the screw is Häfele's self-countersinking connector ("Countersink is not necessary as the nibs countersink hole") |
+| In each rail's two ends (jig) | 8 mm, 25 mm deep, centred in the thickness | 5 mm pilot, centred in the thickness, as deep as the screw maker's instructions give |
+| Where the numbers come from | The depths are **Häfele's for its 8 mm permanent assembly dowel** (UK catalogue 2023, p. 7.96), one product: 11 mm into the side, 25 mm into the edge. No maker's depth table for a plain 8 mm wood dowel was found. | Häfele America FC 11.161: Ø5 drill hole, Ø7 through hole, Ø10 head. **The pilot's depth, the distance from the edges and the spacing were not found in any maker's document.** The screws go where Häfele's dowels go, and the panel and the rows say: "Häfele's dowel layout; no confirmat spacing was found in a maker's document". |
+| Least stock | 14 mm (11 mm deep with 3 mm of wood behind). Häfele gives its assembly dowel "for minimum wood thickness 18 mm": thinner stock builds, with a **Check** row quoting it. | 11 mm (the 5 mm pilot with 3 mm of wood each side) |
+| Shopping list, on each rail | "Dowel, 8 mm, no longer than 36 mm (an 11 mm hole in the side and a 25 mm hole in the edge)", two joints' worth, in words | Häfele self-countersinking Confirmat connector, 7 x 50 mm **264.44.190** or 7 x 70 mm **264.44.194** (pointed tip, Pozi drive size 3, zinc-plated), two joints' worth. Häfele supplies them in 1000s. |
+
+**The rails' end holes are for a jig.** A 3-axis router cannot drill into a panel's edge, so **8 · Cuts and holes** lists them as **Jig** rows: for each rail, how many holes in each end and their distances from its front edge, in millimetres and, in an inch document, inches. With edge banding on, the row also gives the distances from the blank's front edge as cut, before banding, for drilling before the band goes on. Line the jig up from the rail's front edge, the edge the side's holes are measured from too.
+
+**Checks it makes.** Every joint hole keeps the planner's 3 mm of wood to the side's edges, the back's groove, the toe-kick notch and every other hole. The joint holes are placed first; hinge plates, runner screws and shelf pins are placed after and keep their wood to them (a pin that would not is left out, and the pin row says how many were). With edge banding on, the side's holes are the band's thickness nearer the raw edge on the blank, like every other cut.
+
+**What to know before you use them.**
+- A Confirmat's head is on the side's outer face. In a run of cabinets it is hidden; on an exposed end it shows. Sawhorse has no finished-end option.
+- The face holes are drilled from the face the router cuts, the side's inner face, so nothing needs a second setup. Pocket each circle with an end mill smaller than the hole, as the other holes ([the layer table](#2-give-each-layer-its-toolpath)); the job sheet gives hole layers the 1/8 in end mill to start. For `DRILL_D7MM_THRU`, check the bit's flutes reach through the sheet, as for the pull holes.
+- **Test cuts:** there is no dado ladder; the panel says a ladder proves a dado's clearance and does not apply to dowel or Confirmat holes.
+
+### Full-height line boring
+
+**5 · Construction > Line boring** (shown with adjustable shelves) is **Around each shelf** to start: five pin holes around each shelf's place, as before. **Full height** drills the two pin rows the height of the shelves' space on the 32 mm grid:
+- **The rule (Blum Process 32):** Blum's Universal Boring Pattern (drawing BUS0126, 2004) bores a 775 mm (30 1/2 in) side with its first hole 56.5 mm below the top end and its last 46.5 mm above the bottom end: 22 holes, 672 mm apart end to end.
+- **Generalised by Sawhorse** (Blum draws one height): the lowest hole is 46.5 mm above the bottom of the box (the side's bottom end with no toe kick, the top of the toe-kick notch with one), as Blum measures its hinge-plate holes from the bottom of the side; then one every 32 mm up to the highest that is at least 56.5 mm below the side's top end. A 775 mm side with no toe kick gives Blum's 22 holes exactly, and that is a test.
+- Of those, a hole is drilled where it keeps 3 mm of wood to the rails' faces (the bottom, the top, a fixed shelf) and is clear of the hinge plates, runner screws and joint holes, the same checks as around each shelf: the pin row in **8 · Cuts and holes** says how many were left out. In a drawer-over-door cabinet the rows stop in the door's space, below the drawers.
+- The holes are the same 5 mm x 10 mm holes on the same rows (37 mm from the front, the rear row on the same 32 mm grid). No maker gives a line-bore depth: 10 mm is the planner's, from shelf-pin lengths.
+- Many holes make the model slower to build: a tall pantry with full-height rows took about 1 s to import into the kernel against 0.2 s around each shelf (measured once, in Node, on one machine).
 
 ### Edit a cabinet
 
@@ -453,6 +492,7 @@ The sheet's lower-left corner is at 0,0. Set the job's X and Y zero at that corn
 | `DRILL_D35MM_13MM` | Hinge cups: 35 mm across, 13 mm deep | Pocket the circle to 13 mm with your end mill. Never put a Forstner or hinge-boring bit in a router: it is made for a drill press's speed ([the warnings](#the-warnings)). |
 | `DRILL_D5MM_11.5MM`, `DRILL_D5MM_13MM`, `DRILL_D5MM_10MM`, `DRILL_D6MM_10MM` | Hinge-plate (5 x 11.5), runner-screw (5 x 13), shelf-pin (5 x 10) and drawer rear hook (6 x 10) holes | Pocket each circle to its depth with an end mill smaller than the hole (1/8 in or 3 mm). A 1/4 in end mill cannot make a 5 or 6 mm hole. Check that the small bit's flutes are at least as long as the hole is deep. Use a drill bit of the hole's size only if your spindle has a collet for its shank and a speed slow enough for drilling. |
 | `DRILL_D4.76MM_THRU` (a 3/16 in pull hole), `DRILL_D5MM_THRU` | Pull holes | The same, through the sheet. If the small bit's flutes are shorter than the sheet is thick, bore as deep as they reach and finish the hole with a hand drill. |
+| `DRILL_D8MM_11MM`, `DRILL_D7MM_THRU` | With **Joinery** Dowels: the dowel holes in the sides (8 x 11). With Confirmat screws: the screws' holes through the sides (7 mm) | Pocket each circle with an end mill smaller than the hole, to 11 mm or through the sheet ([Joinery](#joinery-dowels-and-confirmat-screws)). |
 | `CUTOUT_THRU` | Openings through a part (the trash bins' cutouts) | Inside profile, through. |
 | `FLIP_…` | Cuts in the other face of a part | A second setup after the part is turned over. The status line names those parts. |
 | `STOCK`, `LABELS` | The sheet's outline and trim line; the tags | Reference only: do not cut. |
@@ -805,7 +845,7 @@ One coupon per joint whose stock differs:
 
 | Coupon | Cut from | Tried with | Dados | Made when |
 |---|---|---|---|---|
-| Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados |
+| Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados. With Dowels or Confirmat screws the panel says a ladder proves a dado's clearance and does not apply to their holes. |
 | Back groove ladder | the carcass sheet | a piece of the back plywood | the back stock plus each step, **Groove depth** deep | **Back** is In a groove and the back's inset from the rear edge is not 0: **Back inset**, or with **Rear nailers** at least the nailer's thickness plus the clearance, so never 0 (at 0 the groove is a rabbet: nothing to fit) |
 | Drawer bottom ladder | the drawer box sheet | a piece of the back plywood | the back stock plus each step, half the box stock deep, at most 1/4 in, as the drawer's groove | always |
 
@@ -989,6 +1029,7 @@ Part numbers are only those printed in Blum's catalogues. Anything Blum does not
 | A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: where the plate's holes are drilled (overlay doors, holes on) and the Overlay row settles on a 0 mm plate, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe), with pre-mounted system screws; otherwise (an inset door, holes drilled by hand, another plate height) the plate is named in words. Two screws per hinge, cup to door: **606N** (#6 x 5/8 in, Blum Inc.) or **609.1700** (3.5 x 17 mm, Blum Europe). A pull and its two screws, when the door has a pull. |
 | A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give (Blum names a 14.5 mm system screw for the 560H but no hole depth for it, and the holes here are 13 mm deep). A pull and its two screws, when the front has one (not a finger notch). A trash pull-out's bins, in words with the sizes from the maker's drawing (no order number). Once, on the Tools list: the drilling template (**T65.1600.01** with drill bits **DB-2.5mm** and **DB-6mm**, or **T65.1000.02** in Europe) and tool set **T65.9000**. |
 | A loose shelf | Four 5 mm shelf pins (Blum sells none: buy the ones that fit a 5 x 10 mm hole). |
+| A top, bottom, stretcher or fixed shelf (Dowels or Confirmat screws) | Both its joints' fasteners: 8 mm dowels in words, or Häfele's self-countersinking Confirmat connector **264.44.190** (7 x 50) or **264.44.194** (7 x 70) ([Joinery](#joinery-dowels-and-confirmat-screws)). |
 | A banded part (banding on) | Its band by the metre, with waste: "Edge banding, 1 mm x 15/16 in", one item per band it takes. |
 
 The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the plates and the runner screws are named in words, because their holes are not drilled here.
@@ -1066,7 +1107,8 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - The track saw's sheet is 4 x 8 (1220 x 2440 mm).
 - Only System 32 screw holes are drilled. Blum's chipboard-only holes and the locking devices' pilot holes are listed for drilling by hand.
 - With inset fronts, hinge plates and runner screws are listed, not drilled.
-- Adjustable shelves get a band of pin holes around each shelf (five holes), not the full height.
+- Adjustable shelves get a band of pin holes around each shelf (five holes) to start; **Full height** follows Blum's 775 mm drawing, generalised by Sawhorse to other heights.
+- Dowels and Confirmat screws: the rails' end holes are listed for a jig, never cut. The dowel depths are one Häfele product's; Confirmat spacing and pilot depth were not found in a maker's document. Joints deeper than 24 in are refused (Häfele gives no dowel count past it).
 - A base frame's dado clearance is fixed at 0.008 in (0.2 mm): it has no field.
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
