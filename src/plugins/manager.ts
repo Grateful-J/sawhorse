@@ -16,7 +16,7 @@ import { DEFAULT_HOST_OPTIONS, PluginHost, PluginRefusal, workerChannel, type Ch
 import { preparePackage, type Prepared } from "./checker";
 import { loadPackage, type PluginPackage, type PluginSource } from "./loader";
 import { boundsOf, cutListOf, definitionsOf, entitiesOfTargets, nodesOf, selectionOf, solidOf, solidsOf, statsOf, treeOf } from "./model";
-import { checkBody, patchFields, valuesOf, type FieldValue, type PanelField } from "./panel";
+import { checkBody, isInput, patchFields, valuesOf, type FieldValue, type PanelField } from "./panel";
 import type { PluginPlatform } from "./platform";
 import { AppStore, DocStore, grantCovers, grantMatches, loadGrants, packageDigest, saveGrants, trimGrant, type Grant } from "./store";
 import { redactToolEvent } from "./toolEvent";
@@ -605,7 +605,7 @@ export class PluginManager {
     const p = this.panels.get(key);
     if (!p) return;
     if (kind === "change") {
-      p.fields = p.fields.map((f) => (f.id === fieldId && (f.type === "text" || f.type === "number" || f.type === "select" || f.type === "checkbox") ? ({ ...f, value } as PanelField) : f));
+      p.fields = p.fields.map((f) => (f.id === fieldId && isInput(f) ? ({ ...f, value } as PanelField) : f));
       this.changed();
     }
     try {

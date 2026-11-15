@@ -193,6 +193,29 @@ declare module "sawhorse" {
     shaped: boolean;
     handed: number;
     hidden: number;
+    /** What is bought for each piece beyond its wood (set with the `set_bom` op); [] when nothing. */
+    bom: BomItem[];
+  }
+
+  /**
+   * One thing bought for a part beyond its wood: a hinge, a runner pair, shelf pins, edge
+   * banding. Set on a part with `{ op: "set_bom", part, bom: BomItem[] }` (it replaces the
+   * part's list; [] clears it). On a part component (solids, no nested group or component) it
+   * is counted once per copy: copies add it, deletions take it away. On an assembly (a
+   * component or group that holds other parts, such as a whole cabinet) it is refused, since
+   * the cut list lists the assembly's pieces, not the assembly. At most 32 items per part.
+   */
+  export interface BomItem {
+    /** What it is, in words, 1 to 128 characters, no space at either end, no control characters. */
+    item: string;
+    /** The maker's part number, 1 to 64 characters, no control characters; leave it out when none is known. */
+    sku?: string;
+    /** How many per piece of the part: more than 0, at most 10,000; whole for "each" and "pair". */
+    qty: number;
+    /** One of these three when set; a cut list read from a newer file may hold another word, kept as it was. */
+    unit: "each" | "pair" | "m" | (string & {});
+    /** Bought once for the shop however many parts carry it (a drilling template, a tool set). */
+    once?: boolean;
   }
 
   export interface CutList {
@@ -340,6 +363,10 @@ declare module "sawhorse" {
     | { type: "number"; id: string; label: string; value?: number; unit?: "length" | "none" | "count" | "angle"; min?: number; max?: number; step?: number; disabled?: boolean }
     | { type: "select"; id: string; label: string; value?: string; options: { value: string; label: string }[]; disabled?: boolean }
     | { type: "checkbox"; id: string; label: string; value?: boolean; disabled?: boolean }
+    /** A heading that opens and closes (value: open), with an optional one-line summary of what
+     * is in it ("3/4 in carcass · 1/4 in back"). A click reports the new value; the plugin shows
+     * the fields under an open section itself (setBody). */
+    | { type: "section"; id: string; label: string; summary?: string; value?: boolean; disabled?: boolean }
     | { type: "button"; id: string; label: string; primary?: boolean; disabled?: boolean }
     | { type: "table"; id?: string; columns: string[]; rows: (string | number)[][]; align?: ("left" | "right")[] }
     | { type: "note"; id?: string; text: string; tone?: "info" | "warning" | "error" }

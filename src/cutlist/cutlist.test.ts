@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { csvBytes, csvCellText, cutListCsv, parseCsv, textCell } from "./csv";
 import { labelSlot, labelsPdf, LABEL_SHEET, reportPdf } from "./documents";
-import { decimalSteps, defaultRounding, formatSteps, GRAIN_WORDS, nominalText, rowNotes, scopeNote, summary } from "./format";
+import { anyBanded, bandingByItem, bandingText, labelBandingText, decimalSteps, defaultRounding, formatSteps, GRAIN_WORDS, nominalText, rowNotes, scopeNote, summary } from "./format";
 import { parseNumber } from "../lib/units";
 import { fit, PdfDoc, readPdf, textWidth, winAnsi } from "./pdf";
 import { bookshelf, row } from "./fixture";
@@ -31,6 +31,28 @@ describe("cut list formatting", () => {
     expect(rowNotes({ ...list.rows[2], scaled: true, hidden: 1, total: 1 })).toEqual(["grain across W", "hidden", "scaled"]);
     expect(rowNotes({ ...list.rows[0], grain: "none", grain_set: true })).toEqual(["no grain"]);
     expect(rowNotes(list.rows[0])).toEqual([]);
+  });
+
+  it("a part carrying edge banding says so, per piece, and the note says such a part is listed as drawn", () => {
+    const list = bookshelf();
+    expect(anyBanded(list)).toBe(false);
+    expect(scopeNote("sixteenth")).toContain("Edge banding is not included; the sheet count");
+    const banded = { ...list.rows[0], bom: [{ item: "Blum hinge", qty: 2, unit: "each" as const }, { item: "Edge banding, 1 mm x 15/16 in, White PVC", qty: 3.0014, unit: "m" as const }, { item: "Edge banding, 3 mm x 15/16 in", qty: 0.5, unit: "m" as const }] };
+    expect(bandingText(banded)).toBe("edge banding 1 mm x 15/16 in, White PVC, 3.001 m; 3 mm x 15/16 in, 0.5 m a piece");
+    expect(rowNotes(banded)).toEqual([bandingText(banded)]);
+    expect(bandingText({ ...list.rows[0], bom: [{ item: "Blum hinge", qty: 2, unit: "each" }] })).toBe("");
+    list.rows[0] = banded;
+    expect(anyBanded(list)).toBe(true);
+    // Not "Finished sizes" when a part is drawn at its cut size.
+    expect(scopeNote("half_mm", true)).toMatch(/^Sizes as drawn, rounded to the nearest 0\.5 mm\. A part noted "edge banding" is drawn at its cut size, before the band .* the other parts at their finished sizes\. .* The sheet count here is a rough area estimate/);
+    expect(scopeNote("half_mm", true)).not.toMatch(/Finished sizes/);
+    // A part label says the bands, not the metres, found by the model item a placement names.
+    expect(labelBandingText(banded)).toBe("1 mm x 15/16 in, White PVC; 3 mm x 15/16 in");
+    list.rows[0] = { ...banded, occurrences: [{ ...banded.occurrences[0], item: { node: 41 } }, { ...banded.occurrences[0], item: { object: 7 } }] };
+    const of = bandingByItem(list);
+    expect([of({ node: 41 }), of({ object: 7 }), of({ node: 7 }), of({ object: 41 })]).toEqual(["1 mm x 15/16 in, White PVC; 3 mm x 15/16 in", "1 mm x 15/16 in, White PVC; 3 mm x 15/16 in", null, null]);
+    expect(bandingByItem(null)({ node: 41 })).toBeNull();
+    expect(scopeNote("sixteenth")).toMatch(/^Finished sizes, rounded to the nearest 1\/16 in\. Grain runs along L unless noted\. Board feet .* Edge banding is not included; the sheet count here is a rough area estimate \(Nesting lays the parts out on real sheets and boards, kerf included\)\.$/);
   });
 });
 

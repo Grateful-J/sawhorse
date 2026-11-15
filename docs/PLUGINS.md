@@ -192,7 +192,7 @@ const sel = await model.selection(); // [{ kind: "solid", id } | { kind: "instan
 await model.select([{ kind: "instance", id: nodes[0].id }]);
 const box = await model.bounds(); // { min, max } round everything, or round given items; null when empty
 const mats = await model.materials(); // [{ name, color: [r, g, b, a], texture, ... }]
-const cut = await model.cutList({ rounding: "sixteenth", visibleOnly: false }); // { rows: [{ name, qty, thickness, width, length, material, grain, sheet, boardFeet, area, shaped, handed, hidden }], totals, hash }
+const cut = await model.cutList({ rounding: "sixteenth", visibleOnly: false }); // { rows: [{ name, qty, thickness, width, length, material, grain, sheet, boardFeet, area, shaped, handed, hidden, bom }], totals, hash }
 ```
 
 `editable` says whether an edit may change a solid now: it is directly in the open group or component and not locked. A solid inside a closed group or component is not editable until the person opens it (double-click), exactly as for the built-in tools.
@@ -266,6 +266,8 @@ Any op of the kernel's op log ([`src/kernel/types.ts`](../src/kernel/types.ts) `
 | `set_hidden`, `set_locked`, `tag_items`, `create_tag` | `items`, ... | |
 | `define_material`, `set_material` | `name`, `color` / `object`, `material` | |
 | `set_grain`, `set_stock` | `part`, `grain` / `stock`, `sheet` | (the cut list) |
+| `set_bom` | `part`, `bom`: `[{ item, sku?, qty, unit: "each" \| "pair" \| "m", once? }]` | (the shopping list: what is bought for each piece of a part; it replaces the part's list, `[]` clears it; at most 32 items, no control characters. Set on a **part** component (one that holds solids, no nested group or component), it is counted once per copy. On an assembly (a component or group that holds other parts, such as a whole cabinet) it is refused: put it on the part it goes on. See [format.md](format.md#part-attributes-cut-list)) |
+| `set_together` | `part`, `together`: `{ key, index, stack?: "along" \| "across" } \| null` | (keep together, for grain-matched fronts: the part is nested as one block with the other parts of `key` in its group or component, lowest `index` first, a kerf apart, its grain lined up, never split between sheets; `null` clears it. Key 1 to 64 characters, no space at either end, no control characters; index 0 to 9999. Refused on an assembly. See [format.md](format.md#kept-together-nesting)) |
 | `offset`, `follow_me`, `imprint`, `split_face`, `erase_face` ... | as the built-in tools send them | |
 
 A batch holds at most 2,000 ops, and at most 10 batches a second are applied. Both are checked as the batch is built: `b.op(...)` throws a `PluginApiError` with `code: "too_large"` at the op past 2,000, or at the op that would take the batch past the 4 MB a message may hold, so a runaway loop stops at once instead of building a batch the app would refuse. A batch also has a work budget: each op costs about the size of the model it is applied to, so ops times things in the model (solids, meshes, groups, instances, sketches) must stay under 20,000,000; split bigger work into several batches (each its own undo step). The batch as sent is at most 4 MB (about 150,000 points of geometry). A batch is also held to the model's count limits (lane 16b: 50,000 guides, 50,000 dimensions, 10,000 tags, 4,096 materials, 1,000 scenes, 1,000 section planes, 200 sheets; [LIMITS.md](LIMITS.md)): what it would add is counted before it is sent, and a batch that would take the model past one is refused with `code: "too_large"` and changes nothing. So is a batch the kernel refuses for a limit of its own (the 100,000 solids, say).
@@ -297,6 +299,7 @@ const panel = await ui.registerPanel({
     { type: "text", id: "name", label: "Name", value: "Base" },
     { type: "select", id: "wood", label: "Wood", value: "oak", options: [{ value: "oak", label: "Oak" }, { value: "ash", label: "Ash" }] },
     { type: "checkbox", id: "back", label: "Back panel", value: true },
+    { type: "section", id: "size", label: "1 · Size", summary: "24 × 34 1/2 × 23 1/4", value: false }, // a heading that opens and closes
     { type: "table", id: "parts", columns: ["Part", "Qty"], rows: [["Side", 2]], align: ["left", "right"] },
     { type: "note", id: "status", text: "Ready.", tone: "info" }, // "warning", "error"
     { type: "image", id: "pic", src: "data:image/png;base64,...", alt: "Diagram", width: 120 },
@@ -309,7 +312,11 @@ await panel.update({ fields: { status: { text: "Done.", tone: "info" }, generate
 await panel.setBody([...]); // replace everything
 ```
 
-`values` holds every input field by id. A typed length that cannot be read ("3 1/2 ft-ish") shows its error under the field and is not sent (the field keeps the focus to be fixed; Esc puts the old value back). Enter that commits a number or text field hands the keyboard back to the model, so the person's next tool key ("r", "p") picks a tool; a checkbox or a button keeps only Space and Enter. Images are base64 `data:` URLs of png, jpeg, gif or webp (SVG is refused: its size is not in its header), at most 256 KB each and 2048 x 2048 pixels (read from the image's header before the browser decodes it). One panel holds at most 100 fields, 5,000 table cells, 256 K characters of text and 4 images (512 KB in all); a body or an update over that is refused with `"invalid"`. Registering the same panel, command or tool again with nothing changed redraws nothing.
+A button acts once per press: the second click of a double-click is ignored, and so are clicks while `onAction` for that button has not finished (until its promise settles, or for 10 s at most). So a handler that returns its work's promise is never run twice by an impatient person.
+
+A **section** is a heading that opens and closes, with an optional one-line `summary` of what is in it, shown while it is closed. Its value is whether it is open, and a click reports the other value through `onChange`; the plugin shows the fields under an open section itself (`setBody`), so a long panel can show one group at a time. Keep each summary current with `panel.update({ fields: { size: { summary: "..." } } })`. The cabinet generator's panel is built this way.
+
+`values` holds every input field by id (a section's is whether it is open). A typed length that cannot be read ("3 1/2 ft-ish") shows its error under the field and is not sent (the field keeps the focus to be fixed; Esc puts the old value back). Enter that commits a number or text field hands the keyboard back to the model, so the person's next tool key ("r", "p") picks a tool; a checkbox or a button keeps only Space and Enter. Images are base64 `data:` URLs of png, jpeg, gif or webp (SVG is refused: its size is not in its header), at most 256 KB each and 2048 x 2048 pixels (read from the image's header before the browser decodes it). One panel holds at most 100 fields, 5,000 table cells, 256 K characters of text and 4 images (512 KB in all); a body or an update over that is refused with `"invalid"`. Registering the same panel, command or tool again with nothing changed redraws nothing.
 
 ### Tools
 

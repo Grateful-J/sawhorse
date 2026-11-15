@@ -1,10 +1,14 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { handWorkLegend } from "../nesting/cnc";
 import { smallNesting } from "../nesting/fixture";
 import { NestingSection, type NestingSectionProps } from "./NestingSection";
 import { StockDialog, type StockDialogProps } from "./StockDialog";
 import { CutListPane, type CutListPaneProps } from "./CutListPane";
 import { bookshelf } from "../cutlist/fixture";
+import { defaultShop } from "../cam/store";
+import { jobSheet } from "../nesting/jobsheet";
+import type { Nesting, StockPiece } from "../kernel/types";
 
 afterEach(cleanup);
 
@@ -60,6 +64,25 @@ describe("Nesting section", () => {
     expect(document.querySelector('g.part[data-tag="2"]')!.getAttribute("class")).toContain("on");
   });
 
+  it("a part clicked in a diagram shows its grain, and picking Free to turn sets it (every copy)", () => {
+    const onGrain = vi.fn();
+    render(<NestingSection {...props({ onGrain })} />);
+    expect(screen.queryByTestId("nest-pick")).toBeNull();
+    fireEvent.click(document.querySelector('g.part[data-tag="1b"]')!);
+    const bar = screen.getByTestId("nest-pick");
+    expect(bar.textContent).toContain("1b");
+    const select = bar.querySelector("select")!;
+    expect(select.value).toBe("length");
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Along its length", "Across its width", "Free to turn"]);
+    fireEvent.change(select, { target: { value: "none" } });
+    expect(onGrain).toHaveBeenCalledWith(expect.objectContaining({ tag: "1b" }), "none");
+    // Without the handler there is no bar.
+    cleanup();
+    render(<NestingSection {...props()} />);
+    fireEvent.click(document.querySelector('g.part[data-tag="1b"]')!);
+    expect(screen.queryByTestId("nest-pick")).toBeNull();
+  });
+
   it("kerf and trim take typed lengths, the saw switches, and bad input says why", () => {
     vi.useFakeTimers();
     const p = props();
@@ -68,19 +91,19 @@ describe("Nesting section", () => {
     expect(kerf.value).toBe("1/8 in");
     fireEvent.change(kerf, { target: { value: "3/32" } });
     fireEvent.keyDown(kerf, { key: "Enter" });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: (3 / 32) * IN, trim: 0, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: (3 / 32) * IN, trim: 0, algorithm: "guillotine" }, { kerf: (3 / 32) * IN });
     // A pause after typing commits too.
     const trim = screen.getByLabelText("Trim") as HTMLInputElement;
     fireEvent.change(trim, { target: { value: "1/4" } });
     vi.advanceTimersByTime(800);
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: IN / 4, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: IN / 4, algorithm: "guillotine" }, { trim: IN / 4 });
     const calls = (p.onSettings as ReturnType<typeof vi.fn>).mock.calls.length;
     fireEvent.change(kerf, { target: { value: "2 in" } });
     fireEvent.keyDown(kerf, { key: "Enter" });
     expect((p.onSettings as ReturnType<typeof vi.fn>).mock.calls.length).toBe(calls);
     expect(kerf.closest("label")!.getAttribute("title")).toContain("0 to 1/2 in");
     fireEvent.change(screen.getByLabelText("Nesting algorithm"), { target: { value: "maxrects" } });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "maxrects" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "maxrects" }, { algorithm: "maxrects" });
     vi.useRealTimers();
   });
 
@@ -92,7 +115,7 @@ describe("Nesting section", () => {
     expect(joint.value).toBe("1/8 in");
     fireEvent.change(joint, { target: { value: "1/16" } });
     fireEvent.keyDown(joint, { key: "Enter" });
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "guillotine", jointLoss: IN / 16 });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 8, trim: 0, algorithm: "guillotine", jointLoss: IN / 16 }, { jointLoss: IN / 16 });
     fireEvent.change(joint, { target: { value: "1 in" } });
     fireEvent.keyDown(joint, { key: "Enter" });
     expect(p.onSettings).toHaveBeenCalledTimes(1);
@@ -157,7 +180,7 @@ describe("Nesting section", () => {
     // Typing after that commits against the settings as they are now.
     fireEvent.change(kerf, { target: { value: "1/16" } });
     vi.advanceTimersByTime(800);
-    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 16, trim: IN / 4, algorithm: "guillotine" });
+    expect(p.onSettings).toHaveBeenLastCalledWith({ kerf: IN / 16, trim: IN / 4, algorithm: "guillotine" }, { kerf: IN / 16 });
     expect(p.onSettings).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -179,6 +202,35 @@ describe("Nesting section", () => {
     expect(p.onSvg).toHaveBeenLastCalledWith(expect.objectContaining({ index: 2 }));
     fireEvent.click(screen.getByRole("button", { name: "Stock…" }));
     expect(p.onStock).toHaveBeenCalled();
+  });
+
+  it("no file is saved from a nesting that is not of the model as it is: every file button is off and says why", () => {
+    const p = props({ onCnc: vi.fn(), blocked: "Nothing was saved: the model changed and the nesting is being worked out again. Save again in a moment." });
+    const { rerender } = render(<NestingSection {...p} />);
+    const row = document.querySelector(".nesting > .btnrow") as HTMLElement;
+    expect(row.getAttribute("data-blocked")).toBe("true");
+    const buttons = [...row.querySelectorAll("button"), ...document.querySelectorAll("figure.nest-piece summary button")] as HTMLButtonElement[];
+    expect(buttons.map((b) => b.textContent)).toEqual(["SVG", "DXF", "DXF R12", "CNC files", "PDF", "SVG", "SVG"]);
+    for (const b of buttons) {
+      expect(b.disabled, b.textContent ?? "").toBe(true);
+      expect(b.title).toBe("Not now: the model changed and the nesting is being worked out again. Save again in a moment.");
+      fireEvent.click(b);
+    }
+    for (const f of [p.onSvg, p.onDxf, p.onCnc, p.onPdf]) expect(f).not.toHaveBeenCalled();
+    // The nesting caught up: the buttons are back, with their own titles.
+    rerender(<NestingSection {...p} blocked={null} />);
+    expect(row.getAttribute("data-blocked")).toBeNull();
+    for (const b of buttons) expect(b.disabled, b.textContent ?? "").toBe(false);
+    expect((within(row).getByRole("button", { name: "CNC files" }) as HTMLButtonElement).title).toContain("One DXF per sheet");
+    fireEvent.click(within(row).getByRole("button", { name: "CNC files" }));
+    expect(p.onCnc).toHaveBeenCalledTimes(1);
+  });
+
+  it("a nesting that failed keeps the old diagrams and says no file is saved from them", () => {
+    render(<NestingSection {...props({ problem: "The nesting could not be worked out: a stock is missing.", blocked: "Nothing was saved: the nesting could not be worked out for the model as it is now." })} />);
+    expect(screen.getByText(/a stock is missing\. The diagrams below are of the model before that: no file is saved from them\./)).toBeTruthy();
+    expect(document.querySelectorAll("figure.nest-piece").length).toBe(2);
+    expect((screen.getByRole("button", { name: "PDF" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("says why when there is no nesting, and nothing to export", () => {
@@ -204,6 +256,24 @@ describe("Stock dialog", () => {
       ...over,
     };
   }
+
+  it("the sheet-set button says what it adds in the document's units: 23/32, 15/32, 7/32 in, or 18, 12 and 6 mm", () => {
+    const onSheetSet = vi.fn();
+    const { rerender } = render(<StockDialog {...dprops({ onSheetSet })} />);
+    const button = () => document.querySelector('[data-action="sheet-set"]') as HTMLButtonElement;
+    expect(button().textContent).toBe("Use 4 × 4 plywood (3/4, 1/2, 1/4)");
+    expect(button().title).toContain("23/32, 15/32 and 7/32 in actual");
+    expect(button().title).not.toContain("mm");
+    for (const units of ["mm", "cm", "m"] as const) {
+      rerender(<StockDialog {...dprops({ onSheetSet, units })} />);
+      expect(button().textContent).toBe("Use 4 × 4 plywood (18, 12, 6 mm)");
+      expect(button().title).toContain("1220 x 1220 mm plywood sheets, 18, 12 and 6 mm thick");
+      expect(button().title).not.toContain("23/32");
+    }
+    // The footprint asked for is the same; the app makes it metric in a metric document.
+    fireEvent.click(button());
+    expect(onSheetSet).toHaveBeenLastCalledWith({ width: 48 * IN, length: 48 * IN });
+  });
 
   it("sets a material's stock, adds, edits and deletes stock", () => {
     const p = dprops();
@@ -331,3 +401,128 @@ describe("Cut list pane with nesting", () => {
     expect(screen.getByTestId("nesting")).toBeTruthy();
   });
 });
+
+describe("Nesting section: the track saw for what the CNC cannot take", () => {
+  /** A 4 x 4 CNC shop whose 71 1/4 in back panel is on no stock (too large). */
+  const cncOnly = () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, algorithm: "maxrects", kerf: 0.375 * IN, trim: 0.5 * IN, sheetSize: { width: 48 * IN, length: 48 * IN } };
+    n.library = { ...n.library, settings: n.settings };
+    n.unplaced.push({ row: 1, copy: 1, tag: "2", name: "Back panel", item: { node: 7 }, size: [0.25 * IN, 34.5 * IN, 71.25 * IN], material: null, stock: "4 x 4 sheet, 1/4", sheet: true, reason: "too_large" });
+    n.pieces = n.pieces.slice(0, 1);
+    return n;
+  };
+
+  it("offers the track saw for parts too large for the CNC's sheet, and the switch beside the kerf", () => {
+    const onOverflow = vi.fn();
+    render(<NestingSection {...props({ nesting: cncOnly(), onOverflow })} />);
+    const offer = screen.getByRole("button", { name: "Cut it on the track saw" });
+    fireEvent.click(offer);
+    expect(onOverflow).toHaveBeenLastCalledWith(true);
+    const box = document.querySelector('[data-field="overflow"]') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(onOverflow).toHaveBeenLastCalledWith(true);
+    // No saw yet: no saw kerf, no badges.
+    expect(screen.queryByLabelText("Saw kerf")).toBeNull();
+    expect(document.querySelector(".via")).toBeNull();
+  });
+
+  it("with the saw on: its kerf and trim, a badge on every sheet, and the switch turns it off", () => {
+    const n = cncOnly();
+    n.unplaced = n.unplaced.filter((u) => u.tag !== "2");
+    const back = smallNesting().pieces[1];
+    n.pieces.push({ ...back, saw: true, trim: IN / 4 });
+    n.settings = { ...n.settings, overflow: { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: IN / 8, trim: IN / 4 } };
+    const onOverflow = vi.fn();
+    const onSettings = vi.fn();
+    render(<NestingSection {...props({ nesting: n, onOverflow, onSettings })} />);
+    expect(screen.queryByRole("button", { name: /on the track saw/ })).toBeNull();
+    const figs = document.querySelectorAll("figure.nest-piece");
+    expect(figs[0].querySelector(".via")?.textContent).toBe("CNC");
+    expect(figs[1].querySelector(".via.saw")?.textContent).toBe("Track saw");
+    expect(figs[1].getAttribute("data-saw")).toBe("true");
+    const kerf = screen.getByLabelText("Saw kerf") as HTMLInputElement;
+    expect(kerf.value).toBe("1/8 in");
+    fireEvent.change(kerf, { target: { value: "3/32" } });
+    fireEvent.keyDown(kerf, { key: "Enter" });
+    // The change goes with the settings as a patch, for the app to apply to the settings as they
+    // are now: only the field that was typed, so Saw kerf then Saw trim both land.
+    const saw = { sheetSize: { width: 48 * IN, length: 96 * IN }, kerf: (3 / 32) * IN, trim: IN / 4 };
+    expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ overflow: saw }), { overflow: { kerf: (3 / 32) * IN } });
+    const trim = screen.getByLabelText("Saw trim") as HTMLInputElement;
+    fireEvent.change(trim, { target: { value: "1/2" } });
+    fireEvent.keyDown(trim, { key: "Enter" });
+    expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ overflow: { ...saw, kerf: IN / 8, trim: IN / 2 } }), { overflow: { trim: IN / 2 } });
+    fireEvent.click(document.querySelector('[data-field="overflow"]') as HTMLInputElement);
+    expect(onOverflow).toHaveBeenLastCalledWith(false);
+  });
+
+  it("lists the saw's parts with cuts to do by hand", () => {
+    const work = [{ tag: "2", name: "Back panel", sheet: "Sheet 1 of 1 · 4 x 8 sheet, 1/4", pockets: 2, holes: 12, cutouts: 0, shaped: false, lines: ["Pocket 3/4 × 33 1/2, 1/4 deep: 10 to 10 3/4 from end A, 1/2 to 34 from edge B"] }] as unknown as NonNullable<NestingSectionProps["handWork"]>;
+    render(<NestingSection {...props({ handWork: work })} />);
+    const box = screen.getByTestId("nest-handwork");
+    expect(box.textContent).toContain("1 track saw part has cuts to do by hand");
+    expect(box.textContent).toContain("Back panel: 2 pockets, 12 holes");
+    expect(box.querySelector("li")?.getAttribute("title")).toContain("Pocket 3/4");
+    // Where the positions are measured from is said with the list, as in the saved file.
+    expect(screen.getByTestId("nest-handwork-legend").textContent).toContain(handWorkLegend("sixteenth"));
+  });
+
+  it("says so when the saw's parts could not be measured, with or without a list", () => {
+    const note = "The track saw's parts could not be measured, so their dados and holes are not listed: mark each from the model.";
+    // No list at all: the note alone, never an empty section that reads as "nothing to do".
+    const { rerender } = render(<NestingSection {...props({ handWork: [], handWorkNote: note })} />);
+    expect(screen.getByTestId("nest-handwork-note").textContent).toBe(note);
+    expect(screen.getByTestId("nest-handwork").textContent).not.toContain("cuts to do by hand");
+    const work = [{ tag: "2", name: "Back panel", sheet: "Sheet 1 of 1", pockets: 1, holes: 0, cutouts: 0, shaped: false, lines: [] }] as unknown as NonNullable<NestingSectionProps["handWork"]>;
+    rerender(<NestingSection {...props({ handWork: work, handWorkNote: "The cuts on Left side could not be measured, so it is missing from the hand work list: mark it from the model." })} />);
+    expect(screen.getByTestId("nest-handwork").textContent).toContain("1 track saw part has cuts to do by hand");
+    expect(screen.getByTestId("nest-handwork-note").textContent).toContain("Left side");
+    rerender(<NestingSection {...props({ handWork: work })} />);
+    expect(screen.queryByTestId("nest-handwork-note")).toBeNull();
+    rerender(<NestingSection {...props({ handWork: [] })} />);
+    expect(screen.queryByTestId("nest-handwork")).toBeNull();
+  });
+
+  it("shows no switch without a CNC sheet size", () => {
+    render(<NestingSection {...props({ onOverflow: vi.fn() })} />);
+    expect(document.querySelector('[data-field="overflow"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: /on the track saw/ })).toBeNull();
+  });
+});
+
+describe("a router sheet's Job sheet", () => {
+  /** The job sheet of a piece, as the app works it out (outlines only, no cuts measured). */
+  const jobOf = (n: Nesting) => async (piece: StockPiece) => {
+    const shop = defaultShop();
+    shop.profileTool = "seed-compression";
+    return jobSheet({ n, index: n.pieces.indexOf(piece), measured: { features: new Map(), skipped: [], flipped: [] }, shop, units: "sixteenth", file: "K 02 CNC.dxf", ownerOf: () => null });
+  };
+
+  it("ticks a cut layer, has no box for STOCK and LABELS, keeps its lists valid, and starts its ticks again with a new nesting", async () => {
+    const n = smallNesting();
+    const p = props({ nesting: n, jobSheetOf: jobOf(n) });
+    const { rerender } = render(<NestingSection {...p} />);
+    const fig = document.querySelector('figure.nest-piece[data-piece="2"]') as HTMLElement;
+    fireEvent.click(within(fig).getByRole("button", { name: "Job sheet" }));
+    await within(fig).findByRole("heading", { name: /Layers: 0 of 1 with a toolpath/ });
+    const view = within(fig).getByTestId("job-sheet");
+    // STOCK and LABELS: reference, no box.
+    expect(view.querySelector('li[data-layer="STOCK"] input')).toBeNull();
+    expect(view.querySelector('li[data-layer="LABELS"] input')).toBeNull();
+    expect(view.querySelector('li[data-layer="STOCK"]')!.textContent).toContain("reference: no toolpath");
+    // A dl holds only dt, dd and div.
+    for (const dl of view.querySelectorAll("dl")) for (const c of dl.children) expect(["DT", "DD", "DIV"]).toContain(c.tagName);
+    fireEvent.click(within(view).getByRole("checkbox", { name: "PROFILE_THRU has its toolpath" }));
+    expect(within(view).getByRole("heading", { name: /Layers: 1 of 1 with a toolpath/ })).toBeTruthy();
+    // A new nesting (the same pieces, worked out again): the ticks start again.
+    const again: Nesting = { ...n, hash: `${n.hash}-2` };
+    rerender(<NestingSection {...p} nesting={again} jobSheetOf={jobOf(again)} />);
+    const fig2 = document.querySelector('figure.nest-piece[data-piece="2"]') as HTMLElement;
+    await within(fig2).findByRole("heading", { name: /Layers: 0 of 1 with a toolpath/ });
+    const fresh = within(fig2).getByTestId("job-sheet");
+    expect((within(fresh).getByRole("checkbox", { name: "PROFILE_THRU has its toolpath" }) as HTMLInputElement).checked).toBe(false);
+  });
+});
+

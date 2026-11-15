@@ -6,7 +6,9 @@
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {{ min: V3, max: V3 }} Prism */
-/** @typedef {{ axis: 0 | 1 | 2, at: number, inward: 1 | -1, center: [number, number], radius: number, depth: number, sides?: number }} Hole */
+/** A round hole drilled into the face at `at` on `axis`, `depth` deep toward `inward`.
+ * `through`: it comes out of the opposite face (`depth` is then the part's thickness).
+ * @typedef {{ axis: 0 | 1 | 2, at: number, inward: 1 | -1, center: [number, number], radius: number, depth: number, sides?: number, through?: boolean }} Hole */
 /** @typedef {{ name: string, positions: V3[], faces: number[][][], merge_coplanar: boolean }} Mesh */
 
 const EPS = 1e-9;
@@ -37,6 +39,14 @@ function inPrism(c, p) {
  */
 export function partMesh(name, size, prisms = [], holes = []) {
   if (size.some((s) => !(s > 0))) throw new Error(`${name}: every size must be positive`);
+  // A prism that runs past the blank (a dado out through the top) is cut at the blank:
+  // outside it there is nothing to remove.
+  prisms = prisms
+    .map((p) => ({
+      min: /** @type {V3} */ (p.min.map((v, k) => Math.max(0, Math.min(size[k], v)))),
+      max: /** @type {V3} */ (p.max.map((v, k) => Math.max(0, Math.min(size[k], v)))),
+    }))
+    .filter((p) => p.min.every((v, k) => p.max[k] - v > EPS));
   const cuts = /** @type {[number[], number[], number[]]} */ ([0, 1, 2].map((axis) => unique([0, size[axis], ...prisms.flatMap((p) => [p.min[axis], p.max[axis]])])));
   const [nx, ny, nz] = cuts.map((c) => c.length - 1);
   /** @type {boolean[][][]} */
@@ -97,11 +107,38 @@ export function partMesh(name, size, prisms = [], holes = []) {
 
   for (const hole of holes) drill(hole, positions, faces, vid);
   if (!faces.length) throw new Error(`${name}: the features remove the whole part`);
-  return { name, positions, faces, merge_coplanar: prisms.length > 0 || holes.length > 0 };
+  return { name, ...compact(positions, faces), merge_coplanar: prisms.length > 0 || holes.length > 0 };
 }
 
 /**
- * A blind hole in a face that is already one quad. The circle stays inside that quad.
+ * The mesh without the vertices no face uses (a hole across several grid quads merges them,
+ * and the grid points inside the merged face are left over). Untouched when every vertex is
+ * used, so a part with no such hole is exactly what it was.
+ * @param {V3[]} positions @param {number[][][]} faces
+ */
+function compact(positions, faces) {
+  const used = new Uint8Array(positions.length);
+  for (const f of faces) for (const loop of f) for (const i of loop) used[i] = 1;
+  if (used.every((u) => u === 1)) return { positions, faces };
+  /** @type {number[]} */
+  const to = [];
+  /** @type {V3[]} */
+  const kept = [];
+  positions.forEach((p, i) => {
+    if (used[i]) {
+      to[i] = kept.length;
+      kept.push(p);
+    }
+  });
+  return { positions: kept, faces: faces.map((f) => f.map((loop) => loop.map((i) => to[i]))) };
+}
+
+/**
+ * A blind hole in a flat face. Where the circle lies inside one quad of the part's grid, that
+ * quad takes it. Where it spans several (a cut somewhere else on the part lines up with the
+ * hole and splits the face there), the coplanar quads it touches are first merged into one
+ * rectangle, which keeps every grid point on its boundary, so the faces round it still meet
+ * it edge for edge.
  * @param {Hole} hole
  * @param {V3[]} positions
  * @param {number[][][]} faces
@@ -123,10 +160,11 @@ function drill(hole, positions, faces, vid) {
     return a;
   };
   // The outer ring is f[0]. Later rings are holes already cut in that same face.
-  const face = faces.findIndex((f) => {
+  /** @param {number} plane */
+  const findFace = (plane) => faces.findIndex((f) => {
     const loop = f[0];
     if (!loop || loop.length < 4) return false;
-    if (!loop.every((i) => Math.abs(positions[i][axis] - at) <= 1e-8)) return false;
+    if (!loop.every((i) => Math.abs(positions[i][axis] - plane) <= 1e-8)) return false;
     const us = loop.map((i) => positions[i][axes[0]]);
     const vs = loop.map((i) => positions[i][axes[1]]);
     const u0 = Math.min(...us);
@@ -150,7 +188,82 @@ function drill(hole, positions, faces, vid) {
     }
     return true;
   });
-  if (face < 0) throw new Error("a hole does not lie in one face; it crosses a joint or the edge");
+  /** A loop's box in the face's plane. @param {number[]} loop */
+  const box = (loop) => {
+    const us = loop.map((i) => positions[i][axes[0]]);
+    const vs = loop.map((i) => positions[i][axes[1]]);
+    return { u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs) };
+  };
+  /**
+   * The face in `plane` that holds the circle, as an entry of `faces`: one quad as built, or
+   * the rectangle of coplanar quads the circle touches, merged. `out` is the face's outward
+   * normal along the hole's axis (+1 or -1). Null when the circle is not on solid, flat face.
+   * @param {number} plane @param {number} out
+   */
+  const faceFor = (plane, out) => {
+    const one = findFace(plane);
+    if (one >= 0) return faces[one];
+    // Which way a loop of positive area faces: y x z = +x, x x z = -y, x x y = +z.
+    const side = axis === 1 ? -1 : 1;
+    const c = { u0: center[0] - radius, u1: center[0] + radius, v0: center[1] - radius, v1: center[1] + radius };
+    const parts = faces.filter((f) => {
+      const loop = f[0];
+      if (!loop || loop.length < 4 || !loop.every((i) => Math.abs(positions[i][axis] - plane) <= 1e-8)) return false;
+      if (Math.sign(area(loop)) * side !== out) return false;
+      const b = box(loop);
+      return b.u0 < c.u1 - EPS && b.u1 > c.u0 + EPS && b.v0 < c.v1 - EPS && b.v1 > c.v0 + EPS;
+    });
+    if (parts.length < 2) return null;
+    const boxes = parts.map((f) => box(f[0]));
+    const all = { u0: Math.min(...boxes.map((b) => b.u0)), u1: Math.max(...boxes.map((b) => b.u1)), v0: Math.min(...boxes.map((b) => b.v0)), v1: Math.max(...boxes.map((b) => b.v1)) };
+    // The circle inside the rectangle, and the quads tiling it: no cut inside it.
+    if (!(c.u0 > all.u0 + EPS && c.u1 < all.u1 - EPS && c.v0 > all.v0 + EPS && c.v1 < all.v1 - EPS)) return null;
+    const whole = (all.u1 - all.u0) * (all.v1 - all.v0);
+    const tiles = boxes.reduce((a, b) => a + (b.u1 - b.u0) * (b.v1 - b.v0), 0);
+    if (Math.abs(tiles - whole) > 1e-9 * whole + 1e-15) return null;
+    // Each quad is a rectangle of the grid (four corners, or an earlier merge with its
+    // boundary points): its loop's area is its box's.
+    if (parts.some((f, i) => Math.abs(Math.abs(area(f[0])) / 2 - (boxes[i].u1 - boxes[i].u0) * (boxes[i].v1 - boxes[i].v0)) > 1e-9 * whole + 1e-15)) return null;
+    // No other face meets the plane inside the rectangle (at a point, or along an edge): the
+    // edges and points inside it go with the quads, so nothing else may use them. The rings of
+    // holes already in the quads (and their walls) come along with them, and are not counted.
+    /** @type {Set<number>} */
+    const rings = new Set();
+    for (const f of parts) for (const loop of f.slice(1)) for (const i of loop) rings.add(i);
+    const inside = (/** @type {number} */ i, /** @type {number} */ j) => {
+      if (rings.has(i) && rings.has(j)) return false;
+      const p = positions[i];
+      const q = positions[j];
+      if (Math.abs(p[axis] - plane) > 1e-8 || Math.abs(q[axis] - plane) > 1e-8) return false;
+      const mu = (p[axes[0]] + q[axes[0]]) / 2;
+      const mv = (p[axes[1]] + q[axes[1]]) / 2;
+      return mu > all.u0 + EPS && mu < all.u1 - EPS && mv > all.v0 + EPS && mv < all.v1 - EPS;
+    };
+    if (faces.some((f) => !parts.includes(f) && f.some((loop) => loop.some((i, k) => inside(i, i) || inside(i, loop[(k + 1) % loop.length]))))) return null;
+    // Its boundary: every vertex of the quads that lies on it, in order round it.
+    /** @type {Set<number>} */
+    const ids = new Set();
+    for (const f of parts) for (const i of f[0]) ids.add(i);
+    const on = (/** @type {number} */ x, /** @type {number} */ edge) => Math.abs(x - edge) <= 1e-8;
+    const u = (/** @type {number} */ i) => positions[i][axes[0]];
+    const v = (/** @type {number} */ i) => positions[i][axes[1]];
+    const rim = [...ids].filter((i) => on(u(i), all.u0) || on(u(i), all.u1) || on(v(i), all.v0) || on(v(i), all.v1));
+    const bottom = rim.filter((i) => on(v(i), all.v0)).sort((a, b) => u(a) - u(b));
+    const right = rim.filter((i) => on(u(i), all.u1) && !on(v(i), all.v0)).sort((a, b) => v(a) - v(b));
+    const top = rim.filter((i) => on(v(i), all.v1) && !on(u(i), all.u1)).sort((a, b) => u(b) - u(a));
+    const left = rim.filter((i) => on(u(i), all.u0) && !on(v(i), all.v0) && !on(v(i), all.v1)).sort((a, b) => v(b) - v(a));
+    const loop = [...bottom, ...right, ...top, ...left];
+    // Counter-clockwise as built here: turned to face the way the quads did.
+    if (Math.sign(area(loop)) !== Math.sign(area(parts[0][0]))) loop.reverse();
+    const merged = [loop, ...parts.flatMap((f) => f.slice(1))];
+    const first = faces.indexOf(parts[0]);
+    for (const f of parts) faces.splice(faces.indexOf(f), 1);
+    faces.splice(Math.min(first, faces.length), 0, merged);
+    // The circle clear of the holes already in it.
+    return findFace(plane) === faces.indexOf(merged) ? merged : null;
+  };
+  const entry = faceFor(at, -inward);
+  if (!entry) throw new Error("a hole does not lie in one face; it crosses a joint or the edge");
   /** @type {V3[]} */
   const ring = [];
   for (let k = 0; k < n; k++) {
@@ -171,10 +284,13 @@ function drill(hole, positions, faces, vid) {
     }
     return a;
   })();
-  const faceArea = area(faces[face][0]);
+  const faceArea = area(entry[0]);
   if (ringArea * faceArea > 0) ring.reverse();
+  // A through hole needs its exit in one face too, found before anything is added.
+  const exit = hole.through ? faceFor(at + inward * depth, inward) : null;
+  if (hole.through && !exit) throw new Error("a through hole does not come out in one face; it crosses a joint or the edge");
   const ids = ring.map(vid);
-  faces[face].push(ids);
+  entry.push(ids);
   /** @param {V3} p */
   const inset = (p) => {
     const q = /** @type {V3} */ ([p[0], p[1], p[2]]);
@@ -182,6 +298,16 @@ function drill(hole, positions, faces, vid) {
     return q;
   };
   const floor = [...ids].reverse().map((id) => vid(inset(positions[id])));
+  if (hole.through) {
+    // The floor ring becomes a hole in the exit face: it already winds against the wall.
+    /** @type {number[][]} */ (exit).push(floor);
+    for (let i = 0; i < ids.length; i++) {
+      const a = ids[i];
+      const b = ids[(i + 1) % ids.length];
+      faces.push([[b, a, vid(inset(positions[a])), vid(inset(positions[b]))]]);
+    }
+    return;
+  }
   // Wall: the face's hole edge is A->B, so the wall's opening edge is B->A.
   for (let i = 0; i < ids.length; i++) {
     const a = ids[i];

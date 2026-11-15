@@ -89,6 +89,11 @@ export type KernelOp =
   | { op: "set_stock"; part: PartRef; stock: string | null; sheet: boolean | null }
   /** Cut list (lane 15): count a part, or drop it from the totals and the nesting (still listed). */
   | { op: "set_include"; part: PartRef; include: boolean }
+  /** The shopping list: what is bought for each piece of a part beyond its wood (replaces what was said; [] clears it). */
+  | { op: "set_bom"; part: PartRef; bom: BomItem[] }
+  /** Keep together (grain-matched fronts): nest the part as one block with the other parts of
+   * its key in its group or component, in index order (null clears it). Refused on an assembly. */
+  | { op: "set_together"; part: PartRef; together: Together | null }
   /** Lane 15: each edge-connected piece of loose non-solid faces into a group of its own (none named: every mesh in the open context). */
   | { op: "group_loose"; meshes: number[] }
   /** Lane 15: soft (1), smooth (2), hidden (4) on edges named by owner and end points. */
@@ -352,7 +357,8 @@ export type OpOutcome =
   | { kind: "context_changed"; context: number | null }
   | { kind: "component_created"; instance: number; definition: number }
   | { kind: "made_unique"; definition: number }
-  | { kind: "exploded"; objects: number[]; nodes: number[] }
+  /** `notes`: where what was said about an exploded part went (its hardware onto a solid). */
+  | { kind: "exploded"; objects: number[]; nodes: number[]; notes?: string[] }
   | { kind: "node_deleted" }
   | { kind: "visibility_set" }
   | { kind: "lock_set" }
@@ -841,6 +847,8 @@ export interface WasmDoc {
   cut_list(options: string): string;
   /** The nesting (lane 9) for NestOptions JSON, as JSON (crates/kernel/src/nesting.rs). */
   nest(options: string): string;
+  /** The stock library and nesting settings, as JSON, without working out a nesting. */
+  stock_library(): string;
   import_file(name: string, bytes: Uint8Array, options: string): string;
   /** Lane 11: a named batch whose ops may hold placeholders ({"$ref": i, "path": "..."}), applied as one op (crates/kernel/src/refbatch.rs). */
   apply_named_batch(json: string): string;
@@ -915,6 +923,7 @@ export type RequestBody =
   | { kind: "openShz"; bytes: Uint8Array }
   | { kind: "cutList"; options: CutOptions }
   | { kind: "nest"; options: NestOptions }
+  | { kind: "stockLibrary" }
   | { kind: "sample"; object: number; face: number }
   | { kind: "faceUvs"; object: number; face: number; uv: UvXform }
   | { kind: "library" }
@@ -993,6 +1002,7 @@ export type WorkerResponse =
       emptySkp?: { units: string | null; unitsWord: string | null; style: { name: string; face: FaceStyle | null } | null };
       cutList?: CutList;
       nesting?: Nesting;
+      stockLibrary?: StockLibrary;
       /** A sampled material (null: the default look). */
       material?: string | null;
       uvs?: Float32Array;
@@ -1088,7 +1098,61 @@ export interface CutRow {
   sheet_set: boolean;
   board_feet: number;
   area_m2: number;
+  /** The shopping list: what is bought for each piece beyond its wood (absent: nothing). */
+  bom?: BomItem[];
+  /** Pieces placed under a transform that stretches them (absent: none): their hardware is
+   * still the original's. */
+  stretched?: number;
+  /** Keep together (grain-matched fronts); absent when not said. */
+  together?: Together;
   occurrences: Occurrence[];
+}
+
+/** Which way a keep-together block runs against its parts' grain: end to end along it (each
+ * part crosscut off the next) or side by side across it (each ripped off the next). */
+export type Stack = "along" | "across";
+
+/** Keep together (crates/kernel/src/cutlist.rs `Together`): parts with one `key` in one group
+ * or component are nested as one block, lowest `index` first, a kerf apart, their grain lined
+ * up, never split between sheets. */
+export interface Together {
+  /** 1 to 64 characters, no control characters, no space at either end. */
+  key: string;
+  /** 0 to 9999; two parts of one block with one index are reported, not nested. */
+  index: number;
+  /** Absent: "along". */
+  stack?: Stack;
+}
+
+/** A part's place in a keep-together block, as the nesting placed or reported it. */
+export interface InBlock {
+  key: string;
+  index: number;
+  /** `n` of `of`, 1-based, lowest index first. */
+  n: number;
+  of: number;
+  stack: Stack;
+}
+
+/** How a shopping-list item is counted and bought: one by one, in pairs, or in metres. */
+export type BomUnit = "each" | "pair" | "m";
+/** A unit as read: one of the three, or (from a newer file, kept as it was) another word. */
+export type BomUnitRead = BomUnit | (string & {});
+
+/** One thing bought for a part beyond its wood (crates/kernel/src/cutlist.rs `BomItem`):
+ * `qty` per piece of the part, a whole number for "each" and "pair"; at most 32 per part. */
+export interface BomItem {
+  /** What it is, in words, 1 to 128 characters. */
+  item: string;
+  /** The maker's part number, 1 to 64 characters; absent when none is known. */
+  sku?: string;
+  qty: number;
+  /** A file from a newer version may hold a unit this one does not know: kept, and shown as
+   * such; an edit (`set_bom`) takes only the three. */
+  unit: BomUnitRead;
+  /** Bought once for the shop however many parts carry it (a drilling template): the shopping
+   * list takes the most any part asks for instead of adding them up. */
+  once?: boolean;
 }
 
 /** Lane 15 fixes: why a listed part counts nowhere. */
@@ -1165,6 +1229,18 @@ export interface NestSettings {
   jointLoss?: number;
   /** Sheet footprint for parts that do not name their own stock. Absent: the first sheet that fits. */
   sheetSize?: { width: number; length: number } | null;
+  /** With a sheet size: sheet goods too large for it come from sheets of this footprint, cut on a
+   * saw (a track saw): straight cuts edge to edge, the saw's kerf and trim. Absent: none. */
+  overflow?: SawOverflow | null;
+}
+
+/** The saw that cuts what a CNC router's sheet cannot take. */
+export interface SawOverflow {
+  sheetSize: { width: number; length: number };
+  /** The blade's kerf (metres). */
+  kerf: number;
+  /** Taken off each edge of the saw's sheets (metres). */
+  trim: number;
 }
 
 export interface StockLibrary {
@@ -1210,6 +1286,8 @@ export interface Placement {
   not_solid?: boolean;
   /** #49: strip `n` of `of` of a part glued up for width; `dy` is the strip's width, `size` the part's. */
   strip?: { n: number; of: number };
+  /** Kept together with other parts (grain-matched fronts): its block and place in it. */
+  together?: InBlock;
 }
 
 /** #49: a solid part wider than every board, glued up from strips of one board. */
@@ -1244,13 +1322,19 @@ export interface StockPiece {
   placements: Placement[];
   cuts: NestCut[];
   guillotine: boolean;
+  /** Cut on the saw ({@link NestSettings.overflow}), not the CNC router. Absent when false. */
+  saw?: boolean;
   parts_area: number;
   stock_area: number;
   waste_area: number;
   efficiency: number;
 }
 
-export type UnplacedReason = "no_stock" | "thickness" | "too_large" | "grain" | "flat" | "not_a_board" | "whole_piece" | "hollow" | "too_wide";
+/** `together`: kept off the sheet with the rest of its block (a block is never split): another
+ * part of it found no stock, its parts want different stock or material, two share an index,
+ * or they run different ways. `together_too_large`: its block as one piece is larger than its
+ * stock (and than the saw's sheet, with a saw set), though its parts fit one by one. */
+export type UnplacedReason = "no_stock" | "thickness" | "too_large" | "grain" | "flat" | "not_a_board" | "whole_piece" | "hollow" | "too_wide" | "together" | "together_too_large";
 
 export interface Unplaced {
   row: number;
@@ -1265,6 +1349,8 @@ export interface Unplaced {
   reason: UnplacedReason;
   /** The sheet footprint that was asked for, when none of that size has this thickness. */
   asked?: [number, number] | null;
+  /** Kept together: its block and place in it. */
+  together?: InBlock;
 }
 
 export interface NestGroup {

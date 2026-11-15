@@ -5,7 +5,7 @@
 // and the scope note. Plain black on white, no app chrome.
 import { createPortal } from "react-dom";
 import type { CutList } from "../kernel/types";
-import { formatArea, formatBoardFeet, formatSteps, listStyle, REPORT_COLUMNS, reportCells, scopeNote, sizeUnit, summary } from "../cutlist/format";
+import { anyBanded, formatArea, formatBoardFeet, formatSteps, listStyle, REPORT_COLUMNS, reportCells, scopeNote, sizeUnit, summary } from "../cutlist/format";
 
 /** Right-aligned columns: Qty, T, W, L, Bd ft / area (as in the PDF). */
 const NUMERIC = new Set([1, 2, 3, 4, 7]);
@@ -62,7 +62,7 @@ export function CutListReport({ list, title }: { list: CutList | null; title: st
           ))}
         </ul>
       </section>
-      <footer>{scopeNote(r)} Made with Sawhorse.</footer>
+      <footer>{scopeNote(r, anyBanded(list))} Made with Sawhorse.</footer>
     </article>,
     document.body,
   );

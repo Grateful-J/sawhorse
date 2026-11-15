@@ -138,6 +138,47 @@ impl SheetSize {
     }
 }
 
+/// A shop that cuts on a CNC router of one sheet size ([`NestSettings::sheet_size`]), and on
+/// a saw (a track saw, a panel saw) what does not fit it. It means something only with a
+/// sheet size set, and only for sheet goods.
+///
+/// **The saw's sheets** are the library sheets of this footprint that are not also the
+/// router's footprint. Every one of them is cut on the saw whatever put a part on it (a part
+/// that names it, a material's default, or the rules below): laid out in straight cuts from
+/// edge to edge (guillotine) with this kerf and trim, and marked
+/// [`crate::nesting::StockPiece::saw`].
+///
+/// **What goes to the saw.** A part comes from a saw's sheet within 1/16 in of its thickness,
+/// that it fits inside the saw's trim with its grain along the sheet's, when:
+///
+/// - it names no stock and its material has no default, and no sheet of the router's
+///   footprint and its thickness takes it (too large inside the router's trim, fitting only
+///   across the grain, or no such sheet in the library);
+/// - the stock it names, or its material's default, is a sheet of the router's footprint
+///   that cannot take it. The saw's sheet must then be the same material in the saw's size:
+///   of the same actual thickness and the same grain as the sheet that was said (plywood is
+///   never swapped for MDF). Among several, one that shares a sheet word with that sheet
+///   or with the material ("MDF", "Baltic") comes first, then library order.
+///
+/// **What does not.** A part the router's sheet takes stays on it. A sheet of any other
+/// footprint that a part names or a material defaults to is what was said: its parts are
+/// laid out on it with the document's own kerf, trim and algorithm, never moved, and not
+/// marked. A part no saw's sheet takes either (none that will do, or it fits none) is
+/// reported against the router's sheet it was meant for; with no router's sheet of its
+/// thickness, against the saw's sheet, as too large or grain-bound; with neither, as no
+/// stock.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SawOverflow {
+    #[serde(rename = "sheetSize")]
+    pub sheet_size: SheetSize,
+    /// The saw blade's kerf, metres.
+    pub kerf: f64,
+    /// Taken off each edge of the saw's sheets first, metres.
+    #[serde(default)]
+    pub trim: f64,
+}
+
 /// The saw and the layout.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -166,6 +207,11 @@ pub struct NestSettings {
     /// the file and the hash until it is set, so older documents keep both.
     #[serde(default, rename = "sheetSize", skip_serializing_if = "Option::is_none")]
     pub sheet_size: Option<SheetSize>,
+    /// With a sheet size: what does not fit it is cut on a saw from these sheets
+    /// ([`SawOverflow`] says exactly what). Absent from the file and the hash until it is
+    /// set, so older documents keep both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow: Option<SawOverflow>,
 }
 
 fn default_kerf() -> f64 {
@@ -188,6 +234,7 @@ impl Default for NestSettings {
             algorithm: NestAlgorithm::Guillotine,
             joint_loss: DEFAULT_JOINT_LOSS,
             sheet_size: None,
+            overflow: None,
         }
     }
 }
@@ -215,6 +262,24 @@ impl NestSettings {
                 ));
             }
         }
+        if let Some(o) = self.overflow {
+            let ok = |x: f64| x.is_finite() && (MIN_STOCK..=MAX_STOCK).contains(&x);
+            if !ok(o.sheet_size.width) || !ok(o.sheet_size.length) {
+                return Err(StockError::BadSettings(
+                    "the saw's sheet size must be 1 mm to 10 m on each side",
+                ));
+            }
+            if !(o.kerf.is_finite() && (0.0..=MAX_KERF).contains(&o.kerf)) {
+                return Err(StockError::BadSettings(
+                    "the saw's kerf must be 0 to 1/2 in",
+                ));
+            }
+            if !(o.trim.is_finite() && (0.0..=MAX_TRIM).contains(&o.trim)) {
+                return Err(StockError::BadSettings(
+                    "the saw's trim must be 0 to 4 in per edge",
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -235,6 +300,13 @@ impl NestSettings {
             h.tag("sheetSize");
             h.len(fp.width);
             h.len(fp.length);
+        }
+        if let Some(o) = self.overflow {
+            h.tag("overflow");
+            h.len(o.sheet_size.width);
+            h.len(o.sheet_size.length);
+            h.len(o.kerf);
+            h.len(o.trim);
         }
     }
 }

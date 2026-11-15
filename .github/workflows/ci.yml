@@ -87,6 +87,10 @@ jobs:
         run: npm run build
       - name: vitest
         run: npx vitest run
+      - name: Carbide Create diagnostic regressions
+        run: |
+          python3 scripts/test-check-c2d-pocket-width.py
+          python3 scripts/test-check-c2d-drilling.py
       - name: generate the .skp corpus (203 files, byte for byte against tests/corpus/manifest.json)
         run: npm run corpus:skp
       - name: install Playwright Chromium

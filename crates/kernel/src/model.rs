@@ -515,6 +515,28 @@ pub enum Op {
         part: crate::cutlist::PartRef,
         include: bool,
     },
+    /// The shopping list: what is bought for each piece of a part beyond its wood (hinges, a
+    /// runner pair, shelf pins, edge banding), replacing what was said (empty: nothing).
+    /// Metadata, like grain: allowed anywhere in the tree, and it reaches every copy of a
+    /// component. At most [`crate::cutlist::MAX_BOM_ITEMS`] items, each checked by
+    /// [`crate::cutlist::BomItem::problem`].
+    /// Refused on an assembly (a part target that holds other parts), where it would be
+    /// counted nowhere, and for a unit this version does not know.
+    SetBom {
+        part: crate::cutlist::PartRef,
+        #[serde(default)]
+        bom: Vec<crate::cutlist::BomItem>,
+    },
+    /// Keep together (grain-matched fronts): nest the part as one block with the other parts
+    /// of `together.key` in its group or component, at `together.index` (see
+    /// [`crate::nesting`]); `None` clears it. Metadata, like grain: allowed anywhere in the
+    /// tree, and it reaches every copy of a component. Checked by
+    /// [`crate::cutlist::Together::problem`]; refused on an assembly, which is never nested.
+    SetTogether {
+        part: crate::cutlist::PartRef,
+        #[serde(default)]
+        together: Option<crate::cutlist::Together>,
+    },
     /// Lane 15: put each edge-connected piece of non-solid meshes into a group of its own, so
     /// the cut list counts it as a part (loose faces are never parts). `meshes` empty: every
     /// mesh in the open context. One undo step; the geometry does not move or change.
@@ -976,6 +998,10 @@ pub enum OpOutcome {
     Exploded {
         objects: Vec<u64>,
         nodes: Vec<u64>,
+        /// Where what was said about the exploded part went (its hardware onto a solid), in
+        /// words for the status line. Left out when empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        notes: Vec<String>,
     },
     NodeDeleted,
     VisibilitySet,
@@ -2368,6 +2394,37 @@ impl Model {
             Op::SetInclude { part, include } => {
                 let v = (!*include).then_some(false);
                 self.set_part(*part, |a| a.include = v)
+            }
+            Op::SetBom { part, bom } => {
+                if let Some(why) = crate::cutlist::bom_problem_to_set(bom) {
+                    return Err(DocumentError::BadBom(why).into());
+                }
+                // On an assembly it would be counted nowhere: the cut list lists its pieces.
+                if !bom.is_empty() && self.holds_parts(*part)? {
+                    return Err(DocumentError::BadBom(
+                        "that holds other parts (an assembly, such as a whole cabinet), so the cut list never counts it: put the hardware on the part it goes on (a door, a drawer front)".into(),
+                    )
+                    .into());
+                }
+                let bom = bom.clone();
+                self.set_part(*part, move |a| a.bom = bom)
+            }
+            Op::SetTogether { part, together } => {
+                if let Some(why) = together
+                    .as_ref()
+                    .and_then(crate::cutlist::Together::problem)
+                {
+                    return Err(DocumentError::BadTogether(why).into());
+                }
+                // On an assembly it would never be nested: the nesting places its pieces.
+                if together.is_some() && self.holds_parts(*part)? {
+                    return Err(DocumentError::BadTogether(
+                        "that holds other parts (an assembly, such as a whole cabinet), so it is never nested: keep the parts themselves together (the drawer fronts)".into(),
+                    )
+                    .into());
+                }
+                let together = together.clone();
+                self.set_part(*part, move |a| a.together = together)
             }
             Op::GroupLoose { meshes } => self.group_loose(meshes),
             Op::SetEdgeFlags { edges, set, clear } => self.set_edge_flags(edges, *set, *clear),

@@ -8,20 +8,34 @@ import { Viewport, type KernelState, type ViewportPointer } from "./components/V
 import { SidePanel, type PaneId } from "./components/SidePanel";
 import { CutListReport } from "./components/CutListReport";
 import { rowKey } from "./components/CutListPane";
-import { NestingSection } from "./components/NestingSection";
+import { cncSettings, NestingSection } from "./components/NestingSection";
+import { ShoppingSection } from "./components/ShoppingSection";
 import { StockDialog } from "./components/StockDialog";
+import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
+import { JOB_SHEETS_TYPE, jobSheets, jobSheetsFileName, jobSheetsText, type JobSheet } from "./nesting/jobsheet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
-import { fineU, lenU, pieceTitle } from "./nesting/format";
-import { measureNest } from "./nesting/measure";
+import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
+import { measureNest, type MeasuredNest } from "./nesting/measure";
+import { CNC_BIT, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { loadShop, profileBit, type Shop } from "./cam/shop";
+import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, sameStamp, shopExportBlock, stampOf, type NestStamp } from "./nesting/exportGuard";
+import { cncToolProblems } from "./nesting/tool-preflight";
+import { toolLayerNames } from "./nesting/tool-layers";
+import { assemblyIndex } from "./lib/assembly";
+import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
+import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
+import { overflowOps, sheetSetOps } from "./nesting/sheetset";
 import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
 import { labelsPdf, reportPdf } from "./cutlist/documents";
-import { followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
+import { bandingByItem, followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
 import { loadCutRounding, saveCutRounding } from "./cutlist/rounding-store";
+import { currencyForLocale, priceList, shoppingCsvBytes, shoppingList, SHOPPING_CSV_TYPE, type ShopPrefs } from "./cutlist/shopping";
+import { loadShopPrefs, saveShopPrefs } from "./cutlist/shop-store";
 import { PDF_TYPE } from "./cutlist/pdf";
-import type { CutList, CutRow, Grain, Nesting, NestSettings, Placement, Rounding, StockDef, StockPiece } from "./kernel/types";
+import type { CutList, CutRow, Grain, Nesting, NestSettings, Placement, Rounding, StockDef, StockLibrary, StockPiece } from "./kernel/types";
 import { ValueBar, type StatusMessage } from "./components/ValueBar";
 import { createKernel, KernelUnavailableError, type EditResult, type EmptySkp, type KernelClient, type RestartInfo } from "./kernel/client";
 import { useRenderGate } from "./credits/gate";
@@ -152,6 +166,13 @@ const UNITS_KEY = "sawhorse.units";
 const NEST_OPEN_KEY = "sawhorse.nestingOpen";
 /** Wait this long after the last edit before nesting again (typing a kerf, dragging). */
 const NEST_DEBOUNCE_MS = 200;
+/** With only the Shopping list open (no diagrams to follow along), wait longer: a run of edits
+ * is nested once at its end. The nesting is asked for after the edits already sent (it joins
+ * the edit queue's tail) and is not itself put in that queue, so no edit waits for it in the
+ * app; the kernel's worker still answers one request at a time, so an edit sent while a large
+ * nesting runs is applied when it ends. Nothing is nested while neither section is open. */
+const SHOP_NEST_DEBOUNCE_MS = 750;
+const BY_ASSEMBLY_KEY = "sawhorse.cutlist.byAssembly";
 
 function loadNestOpen(): boolean {
   try {
@@ -160,6 +181,20 @@ function loadNestOpen(): boolean {
     return false;
   }
 }
+
+/** The Cut list pane's Shopping list section was left open. */
+const SHOP_OPEN_KEY = "sawhorse.shoppingOpen";
+
+function loadShopOpen(): boolean {
+  try {
+    return localStorage.getItem(SHOP_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The browser's language, for money and numbers (none in a test without a navigator). */
+const LOCALE = typeof navigator !== "undefined" ? navigator.language : undefined;
 
 /** What selecting a nested piece selects. */
 function entityOfItem(item: Item): Entity {
@@ -296,6 +331,23 @@ function stepKey(st: DocState | null | undefined): string {
   return st ? `${st.undo_depth}:${st.stats.hash}` : "";
 }
 
+/** The cuts measured for a file of the nesting, once: the cuts in the file's own parts (the
+ * router's share for the CNC files), and the track saw's share when it has one. */
+interface NestCuts {
+  shop: Shop;
+  cuts: MeasuredNest | null;
+  saw: { measured: MeasuredNest | null } | null;
+}
+
+/** An edit whose op is built from the stock library when its turn comes (`applyFromStock`): a
+ * stand-in for that op where the edit queue only asks "an op, not undo or redo". */
+const STOCK_STEP: KernelOp = { op: "batch", ops: [] };
+
+/** The status line after the nesting settings change. */
+function nestSettingsText(s: NestSettings, u: Parameters<typeof fineU>[1]): string {
+  return `Nesting: kerf ${fineU(s.kerf, u)}, trim ${s.trim > 0 ? `${fineU(s.trim, u)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, u)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), u)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), u)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`;
+}
+
 /** Lane 43 (#7): a selection and Push/Pull target to keep through an undo or a redo. */
 interface KeptSelection {
   selection: Entity[];
@@ -385,6 +437,22 @@ export function App() {
   // The nesting writes lengths as the cut list does (lane 9).
   const nestUnits = useMemo(() => ({ r: cutRounding, style: cutStyle }), [cutRounding, cutStyle]);
   const [cutVisibleOnly, setCutVisibleOnly] = useState(false);
+  // By assembly: a heading per cabinet and base frame in the cut list (kept on this device).
+  const [cutByAssembly, setCutByAssemblyState] = useState(() => {
+    try {
+      return localStorage.getItem(BY_ASSEMBLY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setCutByAssembly = useCallback((on: boolean) => {
+    setCutByAssemblyState(on);
+    try {
+      localStorage.setItem(BY_ASSEMBLY_KEY, on ? "1" : "0");
+    } catch {
+      // Storage refused (a private window): it lasts for this session.
+    }
+  }, []);
   const [cutList, setCutList] = useState<CutList | null>(null);
   /** The cut list report is being printed (it is drawn only then). */
   const [printing, setPrinting] = useState(false);
@@ -392,11 +460,38 @@ export function App() {
   // Nesting (lane 9): the parts laid out on stock by the kernel while its section is open.
   const [nestOpen, setNestOpen] = useState<boolean>(loadNestOpen);
   const nestShown = cutOpen && nestOpen;
+  // The Shopping list: its sheets and boards are the nesting's, so it is worked out while
+  // either section is open. Its prices are the shop's, kept on this device, not in the model.
+  const [shopOpen, setShopOpen] = useState<boolean>(loadShopOpen);
+  const shopShown = cutOpen && shopOpen;
+  const nestWanted = nestShown || shopShown;
+  const [shopPrefs, setShopPrefsState] = useState<ShopPrefs>(() => loadShopPrefs(currencyForLocale(LOCALE)));
+  const setShopPrefs = useCallback((p: ShopPrefs) => {
+    setShopPrefsState(p);
+    saveShopPrefs(p);
+  }, []);
   const [nesting, setNesting] = useState<Nesting | null>(null);
   const [nestProblem, setNestProblem] = useState<string | null>(null);
   const [nestBusy, setNestBusy] = useState(false);
+  // What each nesting was worked out for, and the nesting as it stands now (read by the saves
+  // at the moment of a click, which a render may not have caught up with).
+  const nestStamps = useRef(new WeakMap<Nesting, NestStamp>());
+  const nestNow = useRef<{ nesting: Nesting | null; pending: boolean; failed: boolean }>({ nesting: null, pending: false, failed: false });
+  // What each cut list was worked out for: the shopping list saves only a cut list and a
+  // nesting both of the model as it is (shopExportBlock).
+  const cutStamps = useRef(new WeakMap<CutList, NestStamp>());
+  /** A new or opened document: the last one's cut list and nesting are not shown for it, not
+   * even for the moment its own take to work out. */
+  const forgetResults = useCallback(() => {
+    setCutList(null);
+    setNesting(null);
+    setNestProblem(null);
+    nestNow.current = { nesting: null, pending: false, failed: false };
+  }, []);
   const [nestHover, setNestHover] = useState<Entity | null>(null);
   const [stockOpen, setStockOpen] = useState(false);
+  // CNC setup: shop data kept on this device (src/cam/store.ts), never the model's.
+  const [cncSetupOpen, setCncSetupOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Camera: the requested standard view (re-applied when viewSeq changes), the projection,
@@ -756,7 +851,8 @@ export function App() {
       }
       if (empty) {
         const e = empty as EmptySkp;
-        pluginsRef.current?.documentOpened(null);
+        forgetResults();
+      pluginsRef.current?.documentOpened(null);
         setDocName(null);
         fileHandle.current = undefined;
         setSavedLogLen(r.scene.state.log_len);
@@ -800,6 +896,7 @@ export function App() {
       const opened = info as { notes: string[]; opened: { display_units: string | null; plugin_data?: string | null } };
       // The plugins' document stores came back through the kernel (lane 16): the app never
       // unzips a user's file itself.
+      forgetResults();
       pluginsRef.current?.documentOpened(f.name, opened.opened.plugin_data ?? null);
       setDocName(f.name);
       fileHandle.current = f.handle;
@@ -857,6 +954,7 @@ export function App() {
     const closed = docName ? stem(docName) : "Untitled";
     const r = await run((k) => k.newDocument(), null, () => (how === "close" ? `Closed ${closed}.` : "New model."));
     if (r) {
+      forgetResults();
       pluginsRef.current?.documentOpened(null);
       setDocName(null);
       fileHandle.current = undefined;
@@ -1150,10 +1248,15 @@ export function App() {
     if (!k) return;
     let stale = false;
     void queue.current
-      .then(() => k.cutList({ rounding: cutRounding, visible_only: cutVisibleOnly }))
-      .then((l) => {
+      .then(() => {
+        const stamp = stampOf(live.current.scene?.state, cutVisibleOnly);
+        return k.cutList({ rounding: cutRounding, visible_only: cutVisibleOnly }).then((l) => ({ l, stamp }));
+      })
+      .then(({ l, stamp }) => {
         if (stale) return;
-        setCutList(l ? { ...l, style: cutStyle } : l);
+        const shown = l ? { ...l, style: cutStyle } : l;
+        if (shown && stamp) cutStamps.current.set(shown, stamp);
+        setCutList(shown);
         setCutProblem(null);
       })
       .catch((e) => !stale && setCutProblem(`The cut list could not be worked out: ${friendlyError(e instanceof Error ? e.message : String(e))}`));
@@ -1165,31 +1268,43 @@ export function App() {
   // The nesting: worked out again a moment after the last edit while its section is open
   // (read-only; kerf, trim and the algorithm are document settings, so they are edits too).
   useEffect(() => {
-    if (!nestShown || !scene) return;
+    if (!nestWanted || !scene) return;
     const k = kernelRef.current;
     if (!k) return;
     let stale = false;
     setNestBusy(true);
+    nestNow.current.pending = true;
     const t = window.setTimeout(() => {
       void queue.current
-        .then(() => k.nest({ visible_only: cutVisibleOnly }))
+        .then(() => {
+          // The model as the kernel has it when the request is sent (edits run one at a time,
+          // and a later one is sent after this): what this nesting is of.
+          const stamp = stampOf(live.current.scene?.state, cutVisibleOnly);
+          return k.nest({ visible_only: cutVisibleOnly }).then((n) => {
+            if (stamp) nestStamps.current.set(n, stamp);
+            return n;
+          });
+        })
         .then((n) => {
           if (stale) return;
+          nestNow.current = { nesting: n, pending: false, failed: false };
           setNesting(n);
           setNestProblem(null);
           setNestBusy(false);
         })
         .catch((e) => {
           if (stale) return;
+          // The nesting on screen is of the model before this one: it is not saved from.
+          nestNow.current = { ...nestNow.current, pending: false, failed: true };
           setNestBusy(false);
           setNestProblem(`The nesting could not be worked out: ${friendlyError(e instanceof Error ? e.message : String(e))}`);
         });
-    }, NEST_DEBOUNCE_MS);
+    }, nestShown ? NEST_DEBOUNCE_MS : SHOP_NEST_DEBOUNCE_MS);
     return () => {
       stale = true;
       window.clearTimeout(t);
     };
-  }, [nestShown, scene, cutVisibleOnly]);
+  }, [nestWanted, nestShown, scene, cutVisibleOnly]);
 
   // Read-only hooks for tests: the cut list and the nesting for any options, straight from
   // the kernel.
@@ -1812,7 +1927,12 @@ export function App() {
       if (!(await inContext(parentOfItem({ node: nodes[0] })))) return;
       const ops: KernelOp[] = nodes.map((node) => ({ op: "explode", node }));
       const what = nodes.length === 1 ? "it" : `${nodes.length} groups and components`;
-      const r = await apply(ops.length === 1 ? ops[0] : { op: "batch", ops }, () => `Exploded ${what}: what was inside is now loose here.`);
+      const r = await apply(ops.length === 1 ? ops[0] : { op: "batch", ops }, (res) => {
+        // Where an exploded part's hardware went (the kernel never drops it).
+        const outs = res.outcome.kind === "batch" ? res.outcome.outcomes : [res.outcome];
+        const notes = outs.flatMap((o) => (o.kind === "exploded" ? (o.notes ?? []) : []));
+        return `Exploded ${what}: what was inside is now loose here.${notes.length ? ` ${notes.join("; ")}.` : ""}`;
+      });
       if (r) {
         const outs = r.outcome.kind === "batch" ? r.outcome.outcomes : [r.outcome];
         select(outs.flatMap((o) => (o.kind === "exploded" ? [...o.objects.map((object) => ({ kind: "object" as const, object })), ...o.nodes.map((node) => ({ kind: "node" as const, node }))] : [])));
@@ -2122,14 +2242,15 @@ export function App() {
 
   /** Rows whose drawn pieces are all selected, or held by something selected (a row picked
    * along with rows elsewhere selects the groups or components holding its pieces). */
-  const cutSelected = useMemo(() => {
-    const out = new Set<string>();
-    // Lane 16b: nothing to work out while the cut list is not drawn; solids and groups looked
-    // up by number (selectionLookup), not a key string per selected entity.
-    if (!selection.length || !cutList?.rows.length) return out;
+  /** Whether a cut list piece is selected: itself, or a group or component that holds it. */
+  const pieceSelected = useMemo(() => {
+    // Lane 16b: nothing to work out while nothing is selected; solids and groups looked up by
+    // number (selectionLookup), not a key string per selected entity.
+    if (!selection.length) return (_item: Item) => false;
     const sel = selectionLookup(selection);
     const g = graphOf(scene?.state);
-    const held = (e: Entity): boolean => {
+    return (item: Item): boolean => {
+      const e: Entity = "node" in item ? { kind: "node", node: item.node } : { kind: "object", object: item.object };
       if (sel.has(e)) return true;
       let at = e.kind === "node" ? (nodeById(g, e.node)?.parent ?? null) : e.kind === "object" ? objectParent(g, e.object) : null;
       for (let guard = 0; at !== null && guard < 64; guard++) {
@@ -2138,12 +2259,17 @@ export function App() {
       }
       return false;
     };
+  }, [selection, scene]);
+  const cutSelected = useMemo(() => {
+    const out = new Set<string>();
+    // Lane 16b: nothing to work out while the cut list is not drawn.
+    if (!selection.length || !cutList?.rows.length) return out;
     for (const row of cutList?.rows ?? []) {
       const vis = row.occurrences.filter((o) => o.visible);
-      if (vis.length && vis.every((o) => held("node" in o.item ? { kind: "node", node: o.item.node } : { kind: "object", object: o.item.object }))) out.add(rowKey(row));
+      if (vis.length && vis.every((o) => pieceSelected(o.item))) out.add(rowKey(row));
     }
     return out;
-  }, [selection, cutList, scene]);
+  }, [selection, cutList, pieceSelected]);
 
   const setGrain = useCallback(
     (rows: CutRow[], grain: Grain) => void apply(partOps(rows, (row) => ({ op: "set_grain", part: row.target, grain })), () => `Grain of ${partNames(rows)}: ${GRAIN_WORDS[grain]}.`),
@@ -2205,6 +2331,7 @@ export function App() {
     if (!next) {
       setNestHover(null);
       setNestBusy(false);
+      nestNow.current.pending = false;
     }
     try {
       localStorage.setItem(NEST_OPEN_KEY, next ? "1" : "0");
@@ -2212,10 +2339,65 @@ export function App() {
       /* per-viewer convenience only */
     }
   }, [nestOpen]);
-  const setNestSettings = useCallback(
-    (s: NestSettings) =>
-      void apply({ op: "set_nest_settings", settings: s }, () => `Nesting: kerf ${fineU(s.kerf, nestUnits)}, trim ${s.trim > 0 ? `${fineU(s.trim, nestUnits)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, nestUnits)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), nestUnits)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), nestUnits)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`),
-    [apply, nestUnits],
+  const toggleShop = useCallback(() => {
+    const next = !shopOpen;
+    setShopOpen(next);
+    if (!next && !nestOpen) {
+      setNestBusy(false);
+      nestNow.current.pending = false;
+    }
+    try {
+      localStorage.setItem(SHOP_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [shopOpen, nestOpen]);
+  /** The shopping list priced at the shop's prices (null until there is a cut list). */
+  const shopPriced = useMemo(() => (cutList && shopShown ? priceList(shoppingList(cutList, nesting, { countLeftOut: shopPrefs.countLeftOut }), shopPrefs) : null), [cutList, nesting, shopPrefs, shopShown]);
+  const setNestSettings = useCallback((s: NestSettings) => void apply({ op: "set_nest_settings", settings: s }, () => nestSettingsText(s, nestUnits)), [apply, nestUnits]);
+  /** An edit built from the stock library as the kernel has it when the edit's turn comes: the
+   * read and the write are one task in the edit queue. The nesting on screen can be a moment
+   * old, and a library read before the queue was joined is as old as the edit before it: CNC
+   * spacing then the track saw at once kept the old kerf; Kerf then Trim lost the kerf. A
+   * library that cannot be read is said in the status line, like any refused edit. */
+  const applyFromStock = useCallback(
+    (build: (lib: StockLibrary) => KernelOp, describe?: () => string) => run((k) => applyFromLibrary(k, build), STOCK_STEP, describe),
+    [run],
+  );
+  /** Change some nesting settings, the rest as the kernel has them when the change is applied. */
+  const patchNestSettings = useCallback(
+    (patch: NestSettingsPatch) => {
+      let s: NestSettings | null = null;
+      return applyFromStock(
+        (lib) => ({ op: "set_nest_settings", settings: (s = patchSettings(lib.settings, patch)) }),
+        () => (s ? nestSettingsText(s, nestUnits) : ""),
+      );
+    },
+    [applyFromStock, nestUnits],
+  );
+  // The track saw's kerf and trim when it was last turned off in this document.
+  const lastSaw = useRef<{ kerf: number; trim: number } | null>(null);
+  useEffect(() => {
+    lastSaw.current = null;
+  }, [docName]);
+  /** Mixed: the track saw takes what does not fit the CNC's sheet (or no longer does). */
+  const setOverflow = useCallback(
+    (on: boolean) => {
+      const metric = units === "mm" || units === "cm" || units === "m";
+      let added: string[] = [];
+      return applyFromStock(
+        (lib) => {
+          // Off: remember the saw as it is, so on again brings back a kerf and trim typed for it
+          // (the document keeps no saw while it is off).
+          if (!on && lib.settings.overflow) lastSaw.current = { kerf: lib.settings.overflow.kerf, trim: lib.settings.overflow.trim };
+          const made = overflowOps(lib, on, metric, lastSaw.current);
+          added = made.added;
+          return made.op;
+        },
+        () => (on ? `${added.length ? `Added ${added.join(", ")}; p` : "P"}arts too large for the CNC's sheet are cut on the track saw from 4 x 8 sheets, in straight cuts.` : "Every part is on the CNC's sheets again; those too large for them are on no stock."),
+      );
+    },
+    [applyFromStock, units],
   );
   const defineStock = useCallback(
     (stock: StockDef, replace: string | null) =>
@@ -2238,6 +2420,14 @@ export function App() {
       else select([entityOfItem(p.item)]);
     },
     [cutList, selectCutRows, select],
+  );
+  /** A nested part's grain, set from its diagram: its whole cut list row (every copy). */
+  const grainPlacement = useCallback(
+    (p: Placement, grain: Grain) => {
+      const row = cutList?.rows.find((r) => r.occurrences.some((o) => sameItem(o.item, p.item)));
+      if (row) setGrain([row], grain);
+    },
+    [cutList, setGrain],
   );
   // The part under the pointer in the viewport lights up in its diagram.
   const nestLit = useMemo(() => {
@@ -2280,10 +2470,107 @@ export function App() {
     },
     [cutList, cutTitle],
   );
+  const saveShopCsv = useCallback(async () => {
+    if (!shopPriced) return;
+    // Hardware from the cut list and sheets from the nesting, both of the model as it is now
+    // (read from the refs: a click a render has not caught up with is judged as things are).
+    const now = nestNow.current;
+    const blocked = now.nesting !== nesting ? NEST_REPLACED : shopExportBlock({ nesting, stamp: nesting ? nestStamps.current.get(nesting) : null, cutStamp: cutList ? cutStamps.current.get(cutList) : null, now: stampOf(live.current.scene?.state, cutVisibleOnly), pending: now.pending || editsPending.current > 0, failed: now.failed });
+    if (blocked) return void setMessage({ text: blocked, error: true });
+    try {
+      const res = await saveFile(`${cutTitle} shopping list.csv`, shoppingCsvBytes(shopPriced, shopPrefs), SHOPPING_CSV_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: the shopping list with your prices${shopPriced.unpriced.length ? ` (${shopPriced.unpriced.length} row${shopPriced.unpriced.length === 1 ? "" : "s"} with no price, left out of the total)` : ""}.`, error: false });
+    } catch (e) {
+      setMessage({ text: `Could not save the shopping list: ${e instanceof Error ? e.message : String(e)}`, error: true });
+    }
+  }, [shopPriced, shopPrefs, cutTitle, nesting, cutList, cutVisibleOnly]);
+  // A nesting that went wrong (parts on no stock, glued up, or off their material's sheet) is
+  // not saved for cutting without asking.
+  const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
+  /** The cuts inside each nested part, measured from the model (null when they cannot be). */
+  const measureNesting = useCallback(async (n: Nesting) => {
+    const k = kernelRef.current;
+    if (!k) return null;
+    try {
+      return await measureNest(k, graphOf(live.current.scene?.state).objects, n);
+    } catch {
+      return null;
+    }
+  }, []);
+  /** Why this nesting must not be saved for cutting at this moment, or null: it is no longer
+   * the one on screen, the model has changed since it was worked out, a new one is on its way,
+   * or the new one failed. Read from the refs, so a click a render has not caught up with is
+   * judged as things are. */
+  const nestBlocked = useCallback(
+    (n: Nesting): string | null => {
+      const now = nestNow.current;
+      if (now.nesting !== n) return NEST_REPLACED;
+      return exportBlock({ nesting: n, stamp: nestStamps.current.get(n), now: stampOf(live.current.scene?.state, cutVisibleOnly), pending: now.pending || editsPending.current > 0, failed: now.failed });
+    },
+    [cutVisibleOnly],
+  );
+  // The shopping list's CSV, as the section draws it.
+  const shopCsvBlock = useMemo(
+    () => (shopShown ? shopExportBlock({ nesting, stamp: nesting ? nestStamps.current.get(nesting) : null, cutStamp: cutList ? cutStamps.current.get(cutList) : null, now: stampOf(scene?.state, cutVisibleOnly), pending: nestBusy, failed: !!nestProblem }) : null),
+    [shopShown, nesting, cutList, scene, cutVisibleOnly, nestBusy, nestProblem],
+  );
+  // The same, as the section draws it: its file buttons are off, and say why, while the
+  // diagrams are not of the model as it is.
+  const nestExportBlock = useMemo(
+    () => (nesting ? exportBlock({ nesting, stamp: nestStamps.current.get(nesting), now: stampOf(scene?.state, cutVisibleOnly), pending: nestBusy, failed: !!nestProblem }) : null),
+    [nesting, scene, cutVisibleOnly, nestBusy, nestProblem],
+  );
+  /** Save the nesting on screen for cutting (`guardedSave`): refused, in the status line, when
+   * it is not of the model as it is now; its cuts measured once, for the questions and for the
+   * file alike; asked about first when the file would not cut the parts as drawn. */
+  const guardNest = useCallback(
+    (what: string, kind: "plain" | "dxf" | "cnc", save: (n: Nesting, cuts: NestCuts | undefined) => void) => {
+      void guardedSave<NestCuts, NestProblem>(nesting, {
+        blocked: nestBlocked,
+        // A file with measured cuts: measure them first, so a part whose dados would be left
+        // out, or cut for a sheet of another thickness, is asked about before anything is
+        // written. The CNC files hold the router's share; the saw's share is measured with it,
+        // from the same nesting, for the hand work list.
+        measure:
+          kind === "plain"
+            ? undefined
+            : async (n) => ({
+                shop: loadShop(),
+                cuts: await measureNesting(kind === "cnc" ? routerShare(n) : n),
+                saw: kind === "cnc" && n.pieces.some((p) => p.saw) ? { measured: await measureNesting(sawShare(n)) } : null,
+              }),
+        problems: (n, m) => {
+          const share = kind === "cnc" ? routerShare(n) : n;
+          // For the router too: a sheet among its files that is not the size it is set to (a
+          // material kept on its own stock), which "nest on 4 x 4" did not move.
+          const problems = [...nestProblems(n, nestUnits, reasonText), ...(kind === "cnc" ? routerSheetProblems(n, nestUnits) : []), ...(m ? cutProblems(share, m.cuts, nestUnits) : [])];
+          if (m) problems.push(...cncToolProblems(share, m.cuts, m.shop, nestUnits, { profiles: kind === "cnc" }));
+          // For the router: parts too close for the bit cut as one blob in the CAM program.
+          // The profile bit chosen in CNC setup (1/4 in when none is). CNC spacing's gap follows
+          // the document's units, as its button does.
+          const spacing = kind === "cnc" ? spacingProblem(n, nestUnits, profileBit(m?.shop), units === "mm" || units === "cm" || units === "m") : null;
+          if (spacing) problems.unshift(spacing);
+          return problems;
+        },
+        ask: (problems, proceed) => {
+          const metric = units === "mm" || units === "cm" || units === "m";
+          // CNC spacing is offered only when its gap is enough for the profile bit.
+          const enough = cncSpacingFits(profileBit()?.diameter ?? CNC_BIT, metric);
+          const fix = enough && problems.some((x) => x.kind === "spacing") ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
+          setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), onCnc: () => setCncSetupOpen(true), fix });
+        },
+        refuse: (why) => setMessage({ text: why, error: true }),
+        save,
+      });
+    },
+    [nesting, nestUnits, units, patchNestSettings, measureNesting, nestBlocked],
+  );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
       const n = nesting;
       if (!n) return;
+      const why = nestBlocked(n);
+      if (why) return setMessage({ text: why, error: true });
       const pieces = piece ? [piece] : n.pieces;
       let saved = 0;
       try {
@@ -2297,47 +2584,172 @@ export function App() {
         setMessage({ text: `Could not save the cutting diagrams: ${e instanceof Error ? e.message : String(e)}`, error: true });
       }
     },
-    [nesting, cutTitle, nestUnits],
+    [nesting, cutTitle, nestUnits, nestBlocked],
   );
+  // The track saw's parts with cuts a router would have made, measured whenever the nesting
+  // sends anything to the saw (only its sheets are measured).
+  const [sawWork, setSawWork] = useState<HandWork[] | null>(null);
+  // Said with the list when the saw's parts, or some of them, could not be measured: a short
+  // or empty list must not read as "nothing to do by hand".
+  const [sawWorkNote, setSawWorkNote] = useState<string | null>(null);
+  // What was measured last: the same nesting of the same model is not measured again (each
+  // part's faces are read from the kernel).
+  const sawKey = useRef("");
+  useEffect(() => {
+    const n = nesting;
+    if (!n || !n.pieces.some((p) => p.saw)) {
+      sawKey.current = "";
+      setSawWork(null);
+      setSawWorkNote(null);
+      return;
+    }
+    const key = `${n.hash}:${live.current.scene?.state.stats.hash ?? ""}:${JSON.stringify(nestUnits)}`;
+    if (key === sawKey.current) return;
+    let stale = false;
+    const saw = sawShare(n);
+    void measureNesting(saw).then((m) => {
+      if (stale) return;
+      sawKey.current = key;
+      setSawWork(handWork(saw, m?.features, nestUnits));
+      setSawWorkNote(handWorkNote(m));
+    });
+    return () => {
+      stale = true;
+    };
+  }, [nesting, nestUnits, measureNesting]);
   const saveNestDxf = useCallback(
-    async (flavour: DxfFlavour) => {
-      const n = nesting;
-      if (!n) return;
+    async (flavour: DxfFlavour, n: Nesting, features: MeasuredNest | null) => {
       try {
-        let features: Awaited<ReturnType<typeof measureNest>> | null = null;
-        const k = kernelRef.current;
-        if (k) {
-          try {
-            features = await measureNest(k, graphOf(live.current.scene?.state).objects, n);
-          } catch {
-            features = null;
-          }
-        }
-        const text = nestingDxf(n, flavour, features?.features);
+        const text = nestingDxf(n, flavour, features?.features, { overcut: true });
         const res = await saveFile(`${cutTitle} nesting${flavour === "r12" ? " R12" : ""}.dxf`, new TextEncoder().encode(text), DXF_TYPE);
         if (res) {
-          const pockets = features ? [...features.features.values()].reduce((s, f) => s + f.pockets.length, 0) : 0;
-          const drills = features ? [...features.features.values()].reduce((s, f) => s + f.drills.length, 0) : 0;
-          const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"} on their own layers, measured from the parts.` : "";
-          const missed = features?.skipped.length ? ` Skipped measured cuts on ${features.skipped.join(", ")}: a loop fell outside the blank, so only its rectangle was written.` : "";
+          const all = features ? [...features.features.values()] : [];
+          const pockets = all.reduce((s, f) => s + f.pockets.length + f.flip.pockets.length, 0);
+          const drills = all.reduce((s, f) => s + f.drills.length + f.flip.drills.length, 0);
+          const measured = pockets || drills ? ` ${pockets} pocket${pockets === 1 ? "" : "s"} and ${drills} hole${drills === 1 ? "" : "s"}, measured from the parts, on a layer per depth and size.` : "";
+          const missed = features?.skipped.length ? ` Cuts were left out on ${features.skipped.join(", ")}: they could not be placed on the part, so it is not cut as drawn.` : "";
           setMessage({ text: `Saved ${res.name}: ${n.pieces.length} ${n.pieces.length === 1 ? "sheet or board" : "sheets and boards"}, a layer each, a polyline per part, in millimetres.${measured}${missed}`, error: false });
         }
       } catch (e) {
         setMessage({ text: `Could not save the DXF: ${e instanceof Error ? e.message : String(e)}`, error: true });
       }
     },
-    [nesting, cutTitle],
+    [cutTitle],
   );
-  const saveNestPdf = useCallback(async () => {
-    const n = nesting;
-    if (!n) return;
+  /** The assembly a piece is in: its outermost group or component (a cabinet, a base frame),
+   * or null for a part on its own (`assemblyIndex`). Read from the model as it is now. */
+  // Indexed once per model state: a cut list by assembly asks this for every piece, and a
+  // fresh scan of the nodes and objects each time made it quadratic in the model.
+  const ownerIndex = useRef<{ graph: ReturnType<typeof graphOf> | null; of: ReturnType<typeof assemblyIndex> }>({ graph: null, of: () => null });
+  const assemblyOf = useCallback((item: Item) => {
+    const graph = graphOf(live.current.scene?.state);
+    const ix = ownerIndex.current;
+    if (ix.graph !== graph) {
+      ix.graph = graph;
+      ix.of = assemblyIndex(graph);
+    }
+    return ix.of(item);
+  }, []);
+  const ownerOfItem = useCallback((item: Item): string | null => assemblyOf(item)?.name ?? null, [assemblyOf]);
+  // Two cabinets with one name are two assemblies: told apart by their node.
+  const ownerKeyOfItem = useCallback(
+    (item: Item): string | null => {
+      const a = assemblyOf(item);
+      return a ? String(a.id) : null;
+    },
+    [assemblyOf],
+  );
+  // Each part's edge banding for the part labels, from the cut list when it is of the model as it
+  // is (else none: a line to write on, never another moment's banding).
+  const bandingOfPlacement = useCallback(
+    (q: Placement): string | null => {
+      const fresh = !!cutList && sameStamp(cutStamps.current.get(cutList), stampOf(live.current.scene?.state, cutVisibleOnly));
+      return fresh ? bandingByItem(cutList)(q.item) : null;
+    },
+    [cutList, cutVisibleOnly],
+  );
+  const saveNestCnc = useCallback(
+    async (all: Nesting, prepared: NestCuts) => {
+      // The router's sheets only: the track saw's are cut from their diagrams, by hand.
+      const n = routerShare(all);
+      const features = prepared.cuts;
+      try {
+        // The cabinet (the outermost named instance) each part is in, for the file names.
+        const ownerOf = (q: Placement) => ownerOfItem(q.item);
+        // Every file's text and the hand work list are made before the first save dialog, from
+        // the one nesting and the one measurement the questions were asked about.
+        const sheets = jobSheets(all, features, prepared.shop, nestUnits, cutTitle, ownerOf, bandingOfPlacement);
+        const files = n.pieces.map((_, i) => ({ name: sheets[i].file, text: nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true, layerNames: toolLayerNames(sheets[i]) }) }));
+        const sheetsText = jobSheetsText(sheets, cutTitle);
+        const sawSheets = all.pieces.filter((p) => p.saw).length;
+        const items = prepared.saw ? handWork(sawShare(all), prepared.saw.measured?.features, nestUnits) : [];
+        const hand = prepared.saw ? { parts: items.length, saved: false, note: handWorkNote(prepared.saw.measured) } : null;
+        let saved = 0;
+        let stoppedAt: string | null = null;
+        for (const f of files) {
+          const res = await saveFile(f.name, new TextEncoder().encode(f.text), DXF_TYPE);
+          if (!res) {
+            stoppedAt = f.name;
+            break;
+          }
+          saved += 1;
+        }
+        // The track saw's parts with dados and holes: a list of them to do by hand.
+        if (stoppedAt === null && hand && items.length) {
+          const res = await saveFile(safeName(`${cutTitle} track saw hand work`) + ".txt", new TextEncoder().encode(handWorkText(cutTitle, items, nestUnits)), HAND_WORK_TYPE);
+          hand.saved = !!res;
+        }
+        // A save the questions were answered for is not an error: what the files get wrong is
+        // in the notes, and was asked about before anything was written.
+        // Then one file of job sheets for every router sheet, from the same nesting and
+        // measurement. Its own save: cancelling it leaves the CNC files as they are.
+        let jobs: { name: string; saved: boolean; sheets: number } | null = null;
+        if (stoppedAt === null && files.length) {
+          const name = safeName(jobSheetsFileName(cutTitle, new Date()).replace(/\.txt$/, "")) + ".txt";
+          const res = await saveFile(name, new TextEncoder().encode(sheetsText), JOB_SHEETS_TYPE);
+          jobs = { name: res?.name ?? name, saved: !!res, sheets: sheets.length };
+        }
+        const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets, jobSheets: jobs }, cncNotes(all, features, nestUnits));
+        if (text) setMessage({ text, error: false });
+      } catch (e) {
+        setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
+      }
+    },
+    [cutTitle, nestUnits, ownerOfItem, bandingOfPlacement],
+  );
+  // The router's sheets measured for the Nesting section's job sheets: once per nesting of
+  // one model, whichever sheet's job sheet is opened.
+  const jobMeasure = useRef<{ key: string; measured: Promise<MeasuredNest | null> } | null>(null);
+  const jobSheetOf = useCallback(
+    async (piece: StockPiece): Promise<JobSheet | null> => {
+      const n = nesting;
+      if (!n || piece.saw || !n.pieces.includes(piece)) return null;
+      const router = routerShare(n);
+      const key = `${n.hash}:${live.current.scene?.state.stats.hash ?? ""}`;
+      if (jobMeasure.current?.key !== key) jobMeasure.current = { key, measured: measureNesting(router) };
+      const measured = await jobMeasure.current.measured;
+      return jobSheets(n, measured, loadShop(), nestUnits, cutTitle, (q) => ownerOfItem(q.item), bandingOfPlacement).find((js) => js.index === piece.index) ?? null;
+    },
+    [nesting, nestUnits, cutTitle, ownerOfItem, measureNesting, bandingOfPlacement],
+  );
+  const saveNestPdf = useCallback(async (n: Nesting) => {
     try {
-      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits), PDF_TYPE);
-      if (res) setMessage({ text: `Saved ${res.name}: what to buy, then a page per sheet or board with its diagram and cut sequence.`, error: false });
+      // With the Shopping list open, its list (at the shop's prices) follows the summary.
+      // Only from a cut list of the model as it is (the nesting is checked by guardNest).
+      const cutFresh = !!cutList && sameStamp(cutStamps.current.get(cutList), stampOf(live.current.scene?.state, cutVisibleOnly));
+      const shop = cutList && shopShown && cutFresh ? { priced: priceList(shoppingList(cutList, n, { countLeftOut: shopPrefs.countLeftOut }), shopPrefs), prefs: shopPrefs, locale: LOCALE } : undefined;
+      // Each router sheet's job sheet and the part labels, from the router's sheets measured
+      // as CNC files measures them (outlines only when they cannot be).
+      const router = routerShare(n);
+      const measured = router.pieces.length ? await measureNesting(router) : null;
+      const cam = loadShop();
+      const sheets = jobSheets(n, measured, cam, nestUnits, cutTitle, (q) => ownerOfItem(q.item), bandingOfPlacement);
+      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, shop, { sheets, prefs: cam.jobs }), PDF_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: what to buy${shop ? ", the shopping list with your prices" : ""}, then a page per sheet or board with its diagram and cut sequence${sheets.length ? ", each router sheet's job sheet, and its part labels at the end" : ""}.`, error: false });
     } catch (e) {
       setMessage({ text: `Could not save the nesting booklet: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [nesting, cutTitle, nestUnits]);
+  }, [cutTitle, nestUnits, cutList, shopShown, shopPrefs, cutVisibleOnly, measureNesting, ownerOfItem, bandingOfPlacement]);
 
   const printCut = useCallback(() => {
     const body = document.body;
@@ -2989,9 +3401,11 @@ export function App() {
       {isWebDemo() ? <DemoBanner /> : null}
       {report ? <ImportReport report={report} onClose={() => setReport(null)} /> : null}
       {nameRequest ? <NameDialog req={nameRequest} onClose={() => setNameRequest(null)} /> : null}
+      {problemRequest ? <NestProblemDialog req={problemRequest} onClose={() => setProblemRequest(null)} /> : null}
       {settingsOpen ? <SettingsDialog url={gate.url} status={gate.status} onUrl={gate.setUrl} onRecheck={gate.recheck} onClose={() => setSettingsOpen(false)} /> : null}
       {plugins.dialogs}
       <CutListReport list={printing ? cutList : null} title={cutTitle} />
+      {cncSetupOpen ? <CncSetupDialog units={units} onClose={() => setCncSetupOpen(false)} stocks={nesting ? [...new Set(nesting.pieces.filter((p) => !p.saw).map((p) => p.stock))] : []} /> : null}
       {stockOpen && nesting ? (
         <StockDialog
           library={nesting.library}
@@ -3002,7 +3416,26 @@ export function App() {
           onDelete={deleteStock}
           onDefault={setMaterialStock}
           onReset={resetStock}
-          onSheetSize={(sheetSize) => setNestSettings({ ...nesting.library.settings, sheetSize })}
+          onSheetSize={(sheetSize) => void patchNestSettings({ sheetSize })}
+          onSheetSet={(size) => {
+            let added: string[] = [];
+            let kept: string[] = [];
+            let set = size;
+            void applyFromStock(
+              (lib) => {
+                // In a metric document the sheets are metric (1220 x 1220 at 18, 12 and 6 mm).
+                const made = sheetSetOps(lib, size.width, size.length, units === "mm" || units === "cm" || units === "m");
+                added = made.added;
+                set = made.size;
+                kept = ownStockMaterials(lib, made.size);
+                return made.op;
+              },
+              () =>
+                `${added.length ? `Added ${added.join(", ")}; ` : "The sheets were already in the library; "}sheet goods nest on ${lenU(Math.min(set.width, set.length), nestUnits)} x ${lenU(Math.max(set.width, set.length), nestUnits)}.${
+                  kept.length ? ` ${kept.join(", ")} ${kept.length === 1 ? "keeps its" : "keep their"} own stock, which is another size: change ${kept.length === 1 ? "it" : "them"} under Stock for each material to nest ${kept.length === 1 ? "it" : "them"} on these sheets.` : ""
+                }`,
+            );
+          }}
           onClose={() => setStockOpen(false)}
         />
       ) : null}
@@ -3092,6 +3525,11 @@ export function App() {
           onPin: pinRounding,
           visibleOnly: cutVisibleOnly,
           onVisibleOnly: setCutVisibleOnly,
+          byAssembly: cutByAssembly,
+          onByAssembly: setCutByAssembly,
+          ownerOf: ownerOfItem,
+          ownerKeyOf: ownerKeyOfItem,
+          pieceSelected,
           selected: cutSelected,
           onSelectRows: selectCutRows,
           onGrain: setGrain,
@@ -3112,14 +3550,38 @@ export function App() {
               busy={nestBusy}
               rounding={nestUnits}
               units={units}
-              onSettings={setNestSettings}
+              onSettings={(s, patch) => (patch ? void patchNestSettings(patch) : setNestSettings(s))}
               onStock={() => setStockOpen(true)}
+              onCncSetup={() => setCncSetupOpen(true)}
               onHover={hoverPlacement}
               onSelect={selectPlacement}
+              onGrain={grainPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
-              onDxf={(f) => void saveNestDxf(f)}
-              onPdf={() => void saveNestPdf()}
+              onDxf={(f) => guardNest("the DXF", "dxf", (n, m) => void saveNestDxf(f, n, m?.cuts ?? null))}
+              onCnc={() => guardNest("the CNC files", "cnc", (n, m) => void saveNestCnc(n, m ?? { cuts: null, saw: null, shop: loadShop() }))}
+              onPdf={() => guardNest("the PDF", "plain", (n) => void saveNestPdf(n))}
               lit={nestLit}
+              onOverflow={(on) => void setOverflow(on)}
+              handWork={sawWork}
+              handWorkNote={sawWorkNote}
+              blocked={nestExportBlock}
+              jobSheetOf={jobSheetOf}
+            />
+          ) : null,
+          shopOpen,
+          onShop: toggleShop,
+          shopping: shopShown ? (
+            <ShoppingSection
+              list={cutList}
+              nesting={nesting}
+              busy={nestBusy}
+              problem={nestProblem ?? (kernelState === "missing" || kernelState === "error" ? "The sheets and boards come from the nesting, which the kernel works out; it is not loaded." : null)}
+              stale={!!nesting && !!shopCsvBlock}
+              csvBlocked={shopCsvBlock}
+              prefs={shopPrefs}
+              onPrefs={setShopPrefs}
+              onCsv={() => void saveShopCsv()}
+              locale={LOCALE}
             />
           ) : null,
         }}

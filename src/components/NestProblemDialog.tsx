@@ -1,0 +1,89 @@
+// Asked before a nesting is saved for cutting when it has gone wrong (parts on no stock,
+// glued up, off the sheet their material names, drawn at a thickness their sheet is not, with
+// cuts that would be left out of the file, or on a sheet that is not the router's): what, part
+// by part, and whether to save anyway. Esc is Cancel.
+import type { NestProblem } from "../nesting/cnc";
+
+export interface NestProblemRequest {
+  /** What is about to be saved ("the CNC files"). */
+  what: string;
+  problems: NestProblem[];
+  onSave: () => void;
+  onStock: () => void;
+  onCnc?: () => void;
+  /** A one-click fix, offered first (e.g. space the parts for the router). */
+  fix?: { label: string; run: () => void };
+}
+
+/** Problems that are one part each: a heading can count them. The others (a thickness, cuts
+ * left out, a sheet of another size) each name several parts, or a sheet. */
+const PER_PART: NestProblem["kind"][] = ["unplaced", "glued", "material"];
+
+export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; onClose: () => void }) {
+  const n = req.problems.length;
+  const countable = req.problems.every((p) => PER_PART.includes(p.kind));
+  return (
+    <section
+      className="name-dialog nest-problem-dialog"
+      role="dialog"
+      aria-label="The nesting has problems"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <header>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "toolfit") ? "Check cutter sizes in CAM" : countable ? `${n} part${n === 1 ? "" : "s"} will not be cut as drawn` : "Some parts will not be cut as drawn"}</b>
+      </header>
+      <ul className="nest-problems">
+        {req.problems.map((p, i) => (
+          <li key={`${p.tag}-${i}`}>
+            {p.tag ? <span className="tag">{p.tag}</span> : null} {p.name}: {p.text}
+          </li>
+        ))}
+      </ul>
+      <div className="btnrow">
+        {req.onCnc && req.problems.some((p) => p.kind === "toolfit") ? <button type="button" className="btn" onClick={() => { onClose(); req.onCnc?.(); }}>Open CNC setup...</button> : null}
+        {req.fix ? (
+          <button
+            type="button"
+            className="btn primary"
+            autoFocus
+            onClick={() => {
+              onClose();
+              req.fix?.run();
+            }}
+          >
+            {req.fix.label}
+          </button>
+        ) : null}
+        {req.problems.some((p) => p.kind !== "spacing" && p.kind !== "cuts" && p.kind !== "toolfit") ? (
+          <button
+            type="button"
+            className={req.fix ? "btn" : "btn primary"}
+            autoFocus={!req.fix}
+            onClick={() => {
+              onClose();
+              req.onStock();
+            }}
+          >
+            Open Stock...
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            onClose();
+            req.onSave();
+          }}
+        >
+          Save {req.what} anyway
+        </button>
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </section>
+  );
+}

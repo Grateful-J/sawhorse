@@ -549,7 +549,13 @@ pub fn check_nesting(m: &Model) -> Result<(), String> {
 /// and length, turned only when the grain allows, inside the usable area of its stock, of
 /// a thickness the stock covers; no two placements overlap and every two are a kerf apart;
 /// no cut crosses a part; areas, efficiency and totals add up; a guillotine or board layout
-/// comes apart in straight cuts; a part reported too large or grain-bound really is.
+/// comes apart in straight cuts, which is checked by making the cuts (not taken from the
+/// nesting's own flag); a part reported too large or grain-bound really is, and with a saw
+/// set (`overflow`) fits none of the saw's sheets either; a piece is its library stock, its
+/// usable area that stock inside its trim, and on the saw exactly when it is one of the
+/// saw's sheets. Kept together ([`check_blocks`]): each block placed whole on one piece, in
+/// order, a kerf apart, lined up, running the way it says against the grain, or every part
+/// of it reported; one reported too large as a block really is.
 pub fn check_nesting_of(
     list: &crate::cutlist::CutList,
     n: &crate::nesting::Nesting,
@@ -559,9 +565,39 @@ pub fn check_nesting_of(
         CutDir, EPS, MAX_GLUE_STRIPS, MIN_GLUE_FILLER, UnplacedReason, effective_trim,
     };
     use crate::stock::{
-        NestAlgorithm, SHEET_THICKNESS_SLACK, STOCK_EPSILON, StockGrain, StockKind,
+        NestAlgorithm, SHEET_THICKNESS_SLACK, STOCK_EPSILON, SawOverflow, StockDef, StockGrain,
+        StockKind,
     };
     use std::collections::BTreeSet;
+    // The saw's settings for a stock it cuts (`overflow`): a sheet of the saw's footprint
+    // that is not the router's, with both set.
+    let saw_of = |s: &StockDef| -> Option<SawOverflow> {
+        let (fp, o) = (n.settings.sheet_size?, n.settings.overflow?);
+        (s.kind == StockKind::Sheet && o.sheet_size.matches(s) && !fp.matches(s)).then_some(o)
+    };
+    // A stock of a part's thickness: a sheet within 1/16 in, a board at least as thick.
+    let covers = |s: &StockDef, t: f64| match s.kind {
+        StockKind::Sheet => (s.thickness - t).abs() <= SHEET_THICKNESS_SLACK + STOCK_EPSILON,
+        StockKind::Board => s.thickness >= t - STOCK_EPSILON,
+    };
+    // Whether a part fits a stock inside `trim`: (the way its grain allows, either way).
+    let sits = |row: &crate::cutlist::CutRow, s: &StockDef, trim: f64| -> (bool, bool) {
+        let (uw, uh) = match s.kind {
+            StockKind::Sheet => (s.length - 2.0 * trim, s.width - 2.0 * trim),
+            StockKind::Board => (s.length - 2.0 * trim, s.width),
+        };
+        let holds = |dx: f64, dy: f64| dx <= uw + EPS && dy <= uh + EPS;
+        let (w, l) = (row.size[1], row.size[2]);
+        let free = s.grain == StockGrain::None || row.grain == Grain::None;
+        let allowed = if free {
+            holds(l, w) || holds(w, l)
+        } else if row.grain == Grain::Width {
+            holds(w, l)
+        } else {
+            holds(l, w)
+        };
+        (allowed, holds(l, w) || holds(w, l))
+    };
     let counted = |row: &crate::cutlist::CutRow| -> Vec<crate::nodes::Item> {
         row.occurrences
             .iter()
@@ -592,8 +628,56 @@ pub fn check_nesting_of(
         if p.index != pi + 1 || p.placements.is_empty() {
             return bad("numbered wrong or empty".into());
         }
-        if !(p.kerf == kerf && p.trim == effective_trim(n.settings.trim, kerf)) {
-            return bad("kerf or trim is not the settings'".into());
+        // A piece is its library stock, whole.
+        let Some((_, stock)) = n.library.find(&p.stock) else {
+            return bad("names a stock the library does not have".into());
+        };
+        if !(stock.name == p.stock
+            && stock.kind == p.kind
+            && stock.length == p.length
+            && stock.width == p.width
+            && stock.thickness == p.thickness
+            && stock.grain == p.grain)
+        {
+            return bad("is not its library stock".into());
+        }
+        // The saw's sheets (`overflow`), and only they, are on the saw: with its kerf and
+        // trim, and always coming apart in straight cuts. Every other piece has the
+        // settings'.
+        let saw = saw_of(stock);
+        if p.saw != saw.is_some() {
+            return bad(if p.saw {
+                "on the saw but not one of the saw's sheets".into()
+            } else {
+                "one of the saw's sheets but not on the saw".into()
+            });
+        }
+        let (kerf, trim) = match saw {
+            Some(o) => (o.kerf, effective_trim(o.trim, o.kerf)),
+            None => (kerf, effective_trim(n.settings.trim, kerf)),
+        };
+        if !(p.kerf == kerf && p.trim == trim) {
+            return bad(if p.saw {
+                "kerf or trim is not the saw's".into()
+            } else {
+                "kerf or trim is not the settings'".into()
+            });
+        }
+        if p.saw && !p.guillotine {
+            return bad("a saw's sheet does not come apart in straight cuts".into());
+        }
+        // The usable area is the stock inside its trim: every edge of a sheet, the two ends
+        // of a board.
+        let inside = match p.kind {
+            StockKind::Sheet => [trim, trim, p.length - trim, p.width - trim],
+            StockKind::Board => [trim, 0.0, p.length - trim, p.width],
+        };
+        if p.usable
+            .iter()
+            .zip(inside)
+            .any(|(a, b)| !a.is_finite() || (a - b).abs() > EPS)
+        {
+            return bad("its usable area is not the stock inside its trim".into());
         }
         let [x0, y0, x1, y1] = p.usable;
         for (k, q) in p.placements.iter().enumerate() {
@@ -703,6 +787,17 @@ pub fn check_nesting_of(
         {
             return bad("a guillotine or board layout does not come apart in straight cuts".into());
         }
+        // A piece said to come apart does: its cuts, made in order, leave every part an
+        // offcut of its own size. (Parts of no size have no offcut to be; a model's cut list
+        // never counts one.)
+        if p.guillotine
+            && p.placements
+                .iter()
+                .all(|q| q.dx > CUT_SLACK && q.dy > CUT_SLACK)
+            && let Err(e) = cuts_free_every_part(p)
+        {
+            return bad(e);
+        }
         placed += p
             .placements
             .iter()
@@ -810,22 +905,16 @@ pub fn check_nesting_of(
                 .find(name)
                 .ok_or_else(|| format!("unplaced {} names a missing stock", u.tag))?
                 .1;
-            let trim = effective_trim(n.settings.trim, kerf);
+            // Inside the trim the stock is cut with: the saw's on a saw's sheet.
+            let trim = saw_of(s).map_or(effective_trim(n.settings.trim, kerf), |o| {
+                effective_trim(o.trim, o.kerf)
+            });
             let (uw, uh) = match s.kind {
                 StockKind::Sheet => (s.length - 2.0 * trim, s.width - 2.0 * trim),
                 StockKind::Board => (s.length - 2.0 * trim, s.width),
             };
-            let holds = |dx: f64, dy: f64| dx <= uw + EPS && dy <= uh + EPS;
             let (w, l) = (row.size[1], row.size[2]);
-            let free = s.grain == StockGrain::None || row.grain == Grain::None;
-            let fits_allowed = if free {
-                holds(l, w) || holds(w, l)
-            } else if row.grain == Grain::Width {
-                holds(w, l)
-            } else {
-                holds(l, w)
-            };
-            let fits_any = holds(l, w) || holds(w, l);
+            let (fits_allowed, fits_any) = sits(row, s, trim);
             // #49: a board part too wide but not too long, grain along, is glued up.
             let joint = n.settings.joint_loss;
             // Lane 42: and only when the least count that covers it, found by trying each,
@@ -852,6 +941,55 @@ pub fn check_nesting_of(
             if !ok {
                 return Err(format!("{} reported {:?} but it is not", u.tag, u.reason));
             }
+            // With a saw set (`overflow`): a sheet part reported against the router's sheet
+            // fits none of the saw's sheets of its thickness either, or it would be on one.
+            // When the router's sheet is one the part named, or its material's default, only
+            // a saw's sheet of that sheet's thickness and grain would have done.
+            let said = row.material.as_deref().and_then(|m| {
+                let named = n.library.find(m).filter(|_| row.stock_set);
+                let default = || {
+                    let d = n.library.find(n.library.default_for(m)?)?;
+                    ((d.1.kind == StockKind::Sheet) == row.sheet && covers(d.1, row.size[0]))
+                        .then_some(d)
+                };
+                named.or_else(default).map(|(_, d)| d)
+            });
+            let alike = |c: &StockDef| {
+                said.is_none_or(|d| {
+                    c.grain == d.grain && (c.thickness - d.thickness).abs() <= STOCK_EPSILON
+                })
+            };
+            if row.sheet
+                && s.kind == StockKind::Sheet
+                && n.settings.sheet_size.is_some_and(|fp| fp.matches(s))
+                && let Some(c) = n.library.stocks.iter().find(|c| {
+                    saw_of(c).is_some_and(|o| {
+                        covers(c, row.size[0])
+                            && alike(c)
+                            && sits(row, c, effective_trim(o.trim, o.kerf)).0
+                    })
+                })
+            {
+                return Err(format!(
+                    "{} reported {:?} on {} but the saw's {} takes it",
+                    u.tag, u.reason, s.name, c.name
+                ));
+            }
+        }
+        // A sheet part with no stock: no sheet of its thickness, of the footprint asked for
+        // (any, when none is) or of the saw's.
+        if u.reason == UnplacedReason::NoStock
+            && row.sheet
+            && let Some(c) = n.library.stocks.iter().find(|c| {
+                c.kind == StockKind::Sheet
+                    && covers(c, row.size[0])
+                    && (n.settings.sheet_size.is_none_or(|fp| fp.matches(c)) || saw_of(c).is_some())
+            })
+        {
+            return Err(format!(
+                "{} reported no stock but {} is a sheet of its thickness",
+                u.tag, c.name
+            ));
         }
     }
     if seen != want {
@@ -861,6 +999,7 @@ pub fn check_nesting_of(
             seen.len()
         ));
     }
+    check_blocks(list, n)?;
     let t = &n.totals;
     let sheets = n
         .pieces
@@ -881,6 +1020,301 @@ pub fn check_nesting_of(
         || t.efficiency > 1.0 + 1e-9
     {
         return Err("totals do not add up".into());
+    }
+    Ok(())
+}
+
+/// Kept together: every block of `list` (the parts of one key in one holder, in index order)
+/// is placed whole on one piece, each part saying its place, a kerf apart to 1 nm, lined up
+/// on its near edge, all their grain one way, running along it (`along`) or across it
+/// (`across`); or every part of it is reported, saying its place, a part's own reason or the
+/// block's. A block reported too large is larger than the stock named, as one piece, the way
+/// its grain lets it lie, and with a saw set no saw's sheet like it takes it. A part placed
+/// or reported as in a block is one. Part of [`check_nesting_of`]; on its own, for a test to
+/// see that this check, and not another, catches a block that is not one.
+pub fn check_blocks(
+    list: &crate::cutlist::CutList,
+    n: &crate::nesting::Nesting,
+) -> Result<(), String> {
+    use crate::cutlist::{Grain, Stack, Together};
+    use crate::nesting::{EPS, InBlock, UnplacedReason, effective_trim};
+    use crate::stock::{STOCK_EPSILON, StockGrain, StockKind};
+    use std::collections::BTreeMap;
+    type Member<'a> = (usize, usize, &'a Together);
+    // Where each whole part is: (piece index, placement); a strip is never in a block.
+    let at: BTreeMap<(usize, usize), (usize, &crate::nesting::Placement)> = n
+        .pieces
+        .iter()
+        .enumerate()
+        .flat_map(|(pi, p)| p.placements.iter().map(move |q| (pi, q)))
+        .filter(|(_, q)| q.strip.is_none())
+        .map(|(pi, q)| ((q.row, q.copy), (pi, q)))
+        .collect();
+    let mut blocks: BTreeMap<(String, Option<u64>), Vec<Member>> = BTreeMap::new();
+    for (ri, row) in list.rows.iter().enumerate() {
+        let Some(t) = row.together.as_ref().filter(|_| row.included) else {
+            continue;
+        };
+        let counted = row
+            .occurrences
+            .iter()
+            .filter(|o| !list.visible_only || o.visible);
+        for (ci, o) in counted.enumerate() {
+            blocks
+                .entry((t.key.clone(), o.holder))
+                .or_default()
+                .push((ri, ci + 1, t));
+        }
+    }
+    let reported: BTreeMap<(usize, usize), &crate::nesting::Unplaced> =
+        n.unplaced.iter().map(|u| ((u.row, u.copy), u)).collect();
+    let mut members = 0;
+    for ((key, _), mut ms) in blocks {
+        ms.sort_by_key(|&(r, c, t)| (t.index, r, c));
+        let of = ms.len();
+        members += of;
+        let says = |k: usize, t: &Together| InBlock {
+            key: key.clone(),
+            index: t.index,
+            n: k + 1,
+            of,
+            stack: t.stack,
+        };
+        let placed: Vec<_> = ms.iter().filter_map(|&(r, c, _)| at.get(&(r, c))).collect();
+        if !placed.is_empty() && placed.len() != of {
+            return Err(format!(
+                "block {key:?} split: {} of {of} parts placed",
+                placed.len()
+            ));
+        }
+        if placed.is_empty() {
+            let us: Vec<_> = ms
+                .iter()
+                .map(|&(r, c, _)| reported.get(&(r, c)).copied())
+                .collect::<Option<_>>()
+                .ok_or_else(|| format!("block {key:?}: a part neither placed nor reported"))?;
+            for (k, (u, &(_, _, t))) in us.iter().zip(&ms).enumerate() {
+                if u.together.as_ref() != Some(&says(k, t)) {
+                    return Err(format!("{} does not say its place in block {key:?}", u.tag));
+                }
+            }
+            let large: Vec<_> = us
+                .iter()
+                .filter(|u| u.reason == UnplacedReason::TogetherTooLarge)
+                .collect();
+            if large.is_empty() {
+                continue;
+            }
+            // Too large as a block: all of it, against one stock, which it does not fit.
+            let name = large[0].stock.clone().unwrap_or_default();
+            if large.len() != of || large.iter().any(|u| u.stock.as_deref() != Some(&name)) {
+                return Err(format!("block {key:?} is too large only in part"));
+            }
+            let (_, s) = n
+                .library
+                .find(&name)
+                .ok_or_else(|| format!("block {key:?} is too large for a missing stock"))?;
+            let fits = |s: &crate::stock::StockDef| {
+                let saw = n
+                    .settings
+                    .sheet_size
+                    .zip(n.settings.overflow)
+                    .filter(|(fp, o)| {
+                        s.kind == StockKind::Sheet && o.sheet_size.matches(s) && !fp.matches(s)
+                    })
+                    .map(|(_, o)| o);
+                let (kerf, trim) = match saw {
+                    Some(o) => (o.kerf, effective_trim(o.trim, o.kerf)),
+                    None => (
+                        n.settings.kerf,
+                        effective_trim(n.settings.trim, n.settings.kerf),
+                    ),
+                };
+                let (uw, uh) = match s.kind {
+                    StockKind::Sheet => (s.length - 2.0 * trim, s.width - 2.0 * trim),
+                    StockKind::Board => (s.length - 2.0 * trim, s.width),
+                };
+                let lies: Vec<(f64, f64)> = ms
+                    .iter()
+                    .map(|&(r, _, _)| {
+                        let row = &list.rows[r];
+                        let (w, l) = (row.size[1], row.size[2]);
+                        let grained = s.grain != StockGrain::None && row.grain != Grain::None;
+                        if grained && row.grain == Grain::Width {
+                            (w, l)
+                        } else {
+                            (l, w)
+                        }
+                    })
+                    .collect();
+                let free = ms.iter().all(|&(r, _, _)| {
+                    s.grain == StockGrain::None || list.rows[r].grain == Grain::None
+                });
+                let gaps = (of - 1) as f64 * kerf;
+                let (dx, dy) = match ms[0].2.stack {
+                    Stack::Along => (
+                        lies.iter().map(|l| l.0).sum::<f64>() + gaps,
+                        lies.iter().map(|l| l.1).fold(0.0, f64::max),
+                    ),
+                    Stack::Across => (
+                        lies.iter().map(|l| l.0).fold(0.0, f64::max),
+                        lies.iter().map(|l| l.1).sum::<f64>() + gaps,
+                    ),
+                };
+                // 1 nm per part of slack: the kernel adds the offsets one by one.
+                let e = EPS * (of as f64 + 1.0);
+                let holds = |a: f64, b: f64| a <= uw + e && b <= uh + e;
+                holds(dx, dy) || (free && holds(dy, dx))
+            };
+            if fits(s) {
+                return Err(format!(
+                    "block {key:?} reported too large for {name} but fits it"
+                ));
+            }
+            if let (Some(fp), Some(o)) = (n.settings.sheet_size, n.settings.overflow)
+                && s.kind == StockKind::Sheet
+                && fp.matches(s)
+                && let Some(c) = n.library.stocks.iter().find(|c| {
+                    c.kind == StockKind::Sheet
+                        && o.sheet_size.matches(c)
+                        && !fp.matches(c)
+                        && c.grain == s.grain
+                        && (c.thickness - s.thickness).abs() <= STOCK_EPSILON
+                        && fits(c)
+                })
+            {
+                return Err(format!(
+                    "block {key:?} reported too large for {name} but the saw's {} takes it",
+                    c.name
+                ));
+            }
+            continue;
+        }
+        let piece = placed[0].0;
+        let kerf = n.pieces[piece].kerf;
+        // Each part in order, its grain's way on the stock: along x or not.
+        let mut grain_x = None;
+        let mut axis_x = None;
+        let mut last: Option<&crate::nesting::Placement> = None;
+        for (k, &(r, c, t)) in ms.iter().enumerate() {
+            let (pi, q) = at[&(r, c)];
+            if pi != piece {
+                return Err(format!("block {key:?} split between pieces"));
+            }
+            if q.together.as_ref() != Some(&says(k, t)) {
+                return Err(format!("{} does not say its place in block {key:?}", q.tag));
+            }
+            if t.stack != ms[0].2.stack {
+                return Err(format!("block {key:?} placed though it runs two ways"));
+            }
+            // On stock with no grain, or for a part with none, its length is its grain (the
+            // way the kernel lays it in the block).
+            let grained =
+                n.pieces[piece].grain != StockGrain::None && list.rows[r].grain != Grain::None;
+            let gx = if grained && list.rows[r].grain == Grain::Width {
+                q.turned
+            } else {
+                !q.turned
+            };
+            if *grain_x.get_or_insert(gx) != gx {
+                return Err(format!("block {key:?}: grain not lined up at {}", q.tag));
+            }
+            if let Some(p) = last {
+                let near = |a: f64, b: f64| (a - b).abs() <= EPS;
+                let x_next = near(q.x, p.x + p.dx + kerf) && near(q.y, p.y);
+                let y_next = near(q.y, p.y + p.dy + kerf) && near(q.x, p.x);
+                if x_next == y_next {
+                    return Err(format!(
+                        "block {key:?}: {} is not a kerf on from {}",
+                        q.tag, p.tag
+                    ));
+                }
+                if *axis_x.get_or_insert(x_next) != x_next {
+                    return Err(format!("block {key:?} turns a corner at {}", q.tag));
+                }
+            }
+            last = Some(q);
+        }
+        if let (Some(gx), Some(ax)) = (grain_x, axis_x) {
+            let along = ms[0].2.stack == Stack::Along;
+            if (gx == ax) != along {
+                return Err(format!(
+                    "block {key:?} runs {} its grain, not {:?}",
+                    if gx == ax { "along" } else { "across" },
+                    ms[0].2.stack
+                ));
+            }
+        }
+    }
+    // Nothing else says it is in a block.
+    let said = at.values().filter(|(_, q)| q.together.is_some()).count()
+        + n.unplaced.iter().filter(|u| u.together.is_some()).count();
+    if said != members {
+        return Err(format!(
+            "{said} parts say they are in a block, {members} are"
+        ));
+    }
+    Ok(())
+}
+
+/// Slack when making a piece's cuts ([`cuts_free_every_part`]): a part may sit 1 nm past
+/// its free rectangle and a cut 1 nm into a kerf, so twice that and floating-point noise.
+const CUT_SLACK: f64 = 4.0 * crate::nesting::EPS;
+
+/// Make a piece's cuts in order on its stock, each across every offcut its kerf passes
+/// through, and say whether every part ends as an offcut of exactly its own size. That is
+/// what `guillotine: true` promises, checked from the cut list alone: a cut that stops
+/// inside an offcut holding a part, a part left joined to another or to waste, or cut into,
+/// fails.
+pub(crate) fn cuts_free_every_part(p: &crate::nesting::StockPiece) -> Result<(), String> {
+    use crate::nesting::{CutDir, Placement};
+    let e = CUT_SLACK;
+    // Offcuts as x0, y0, x1, y1.
+    let within = |q: &Placement, r: &[f64; 4]| {
+        q.x >= r[0] - e && q.y >= r[1] - e && q.x + q.dx <= r[2] + e && q.y + q.dy <= r[3] + e
+    };
+    let mut offcuts = vec![[0.0, 0.0, p.length, p.width]];
+    for c in &p.cuts {
+        let mut next = Vec::with_capacity(offcuts.len() + 1);
+        for r in offcuts {
+            // The offcut across the cut (lo..hi) and along it (a0..a1).
+            let (lo, hi, a0, a1) = match c.dir {
+                CutDir::Rip => (r[1], r[3], r[0], r[2]),
+                CutDir::Crosscut => (r[0], r[2], r[1], r[3]),
+            };
+            let (near, far) = (c.at, c.at + p.kerf);
+            if !(far > lo + e && near < hi - e && c.to > a0 + e && c.from < a1 - e) {
+                next.push(r);
+                continue;
+            }
+            // A saw cut runs from edge to edge of what it cuts.
+            if (c.from > a0 + e || c.to < a1 - e) && p.placements.iter().any(|q| within(q, &r)) {
+                return Err(format!("cut {} stops inside the offcut it cuts", c.n));
+            }
+            let side = |from: f64, to: f64| match c.dir {
+                CutDir::Rip => [r[0], from, r[2], to],
+                CutDir::Crosscut => [from, r[1], to, r[3]],
+            };
+            if near > lo + e {
+                next.push(side(lo, near));
+            }
+            if far < hi - e {
+                next.push(side(far, hi));
+            }
+        }
+        offcuts = next;
+    }
+    for q in &p.placements {
+        let mut own = offcuts.iter().filter(|r| within(q, r));
+        let is_it = |r: &[f64; 4]| {
+            [q.x, q.y, q.x + q.dx, q.y + q.dy]
+                .iter()
+                .zip(r)
+                .all(|(a, b)| (a - b).abs() <= e)
+        };
+        if !(own.next().is_some_and(is_it) && own.next().is_none()) {
+            return Err(format!("the cuts do not free {}", q.tag));
+        }
     }
     Ok(())
 }

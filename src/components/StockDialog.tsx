@@ -18,6 +18,8 @@ export interface StockDialogProps {
   onReset: () => void;
   /** Which sheet footprint sheet goods nest on. Null is automatic (the first sheet that fits). */
   onSheetSize: (size: { width: number; length: number } | null) => void;
+  /** Add 3/4, 1/2 and 1/4 plywood of this footprint (those missing) and nest on it. */
+  onSheetSet?: (size: { width: number; length: number }) => void;
   onClose: () => void;
 }
 
@@ -75,6 +77,7 @@ export function StockDialog(p: StockDialogProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const units: UnitSystem = p.units;
+  const metric = units === "mm" || units === "cm" || units === "m";
   const sheets = footprints(lib);
   const sheetPick = (() => {
     const cur = lib.settings.sheetSize;
@@ -181,6 +184,23 @@ export function StockDialog(p: StockDialogProps) {
           ))}
         </select>
       </label>
+      {p.onSheetSet ? (
+        <div className="btnrow">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => p.onSheetSet?.({ width: 48 * IN, length: 48 * IN })}
+            data-action="sheet-set"
+            title={
+              metric
+                ? "Add 1220 x 1220 mm plywood sheets, 18, 12 and 6 mm thick (any you already have are kept), and nest sheet goods on 1220 x 1220. Edit each to your sheets' measured thickness."
+                : "Add 4 x 4 plywood sheets in 3/4, 1/2 and 1/4 (23/32, 15/32 and 7/32 in actual; any you already have are kept) and nest sheet goods on 4 x 4"
+            }
+          >
+            {metric ? "Use 4 × 4 plywood (18, 12, 6 mm)" : "Use 4 × 4 plywood (3/4, 1/2, 1/4)"}
+          </button>
+        </div>
+      ) : null}
       {p.materials.length ? (
         <>
           <h5>Each material's stock</h5>

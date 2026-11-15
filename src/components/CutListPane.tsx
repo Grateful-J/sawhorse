@@ -7,8 +7,8 @@
 // stock of the row, or of every picked row at once. The Nesting button opens the Nesting
 // section under the list (lane 9: cutting diagrams; `NestingSection.tsx`).
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import type { CutList, CutRow, Grain, Rounding } from "../kernel/types";
-import { BOARD_FEET_NOTE, formatSteps, geometryNote, listStyle, materialText, nominalText, rowNotes, ROUNDINGS, scopeNote, sizeUnit, summary, UNCOUNTED_NOTES, type RoundingChoice } from "../cutlist/format";
+import type { CutList, CutRow, Grain, Item, Rounding } from "../kernel/types";
+import { anyBanded, BOARD_FEET_NOTE, formatSteps, geometryNote, listStyle, materialText, nominalText, rowNotes, ROUNDINGS, scopeNote, sizeUnit, summary, UNCOUNTED_NOTES, type RoundingChoice } from "../cutlist/format";
 import { nameRuns, sizeChars, sizePieces } from "../cutlist/wrap";
 
 export interface CutListPaneProps {
@@ -50,6 +50,11 @@ export interface CutListPaneProps {
   onNest?: () => void;
   /** The Nesting section itself, drawn under the cut list while open. */
   nesting?: ReactNode;
+  /** The Shopping list section is open. */
+  shopOpen?: boolean;
+  onShop?: () => void;
+  /** The Shopping list section itself, drawn under the cut list (after Nesting) while open. */
+  shopping?: ReactNode;
   /** Lane 20: the panel is in its wide mode (more room for names, notes and reasons). */
   wide?: boolean;
   /** Lane 20: switch the panel's wide mode (the Wide button); none hides the button. */
@@ -57,6 +62,75 @@ export interface CutListPaneProps {
   /** Lane 20b: the panel's width as set (px), so the table's layout follows a drag, a key or
    * Wide before the browser paints (the width itself is measured). */
   panelWidth?: number;
+  /** Rows under a heading per assembly (a cabinet, a base frame): the outermost named group or
+   * component each piece is in ({@link ownerOf}). */
+  byAssembly?: boolean;
+  onByAssembly?: (on: boolean) => void;
+  /** The assembly a piece is in (its outermost named group or component), or null. */
+  ownerOf?: (item: Item) => string | null;
+  /** That assembly's identity, when names are not enough: two cabinets both named "Base 1"
+   * are two headings. Without it, assemblies are told apart by name. */
+  ownerKeyOf?: (item: Item) => string | null;
+  /** Whether a piece is selected in the model (itself, or something that holds it). By
+   * assembly, a row is lit when its own pieces are: the same part under another cabinet is
+   * another row. Without it, rows are lit by `selected` (the whole part). */
+  pieceSelected?: (item: Item) => boolean;
+}
+
+type Entry = { kind: "head"; owner: string | null; gk: string; pieces: number } | { kind: "row"; row: CutRow; gk: string };
+
+/** The entries up to the `n`th row (headings ride along with their rows). */
+function upTo(entries: Entry[], n: number): Entry[] {
+  let rows = 0;
+  const out: Entry[] = [];
+  for (const e of entries) {
+    if (e.kind === "row" && rows++ >= n) break;
+    out.push(e);
+  }
+  // A heading with no row after it is left out.
+  while (out.length && out[out.length - 1].kind === "head") out.pop();
+  return out;
+}
+
+/**
+ * The rows by assembly: each piece goes under the assembly it is in, in the order assemblies
+ * first appear; a part with pieces in two assemblies is a row under each, its quantity,
+ * hidden count, board feet and area those pieces' share. Pieces in no assembly come last.
+ * `keyOf` tells assemblies apart (default: by name), so two cabinets with one name are two
+ * headings. With Visible only, a part with no drawn piece in an assembly has no row there
+ * (as the flat list has none for a part with no drawn piece at all).
+ */
+export function groupRows(rows: CutRow[], ownerOf: (item: Item) => string | null, visibleOnly: boolean, keyOf: (item: Item) => string | null = ownerOf): { owner: string | null; key: string | null; rows: CutRow[] }[] {
+  const order: (string | null)[] = [];
+  const by = new Map<string | null, { owner: string | null; rows: CutRow[] }>();
+  for (const row of rows) {
+    const split = new Map<string | null, { owner: string | null; occ: CutRow["occurrences"] }>();
+    for (const o of row.occurrences) {
+      const owner = ownerOf(o.item);
+      // A piece in no assembly has no key, whatever `keyOf` says.
+      const key = owner === null ? null : keyOf(o.item);
+      const part = split.get(key) ?? { owner, occ: [] };
+      part.occ.push(o);
+      split.set(key, part);
+    }
+    // A part with no pieces listed (dropped, or none drawn) stays under no assembly.
+    if (!split.size) split.set(null, { owner: null, occ: [] });
+    for (const [key, { owner, occ }] of split) {
+      const total = occ.length;
+      const hidden = occ.filter((o) => !o.visible).length;
+      const qty = split.size === 1 ? row.qty : visibleOnly ? total - hidden : total;
+      // Nothing of it is drawn in this assembly: no row here.
+      if (split.size > 1 && visibleOnly && qty === 0) continue;
+      if (!by.has(key)) {
+        by.set(key, { owner, rows: [] });
+        order.push(key);
+      }
+      const share = row.qty > 0 ? qty / row.qty : 0;
+      by.get(key)!.rows.push(split.size === 1 ? row : { ...row, occurrences: occ, qty, total, hidden, handed: occ.filter((o) => o.handed).length, board_feet: row.board_feet * share, area_m2: row.area_m2 * share });
+    }
+  }
+  const named = order.filter((o) => o !== null);
+  return [...named, ...(order.includes(null) ? [null] : [])].map((key) => ({ owner: by.get(key)!.owner, key, rows: by.get(key)!.rows }));
 }
 
 /** A stable key for a row (its part and its size). */
@@ -82,10 +156,11 @@ function common<T>(rows: CutRow[], f: (r: CutRow) => T): T | undefined {
 }
 
 /** The rows a click picks: plain replaces, Ctrl toggles one, Shift picks the range from the
- * anchor (Ctrl+Shift adds the range). In list order. */
-export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow, anchor: string | null, mods: { shift: boolean; toggle: boolean }): CutRow[] {
-  const keys = rows.map(rowKey);
-  const k = rowKey(clicked);
+ * anchor (Ctrl+Shift adds the range). In list order: `rows` are the rows as they are drawn,
+ * and `keyOf` names each (by assembly, the same part under two cabinets is two rows). */
+export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow, anchor: string | null, mods: { shift: boolean; toggle: boolean }, keyOf: (row: CutRow) => string = rowKey): CutRow[] {
+  const keys = rows.map(keyOf);
+  const k = keyOf(clicked);
   const at = keys.indexOf(k);
   const from = anchor === null ? -1 : keys.indexOf(anchor);
   let next: Set<string>;
@@ -97,7 +172,7 @@ export function pickRows(rows: CutRow[], selected: Set<string>, clicked: CutRow,
     if (next.has(k)) next.delete(k);
     else next.add(k);
   } else next = new Set([k]);
-  return rows.filter((r) => next.has(rowKey(r)));
+  return rows.filter((r) => next.has(keyOf(r)));
 }
 
 /** Widest a size column grows (characters) before a longer size wraps between its whole
@@ -247,22 +322,58 @@ export function CutListPane(p: CutListPaneProps) {
   const empty = !!list && list.rows.length === 0;
   const openMenu = (e: ReactMouseEvent, row: CutRow) => {
     e.preventDefault();
-    const k = rowKey(row);
-    const picked = p.selected.has(k) && p.selected.size > 1 && list ? list.rows.filter((x) => p.selected.has(rowKey(x))) : [row];
+    const k = drawnKey(row);
+    // The menu acts on parts (their grain, their stock): a part picked under two assemblies is
+    // one part.
+    const parts = new Set<string>();
+    const picked = lit.has(k) && lit.size > 1 ? drawn.filter((x) => lit.has(drawnKey(x)) && !parts.has(rowKey(x)) && parts.add(rowKey(x))) : [row];
     setMenu({ x: e.clientX, y: e.clientY, rows: picked });
   };
   const clickRow = (e: ReactMouseEvent, row: CutRow) => {
     if (!list) return;
     const toggle = e.ctrlKey || e.metaKey;
-    p.onSelectRows(pickRows(list.rows, p.selected, row, anchor, { shift: e.shiftKey, toggle }));
-    if (!e.shiftKey) setAnchor(rowKey(row));
+    // Over the rows as they are drawn: by assembly, a row is one assembly's pieces of a part,
+    // and a Shift range runs down the list as it is on screen.
+    p.onSelectRows(pickRows(drawn, lit, row, anchor, { shift: e.shiftKey, toggle }, drawnKey));
+    if (!e.shiftKey) setAnchor(drawnKey(row));
   };
   const menuKeys = new Set(menu?.rows.map(rowKey) ?? []);
   // Lane 16: a long list draws its first rows, and more on request; the totals, the
   // exports, Print and selecting rows in the model always cover every row. (Every row is
   // drawn as part of the page, and a model of 100,000 loose solids is 100,000 rows.)
   const [shown, setShown] = useState(CUT_ROWS_SHOWN);
-  const rowCount = list?.rows.length ?? 0;
+  // By assembly: a heading per cabinet or base frame, each part's pieces under the one they are in.
+  const groups = useMemo(() => (p.byAssembly && p.ownerOf && list ? groupRows(list.rows, p.ownerOf, list.visible_only, p.ownerKeyOf) : null), [p.byAssembly, p.ownerOf, p.ownerKeyOf, list]);
+  // The rows as they are drawn, each with its own key: by assembly, a part's row under one
+  // cabinet is not its row under another.
+  const { drawn, drawnKeys } = useMemo(() => {
+    const drawnKeys = new Map<CutRow, string>();
+    if (!groups) return { drawn: list?.rows ?? [], drawnKeys };
+    const drawn: CutRow[] = [];
+    groups.forEach((g, i) => {
+      for (const row of g.rows) {
+        drawn.push(row);
+        drawnKeys.set(row, `${i}:${g.key ?? ""}|${rowKey(row)}`);
+      }
+    });
+    return { drawn, drawnKeys };
+  }, [groups, list]);
+  const drawnKey = (row: CutRow) => drawnKeys.get(row) ?? rowKey(row);
+  // The rows lit: by assembly, those whose own drawn pieces are all selected.
+  const pieceSelected = p.pieceSelected;
+  const lit = useMemo(() => {
+    if (!groups || !pieceSelected) {
+      if (!groups) return p.selected;
+      return new Set(drawn.filter((row) => p.selected.has(rowKey(row))).map((row) => drawnKeys.get(row)!));
+    }
+    const out = new Set<string>();
+    for (const row of drawn) {
+      const vis = row.occurrences.filter((o) => o.visible);
+      if (vis.length && vis.every((o) => pieceSelected(o.item))) out.add(drawnKeys.get(row)!);
+    }
+    return out;
+  }, [groups, drawn, drawnKeys, pieceSelected, p.selected]);
+  const rowCount = groups ? groups.reduce((n, g) => n + g.rows.length, 0) : (list?.rows.length ?? 0);
   const widths = useMemo(() => (list ? columnWidths(list, style) : []), [list, style]);
   // Lane 20b: how the table is laid out, from the panel's width as laid out (and again
   // whenever the panel is widened or narrowed, or the fonts arrive). One line per part when
@@ -337,6 +448,96 @@ export function CutListPane(p: CutListPaneProps) {
   }, [measure, list === null, empty]);
   const tableStyle = { "--cut-q": widths[0], "--cut-t": widths[1], "--cut-w": widths[2], "--cut-l": widths[3] } as CSSProperties;
 
+  /** One part's row (and its reason line), keyed within its group. */
+  const renderRow = (row: CutRow, gk: string) => {
+    const k = rowKey(row);
+    // Lane 20: the reason a part counts nowhere is written in full on a line of
+    // its own under the row, the table's whole width (not only in a tooltip);
+    // the row's own notes say "not counted".
+    const why = row.uncounted ? UNCOUNTED_NOTES[row.uncounted] : null;
+    const notes = rowNotes(row).map((x) => (x === why ? "not counted" : x));
+    if (row.sheet) notes.unshift("sheet");
+    const sel = lit.has(drawnKey(row));
+    const mark = (axis: 1 | 2) => (row.grain === (axis === 2 ? "length" : "width") ? <i className="grain" title={`Grain runs along ${axis === 2 ? "the length" : "the width"}`} aria-label="grain" /> : null);
+    const rowClass = `${sel ? "sel" : ""}${row.hidden === row.total && row.total ? " dim" : ""}${row.included === false || row.uncounted ? " out" : ""}${menuKeys.has(k) ? " menu" : ""}`;
+    return (
+      <Fragment key={gk + k}>
+        <tr
+          role="row"
+          data-row={k}
+          data-part={row.name}
+          aria-selected={sel}
+          data-not-solid={row.not_solid ? "true" : undefined}
+          data-uncounted={row.uncounted}
+          className={`${rowClass}${why ? " has-why" : ""}`}
+          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+          onClick={(e) => clickRow(e, row)}
+          onContextMenu={(e) => openMenu(e, row)}
+          title="Click to select its pieces in the model (Shift: a range of rows, Ctrl: one more). Right-click to set the grain or the stock of the picked rows."
+        >
+          <td role="cell" className="part" title={notes.length ? `${row.name} (${[why, ...notes.filter((x) => x !== "not counted")].filter(Boolean).join(", ")})` : row.name}>
+            {p.onInclude ? (
+              <input
+                type="checkbox"
+                className="inc"
+                checked={row.included !== false}
+                aria-label={`Include ${row.name}`}
+                title={row.included === false ? "Left out of the totals and the nesting. Tick to count it again." : "Counted. Untick to leave it out of the totals and the nesting (it stays listed)."}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => p.onInclude?.([row], e.currentTarget.checked)}
+              />
+            ) : null}
+            <span className="name">
+              <Wrapped text={row.name} />
+            </span>
+            {notes.length ? <Notes notes={notes} /> : null}
+          </td>
+          <td role="cell" className="n">
+            {row.qty}
+          </td>
+          {[0, 1, 2].map((k) => {
+            const t = formatSteps(row.steps[k], r, style);
+            const m = k ? mark(k as 1 | 2) : null;
+            return (
+              <td
+                key={k}
+                role="cell"
+                className={m ? "n mk" : "n"}
+                data-nominal={k === 0 && nominalText(row) ? row.nominal : undefined}
+                title={k === 0 && nominalText(row) ? `${t} ${sizeUnit(r)} finished; board feet on ${nominalText(row)}` : t.length > SIZE_CAP[k] ? `${t} ${sizeUnit(r)}` : undefined}
+              >
+                <Size text={t} mark={m} />
+              </td>
+            );
+          })}
+          <td role="cell" className={`mat${row.stock_set ? " set" : ""}`} title={row.material ?? "No material or stock set"}>
+            <Wrapped text={materialText(row)} />
+          </td>
+        </tr>
+        {why ? (
+          <tr
+            role="row"
+            className={`why ${rowClass}`}
+            data-why-for={row.name}
+            aria-selected={sel}
+            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+            onClick={(e) => clickRow(e, row)}
+            onContextMenu={(e) => openMenu(e, row)}
+          >
+            <td role="cell" colSpan={6}>
+              <small className="why">{why}</small>
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
+    );
+  };
+
+  // A heading counts the pieces that count: not those of a part left out of the totals.
+  const counted = (x: CutRow) => (x.included === false || x.uncounted ? 0 : x.qty);
+  const entries: Entry[] = groups ? groups.flatMap((g, i) => [{ kind: "head" as const, owner: g.owner, gk: `${i}:${g.key ?? ""}|`, pieces: g.rows.reduce((n, x) => n + counted(x), 0) }, ...g.rows.map((row) => ({ kind: "row" as const, row, gk: `${i}:${g.key ?? ""}|` }))]) : (list?.rows ?? []).map((row) => ({ kind: "row" as const, row, gk: "" }));
+  const visible = upTo(entries, shown);
+
   return (
     <div className="cutlist" data-testid="cutlist" ref={rootRef}>
       <div className="cut-controls">
@@ -366,6 +567,12 @@ export function CutListPane(p: CutListPaneProps) {
           <input type="checkbox" checked={p.visibleOnly} onChange={(e) => p.onVisibleOnly(e.currentTarget.checked)} />
           <span>Visible only</span>
         </label>
+        {p.onByAssembly ? (
+          <label className="check" title="A heading for each cabinet and base frame, with its parts under it">
+            <input type="checkbox" checked={!!p.byAssembly} onChange={(e) => p.onByAssembly?.(e.currentTarget.checked)} data-field="byAssembly" />
+            <span>By assembly</span>
+          </label>
+        ) : null}
         {p.onWide ? (
           <button
             type="button"
@@ -445,89 +652,17 @@ export function CutListPane(p: CutListPaneProps) {
                 </tr>
               </thead>
               <tbody role="rowgroup">
-                {list.rows.slice(0, shown).map((row) => {
-                  const k = rowKey(row);
-                  // Lane 20: the reason a part counts nowhere is written in full on a line of
-                  // its own under the row, the table's whole width (not only in a tooltip);
-                  // the row's own notes say "not counted".
-                  const why = row.uncounted ? UNCOUNTED_NOTES[row.uncounted] : null;
-                  const notes = rowNotes(row).map((x) => (x === why ? "not counted" : x));
-                  if (row.sheet) notes.unshift("sheet");
-                  const sel = p.selected.has(k);
-                  const mark = (axis: 1 | 2) => (row.grain === (axis === 2 ? "length" : "width") ? <i className="grain" title={`Grain runs along ${axis === 2 ? "the length" : "the width"}`} aria-label="grain" /> : null);
-                  const rowClass = `${sel ? "sel" : ""}${row.hidden === row.total && row.total ? " dim" : ""}${row.included === false || row.uncounted ? " out" : ""}${menuKeys.has(k) ? " menu" : ""}`;
-                  return (
-                    <Fragment key={k}>
-                      <tr
-                        role="row"
-                        data-row={k}
-                        data-part={row.name}
-                        aria-selected={sel}
-                        data-not-solid={row.not_solid ? "true" : undefined}
-                        data-uncounted={row.uncounted}
-                        className={`${rowClass}${why ? " has-why" : ""}`}
-                        onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                        onClick={(e) => clickRow(e, row)}
-                        onContextMenu={(e) => openMenu(e, row)}
-                        title="Click to select its pieces in the model (Shift: a range of rows, Ctrl: one more). Right-click to set the grain or the stock of the picked rows."
-                      >
-                        <td role="cell" className="part" title={notes.length ? `${row.name} (${[why, ...notes.filter((x) => x !== "not counted")].filter(Boolean).join(", ")})` : row.name}>
-                          {p.onInclude ? (
-                            <input
-                              type="checkbox"
-                              className="inc"
-                              checked={row.included !== false}
-                              aria-label={`Include ${row.name}`}
-                              title={row.included === false ? "Left out of the totals and the nesting. Tick to count it again." : "Counted. Untick to leave it out of the totals and the nesting (it stays listed)."}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => p.onInclude?.([row], e.currentTarget.checked)}
-                            />
-                          ) : null}
-                          <span className="name">
-                            <Wrapped text={row.name} />
-                          </span>
-                          {notes.length ? <Notes notes={notes} /> : null}
-                        </td>
-                        <td role="cell" className="n">
-                          {row.qty}
-                        </td>
-                        {[0, 1, 2].map((k) => {
-                          const t = formatSteps(row.steps[k], r, style);
-                          const m = k ? mark(k as 1 | 2) : null;
-                          return (
-                            <td
-                              key={k}
-                              role="cell"
-                              className={m ? "n mk" : "n"}
-                              data-nominal={k === 0 && nominalText(row) ? row.nominal : undefined}
-                              title={k === 0 && nominalText(row) ? `${t} ${sizeUnit(r)} finished; board feet on ${nominalText(row)}` : t.length > SIZE_CAP[k] ? `${t} ${sizeUnit(r)}` : undefined}
-                            >
-                              <Size text={t} mark={m} />
-                            </td>
-                          );
-                        })}
-                        <td role="cell" className={`mat${row.stock_set ? " set" : ""}`} title={row.material ?? "No material or stock set"}>
-                          <Wrapped text={materialText(row)} />
-                        </td>
-                      </tr>
-                      {why ? (
-                        <tr
-                          role="row"
-                          className={`why ${rowClass}`}
-                          data-why-for={row.name}
-                          aria-selected={sel}
-                          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                          onClick={(e) => clickRow(e, row)}
-                          onContextMenu={(e) => openMenu(e, row)}
-                        >
-                          <td role="cell" colSpan={6}>
-                            <small className="why">{why}</small>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
+                {visible.map((e) =>
+                  e.kind === "head" ? (
+                    <tr key={`group:${e.gk}`} role="row" className="group" data-group={e.owner ?? ""}>
+                      <td role="cell" colSpan={6}>
+                        <b>{e.owner ?? "Not in an assembly"}</b> <small>· {e.pieces} {e.pieces === 1 ? "piece" : "pieces"}</small>
+                      </td>
+                    </tr>
+                  ) : (
+                    renderRow(e.row, e.gk)
+                  ),
+                )}
               </tbody>
             </table>
             {rowCount > shown ? (
@@ -574,11 +709,24 @@ export function CutListPane(p: CutListPaneProps) {
         >
           {p.nestOpen ? "Nesting ‹" : "Nesting ›"}
         </button>
+        {p.onShop ? (
+          <button
+            type="button"
+            className="btn"
+            aria-pressed={!!p.shopOpen}
+            disabled={!p.shopOpen && (!list || empty)}
+            onClick={p.onShop}
+            title="What to buy: the sheets and boards the nesting uses, and the hardware the parts carry, with your prices and overage"
+          >
+            {p.shopOpen ? "Shopping list ‹" : "Shopping list ›"}
+          </button>
+        ) : null}
       </div>
       <p className="note" data-testid="cutlist-note">
-        {scopeNote(r)} Sizes in {sizeUnit(r)}.
+        {scopeNote(r, anyBanded(list))} Sizes in {sizeUnit(r)}.
       </p>
       {p.nesting}
+      {p.shopping}
       {menu ? (
         <div className="ctxmenu" ref={menuRef} role="menu" aria-label={`Cut list: ${partsLabel(menu.rows)}`} style={{ left: menu.x, top: menu.y }}>
           <div className="ctxtitle" title={menu.rows.map((r) => r.name).join(", ")}>

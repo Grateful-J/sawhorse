@@ -250,6 +250,13 @@ pub enum DocumentError {
     /// Lane 15: soft, smooth and hidden edges.
     #[error("{0}")]
     EdgeFlags(String),
+    /// The shopping list: a part's bill-of-materials items that cannot be kept.
+    #[error("hardware list: {0}")]
+    BadBom(String),
+    /// Keep together (grain-matched fronts): a key or index that cannot be kept, or a target
+    /// that is never nested.
+    #[error("keep together: {0}")]
+    BadTogether(String),
 }
 
 /// Errors from groups, components, the editing context, tags and scenes (lane 5). Nothing

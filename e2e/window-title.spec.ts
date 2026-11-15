@@ -108,7 +108,9 @@ test("a title the shell cannot set is never mentioned, and the page's own title 
   await expect(hint).toContainText("Extruded");
   await expect(hint).not.toContainText("window_title");
   await expect(hint).not.toContainText("Can't do that");
-  expect((await bridge(page)).titles).toEqual(["Untitled - Sawhorse"]);
+  // Like the other title-history assertions, count consecutive repeats once. Startup may
+  // send the same initial title twice; the failed dirty title must never be accepted.
+  expect(await sent(page)).toEqual(["Untitled - Sawhorse"]);
 });
 
 test("the browser build never calls the shell for its title", async ({ page }) => {

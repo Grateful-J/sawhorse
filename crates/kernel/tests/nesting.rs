@@ -16,7 +16,8 @@ use sawhorse_kernel::model::{DrawTarget, Op, OpOutcome};
 use sawhorse_kernel::nesting::{CutDir, NestOptions, Nesting, UnplacedReason, nest_list};
 use sawhorse_kernel::nodes::Item;
 use sawhorse_kernel::stock::{
-    NestAlgorithm, NestSettings, SheetSize, StockDef, StockGrain, StockKind, StockLibrary,
+    NestAlgorithm, NestSettings, SawOverflow, SheetSize, StockDef, StockGrain, StockKind,
+    StockLibrary,
 };
 use sawhorse_kernel::testing::{check_nesting, check_nesting_of};
 use sawhorse_kernel::transform::Xform;
@@ -717,8 +718,24 @@ fn visible_only_nests_the_drawn_pieces() {
 
 // ---- properties on random cut lists ------------------------------------------------------
 
+/// The stocks a part of a random cut list may name as its own (a material index of
+/// `NAMES_FROM` or more): the saw's sheets, the router's, one of a third footprint, a board,
+/// and one no library has.
+const NAMED: [&str; 8] = [
+    "4 x 8 sheet, 3/4",
+    "4 x 4 sheet, 3/4",
+    "5 x 5 Baltic birch, 3/4",
+    "4 x 8 MDF, 3/4",
+    "4 x 4 MDF, 3/4",
+    "4 x 4 sheet, 1/2",
+    "4/4 x 6 x 96",
+    "No such stock",
+];
+const NAMES_FROM: u8 = 224;
+
 /// A cut list of plain parts: (thickness, width, length in inches, quantity, grain, sheet,
-/// material index).
+/// material index). An index under `NAMES_FROM` is one of four materials; from there up the
+/// part names one of `NAMED` as its stock.
 fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64) -> CutList {
     let mut rows = Vec::new();
     let mut next = 1u64;
@@ -739,6 +756,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
                         center: [0.0; 3],
                         shaped: false,
                     },
+                    holder: None,
                 }
             })
             .collect();
@@ -768,12 +786,23 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
             nominal: None,
             grain,
             grain_set: grain != Grain::Length,
-            material: Some(["Oak", "Maple", "Birch ply", "MDF"][mat as usize % 4].into()),
-            stock_set: false,
+            // One part in eight names its own stock (`NAMED`), in the library or not.
+            material: Some(
+                if mat >= NAMES_FROM {
+                    NAMED[mat as usize % NAMED.len()]
+                } else {
+                    ["Oak", "Maple", "Birch ply", "MDF"][mat as usize % 4]
+                }
+                .into(),
+            ),
+            stock_set: mat >= NAMES_FROM,
             sheet,
             sheet_set: true,
             board_feet: 0.0,
             area_m2: 0.0,
+            bom: Vec::new(),
+            stretched: 0,
+            together: None,
             occurrences,
         });
     }
@@ -848,38 +877,111 @@ fn settings() -> impl Strategy<Value = NestSettings> {
         1 => Just(0.0),
         1 => 0.0..(0.5 * IN)
     ];
-    (kerf, trim, alg, joint).prop_map(|(kerf, trim, algorithm, joint_loss)| NestSettings {
-        kerf,
-        trim,
-        algorithm,
-        joint_loss,
-        sheet_size: None,
+    // A router and a saw, half the time. The router takes 4 x 4 sheets (or the 24 x 30
+    // offcut), when the library has them; the saw a 4 x 8 with its own kerf and trim, now and
+    // then a 5 x 5, or the router's own footprint (which is no saw at all).
+    let size = |w: f64, l: f64| SheetSize {
+        width: w * IN,
+        length: l * IN,
+    };
+    let router = prop_oneof![3 => Just(size(48.0, 48.0)), 1 => Just(size(24.0, 30.0))];
+    let saw = prop_oneof![
+        6 => Just(Some(size(48.0, 96.0))),
+        1 => Just(Some(size(60.0, 60.0))),
+        1 => Just(None)
+    ];
+    let saw_kerf = prop_oneof![1 => Just(0.0), 1 => Just(IN / 8.0), 2 => 0.0..(0.25 * IN)];
+    let saw_trim = prop_oneof![1 => Just(0.0), 2 => 0.0..(1.0 * IN), 1 => 0.0..(4.0 * IN)];
+    let mixed = prop_oneof![
+        1 => Just(None),
+        1 => (router, saw, saw_kerf, saw_trim).prop_map(Some)
+    ];
+    (kerf, trim, alg, joint, mixed).prop_map(|(kerf, trim, algorithm, joint_loss, mixed)| {
+        NestSettings {
+            kerf,
+            trim,
+            algorithm,
+            joint_loss,
+            sheet_size: mixed.map(|(router, ..)| router),
+            overflow: mixed.map(|(router, saw, kerf, trim)| SawOverflow {
+                sheet_size: saw.unwrap_or(router),
+                kerf,
+                trim,
+            }),
+        }
     })
 }
 
+/// A random library: the built-in one (with or without grain), sometimes a 24 x 30 offcut,
+/// the router's 4 x 4 sheets in none, one or three kinds (3/4 ply; then 1/2 ply and 3/4
+/// MDF), and material defaults onto the offcut, a saw's 4 x 8, a router's 4 x 4 and a sheet
+/// of a third footprint (the 5 x 5).
 fn library() -> impl Strategy<Value = StockLibrary> {
-    (any::<bool>(), any::<bool>()).prop_map(|(grainless, small)| {
-        let mut l = StockLibrary::builtin();
-        if grainless {
-            for s in &mut l.stocks {
-                s.grain = StockGrain::None;
+    (any::<bool>(), any::<bool>(), 0u8..4, any::<u8>()).prop_map(
+        |(grainless, small, fours, defaults)| {
+            let mut l = StockLibrary::builtin();
+            if grainless {
+                for s in &mut l.stocks {
+                    s.grain = StockGrain::None;
+                }
             }
-        }
-        if small {
-            l.stocks.push(StockDef {
-                name: "Offcut 24 x 30, 3/4".into(),
+            let sheet = |name: &str, w: f64, len: f64, t: f64, grain| StockDef {
+                name: name.into(),
                 kind: StockKind::Sheet,
-                length: 30.0 * IN,
-                width: 24.0 * IN,
-                thickness: 0.75 * IN,
+                length: len * IN,
+                width: w * IN,
+                thickness: t * IN,
                 nominal: None,
-                grain: StockGrain::Length,
-            });
-            l.defaults
-                .insert("Birch ply".into(), "Offcut 24 x 30, 3/4".into());
-        }
-        l
-    })
+                grain,
+            };
+            if small {
+                l.stocks.push(sheet(
+                    "Offcut 24 x 30, 3/4",
+                    24.0,
+                    30.0,
+                    0.75,
+                    StockGrain::Length,
+                ));
+                l.defaults
+                    .insert("Birch ply".into(), "Offcut 24 x 30, 3/4".into());
+            }
+            if fours >= 1 {
+                l.stocks.push(sheet(
+                    "4 x 4 sheet, 3/4",
+                    48.0,
+                    48.0,
+                    23.0 / 32.0,
+                    StockGrain::Length,
+                ));
+            }
+            if fours >= 2 {
+                l.stocks.push(sheet(
+                    "4 x 4 sheet, 1/2",
+                    48.0,
+                    48.0,
+                    15.0 / 32.0,
+                    StockGrain::Length,
+                ));
+                l.stocks
+                    .push(sheet("4 x 4 MDF, 3/4", 48.0, 48.0, 0.75, StockGrain::None));
+            }
+            // Defaults: Oak onto a saw's sheet, Maple onto a router's, MDF onto a sheet of
+            // a third footprint or the router's MDF.
+            if defaults & 1 != 0 {
+                l.defaults.insert("Oak".into(), "4 x 8 sheet, 3/4".into());
+            }
+            if defaults & 2 != 0 && fours >= 1 {
+                l.defaults.insert("Maple".into(), "4 x 4 sheet, 3/4".into());
+            }
+            if defaults & 4 != 0 {
+                l.defaults
+                    .insert("MDF".into(), "5 x 5 Baltic birch, 3/4".into());
+            } else if defaults & 8 != 0 && fours >= 2 {
+                l.defaults.insert("MDF".into(), "4 x 4 MDF, 3/4".into());
+            }
+            l
+        },
+    )
 }
 
 /// Oak parts on the built-in boards, no material defaults, kerf 1/8 in, no trim, the joint
@@ -898,6 +1000,7 @@ fn oak(parts: &[(f64, f64, f64, usize)], joint_loss: f64) -> Nesting {
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint_loss * IN,
         sheet_size: None,
+        overflow: None,
     };
     let n = nest_list(&list, &lib, st);
     check_nesting_of(&list, &n).unwrap();
@@ -1131,6 +1234,7 @@ fn on_six_inch_boards(size: [f64; 3], joint: f64, kerf: f64) -> (CutList, Nestin
         algorithm: NestAlgorithm::Guillotine,
         joint_loss: joint,
         sheet_size: None,
+        overflow: None,
     };
     let n = nest_list(&list, &lib, st);
     (list, n)
@@ -1313,7 +1417,10 @@ fn the_joint_loss_is_saved_and_hashed_only_when_set() {
 /// Nothing falls back onto the 4 × 8 that is still in the library.
 #[test]
 fn a_sheet_footprint_is_the_sheet_you_asked_for() {
-    let four = SheetSize { width: 48.0 * IN, length: 48.0 * IN };
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
     let (mut d, _) = bookshelf();
     let before = nest(&d);
     assert!(before.settings.sheet_size.is_none());
@@ -1363,7 +1470,10 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     ok(
         &mut d,
         Op::SetNestSettings {
-            settings: NestSettings { sheet_size: Some(four), ..NestSettings::default() },
+            settings: NestSettings {
+                sheet_size: Some(four),
+                ..NestSettings::default()
+            },
         },
     );
     // The bookshelf's oak is lumber. Mark the carcass as sheet goods the way the plywood
@@ -1406,12 +1516,21 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     for name in ["Side", "Back panel"] {
         let u = n.unplaced.iter().find(|u| u.name == name).unwrap();
         assert_eq!(u.reason, UnplacedReason::TooLarge, "{name}");
-        assert!(u.stock.as_deref().unwrap().starts_with("4 x 4"), "{name} {:?}", u.stock);
+        assert!(
+            u.stock.as_deref().unwrap().starts_with("4 x 4"),
+            "{name} {:?}",
+            u.stock
+        );
     }
     assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
 
     // Drop the 1/4 sheet. The back is not moved onto the 4 × 8.
-    ok(&mut d, Op::DeleteStock { name: "4 x 4 sheet, 1/4".into() });
+    ok(
+        &mut d,
+        Op::DeleteStock {
+            name: "4 x 4 sheet, 1/4".into(),
+        },
+    );
     let n = nest(&d);
     let back = n.unplaced.iter().find(|u| u.name == "Back panel").unwrap();
     assert_eq!(back.reason, UnplacedReason::NoStock);
@@ -1419,6 +1538,603 @@ fn a_sheet_footprint_is_the_sheet_you_asked_for() {
     let asked = back.asked.unwrap();
     assert!((asked[0] - 48.0 * IN).abs() < 1e-9 && (asked[1] - 48.0 * IN).abs() < 1e-9);
     assert!(n.pieces.iter().all(|p| !p.stock.contains("4 x 8")));
+}
+
+/// A 4 × 4 router and a track saw. With `overflow` set, what does not fit the router's
+/// sheet (the 71 1/4 in sides; the back, with no 4 × 4 of its thickness) comes from the
+/// saw's 4 × 8, laid out in straight cuts with the saw's kerf and trim; everything that fits
+/// stays on the 4 × 4 with the router's spacing. Unset, the file and the hash are as before.
+#[test]
+fn what_does_not_fit_the_router_goes_to_the_saw() {
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
+    let eight = SheetSize {
+        width: 48.0 * IN,
+        length: 96.0 * IN,
+    };
+    let (mut d, _) = bookshelf();
+    ok(
+        &mut d,
+        Op::DefineStock {
+            stock: StockDef {
+                name: "4 x 4 sheet, 3/4".into(),
+                kind: StockKind::Sheet,
+                length: 48.0 * IN,
+                width: 48.0 * IN,
+                thickness: 23.0 / 32.0 * IN,
+                nominal: Some("3/4".into()),
+                grain: StockGrain::Length,
+            },
+            replace: None,
+        },
+    );
+    let s = bookshelf_defs(&d);
+    for (def, stock) in [
+        (s.side, "3/4 birch ply"),
+        (s.shelf, "3/4 birch ply"),
+        (s.top, "3/4 birch ply"),
+        (s.toe, "3/4 birch ply"),
+        (s.back, "1/4 birch ply"),
+    ] {
+        ok(
+            &mut d,
+            Op::SetStock {
+                part: PartRef::Definition(def),
+                stock: Some(stock.into()),
+                sheet: None,
+            },
+        );
+    }
+    let router = NestSettings {
+        kerf: 0.375 * IN,
+        trim: 0.5 * IN,
+        algorithm: NestAlgorithm::Maxrects,
+        sheet_size: Some(four),
+        ..NestSettings::default()
+    };
+    ok(&mut d, Op::SetNestSettings { settings: router });
+    let json = serde_json::to_value(router).unwrap();
+    assert!(json.get("overflow").is_none(), "{json}");
+    let before = d.hash();
+    let n0 = nest(&d);
+    for name in ["Side", "Back panel"] {
+        assert!(n0.unplaced.iter().any(|u| u.name == name), "{name}");
+    }
+    assert!(n0.pieces.iter().all(|p| !p.saw));
+
+    let saw = SawOverflow {
+        sheet_size: eight,
+        kerf: IN / 8.0,
+        trim: 0.25 * IN,
+    };
+    let mixed = NestSettings {
+        overflow: Some(saw),
+        ..router
+    };
+    ok(&mut d, Op::SetNestSettings { settings: mixed });
+    assert_ne!(d.hash(), before);
+    let json = serde_json::to_value(mixed).unwrap();
+    assert!(
+        json["overflow"]["sheetSize"]["length"].as_f64().is_some(),
+        "{json}"
+    );
+    let n = nest(&d);
+    assert!(n.unplaced.is_empty(), "{:#?}", n.unplaced);
+    let on = |name: &str| -> Vec<bool> {
+        n.pieces
+            .iter()
+            .filter(|p| p.placements.iter().any(|q| q.name == name))
+            .map(|p| p.saw)
+            .collect()
+    };
+    for name in ["Side", "Back panel"] {
+        assert!(
+            !on(name).is_empty() && on(name).iter().all(|s| *s),
+            "{name}: {:?}",
+            on(name)
+        );
+    }
+    for name in ["Shelf", "Top", "Toe kick"] {
+        assert!(
+            !on(name).is_empty() && on(name).iter().all(|s| !*s),
+            "{name}: {:?}",
+            on(name)
+        );
+    }
+    for p in &n.pieces {
+        if p.saw {
+            assert!(p.stock.starts_with("4 x 8"), "{}", p.stock);
+            assert_eq!(p.kerf, IN / 8.0);
+            assert_eq!(p.trim, 0.25 * IN);
+            assert!(p.guillotine);
+        } else {
+            assert_eq!(p.stock, "4 x 4 sheet, 3/4");
+            assert_eq!(p.kerf, 0.375 * IN);
+            assert_eq!(p.trim, 0.5 * IN);
+        }
+    }
+    // Saved and read back, the setting is the same.
+    let back: NestSettings = serde_json::from_value(serde_json::to_value(mixed).unwrap()).unwrap();
+    assert_eq!(back, mixed);
+    // Without a router's sheet size, the overflow means nothing: every sheet as before.
+    ok(
+        &mut d,
+        Op::SetNestSettings {
+            settings: NestSettings {
+                sheet_size: None,
+                ..mixed
+            },
+        },
+    );
+    assert!(nest(&d).pieces.iter().all(|p| !p.saw));
+    // A bad saw is refused.
+    let bad = NestSettings {
+        overflow: Some(SawOverflow { kerf: IN, ..saw }),
+        ..router
+    };
+    assert!(bad.check().is_err());
+}
+
+/// The saw's edges: a part a hair too long for the router's sheet goes to the saw (where it
+/// fits with its grain along); one too large for the saw too stays on no stock, named
+/// against the router's sheet; a part whose material names a 4 × 8 is cut on the saw when
+/// one is set, and laid out as before when not; a library with a bad saw is refused.
+#[test]
+fn the_saw_takes_what_the_router_cannot_and_nothing_else() {
+    let four = SheetSize {
+        width: 48.0 * IN,
+        length: 48.0 * IN,
+    };
+    let saw = SawOverflow {
+        sheet_size: SheetSize {
+            width: 48.0 * IN,
+            length: 96.0 * IN,
+        },
+        kerf: IN / 8.0,
+        trim: 0.25 * IN,
+    };
+    let mut lib = StockLibrary::builtin();
+    lib.defaults.clear();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 sheet, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 23.0 / 32.0 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::Length,
+    });
+    let router = NestSettings {
+        kerf: 0.375 * IN,
+        trim: 0.5 * IN,
+        algorithm: NestAlgorithm::Maxrects,
+        sheet_size: Some(four),
+        ..NestSettings::default()
+    };
+    let mixed = NestSettings {
+        overflow: Some(saw),
+        ..router
+    };
+    // Rows: (thickness, width, length, qty, grain, sheet, material).
+    let t = 23.0 / 32.0;
+    let list = list_of(
+        &[
+            // Grain along a 47.25 in length on a 47 in usable 4 x 4: too large either way; the
+            // saw's 95 1/2 x 47 1/2 takes it with its grain along.
+            (t, 20.0, 47.25, 1, Grain::Length, true, 0),
+            // Larger than a 4 x 8 inside the saw's trim: on no stock.
+            (t, 30.0, 100.0, 1, Grain::Length, true, 0),
+            // Fits the 4 x 4: the router's.
+            (t, 20.0, 30.0, 2, Grain::Length, true, 0),
+        ],
+        0,
+    );
+    let n = nest_list(&list, &lib, mixed);
+    check_nesting_of(&list, &n).unwrap();
+    let on = |row: usize| -> Vec<bool> {
+        n.pieces
+            .iter()
+            .filter(|p| p.placements.iter().any(|q| q.row == row))
+            .map(|p| p.saw)
+            .collect()
+    };
+    assert_eq!(on(0), vec![true]);
+    assert_eq!(on(2), vec![false]);
+    let big = n.unplaced.iter().find(|u| u.row == 1).unwrap();
+    assert_eq!(big.reason, UnplacedReason::TooLarge);
+    assert_eq!(big.stock.as_deref(), Some("4 x 4 sheet, 3/4"));
+    // Without the saw: the 47 1/4 part is on no stock as before.
+    let n0 = nest_list(&list, &lib, router);
+    check_nesting_of(&list, &n0).unwrap();
+    assert!(n0.unplaced.iter().any(|u| u.row == 0));
+    assert!(n0.pieces.iter().all(|p| !p.saw));
+
+    // A material whose default is the 4 x 8: the saw cuts it when set; the router's settings
+    // lay it out when not (as before the saw existed).
+    let mut lib2 = lib.clone();
+    lib2.defaults
+        .insert("Long ply".into(), "4 x 8 sheet, 3/4".into());
+    let list2 = list_of(&[(t, 20.0, 30.0, 1, Grain::Length, true, 1)], 0);
+    let rows2: Vec<_> = list2
+        .rows
+        .iter()
+        .cloned()
+        .map(|mut r| {
+            r.material = Some("Long ply".into());
+            r
+        })
+        .collect();
+    let list2 = sawhorse_kernel::cutlist::CutList {
+        rows: rows2,
+        ..list2
+    };
+    let n2 = nest_list(&list2, &lib2, mixed);
+    check_nesting_of(&list2, &n2).unwrap();
+    assert_eq!(n2.pieces.len(), 1);
+    assert!(n2.pieces[0].saw && n2.pieces[0].stock == "4 x 8 sheet, 3/4");
+    let n3 = nest_list(&list2, &lib2, router);
+    check_nesting_of(&list2, &n3).unwrap();
+    assert!(!n3.pieces[0].saw);
+    assert_eq!(n3.pieces[0].kerf, 0.375 * IN);
+
+    // A library carrying a bad saw is refused, as a file holding one would be.
+    let mut bad = lib.clone();
+    bad.settings = NestSettings {
+        overflow: Some(SawOverflow {
+            trim: 5.0 * IN,
+            ..saw
+        }),
+        ..router
+    };
+    assert!(bad.check().is_err());
+    bad.settings = NestSettings {
+        overflow: Some(SawOverflow {
+            sheet_size: SheetSize {
+                width: f64::NAN,
+                length: 1.0,
+            },
+            ..saw
+        }),
+        ..router
+    };
+    assert!(bad.check().is_err());
+}
+
+/// The built-in library with the router's 4 x 4 sheet of 3/4 ply beside its 4 x 8s, and no
+/// material defaults.
+fn with_a_four_by_four() -> StockLibrary {
+    let mut lib = StockLibrary::builtin();
+    lib.defaults.clear();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 sheet, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 23.0 / 32.0 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::Length,
+    });
+    lib
+}
+
+/// A 4 x 4 router (maxrects) and a 4 x 8 saw: each one's kerf and trim, inches.
+fn router_and_saw(kerf: f64, trim: f64, saw_kerf: f64, saw_trim: f64) -> NestSettings {
+    NestSettings {
+        kerf: kerf * IN,
+        trim: trim * IN,
+        algorithm: NestAlgorithm::Maxrects,
+        sheet_size: Some(SheetSize {
+            width: 48.0 * IN,
+            length: 48.0 * IN,
+        }),
+        overflow: Some(SawOverflow {
+            sheet_size: SheetSize {
+                width: 48.0 * IN,
+                length: 96.0 * IN,
+            },
+            kerf: saw_kerf * IN,
+            trim: saw_trim * IN,
+        }),
+        ..NestSettings::default()
+    }
+}
+
+/// Sheet parts 0.72 in thick, grain along, every one counted: (width, length in inches,
+/// quantity, material, `named`: the material is the part's own stock text).
+fn ply_parts(parts: &[(f64, f64, usize, &str, bool)]) -> CutList {
+    let rows: Vec<_> = parts
+        .iter()
+        .map(|&(w, l, qty, _, _)| (0.72, w, l, qty, Grain::Length, true, 0u8))
+        .collect();
+    let mut list = list_of(&rows, 0);
+    for (row, &(_, _, _, material, named)) in list.rows.iter_mut().zip(parts) {
+        row.material = Some(material.into());
+        row.stock_set = named;
+        // Every row is nested (`list_of` drops or uncounts a row now and then).
+        row.included = true;
+        row.uncounted = None;
+    }
+    list
+}
+
+/// The stock each piece of a row is on, and whether the saw cuts it.
+fn sheets_of(n: &Nesting, row: usize) -> Vec<(&str, bool)> {
+    n.pieces
+        .iter()
+        .filter(|p| p.placements.iter().any(|q| q.row == row))
+        .map(|p| (p.stock.as_str(), p.saw))
+        .collect()
+}
+
+/// A part reported too large (or grain-bound) for one of the saw's own sheets is measured
+/// inside the saw's trim, by the nesting and by the checker alike. The checker measured it
+/// inside the router's: with no trim on the router and 1 in on the saw, a 47 1/2 x 95 part
+/// whose material defaults to the 4 x 8 (too large for the saw's 46 x 94) was "reported
+/// TooLarge but it is not".
+#[test]
+fn a_part_too_large_for_the_saws_sheet_is_measured_inside_the_saws_trim() {
+    let mut lib = with_a_four_by_four();
+    lib.defaults
+        .insert("Long ply".into(), "4 x 8 sheet, 3/4".into());
+    let st = router_and_saw(0.125, 0.0, 0.125, 1.0);
+    let list = ply_parts(&[(47.5, 95.0, 1, "Long ply", false)]);
+    let n = nest_list(&list, &lib, st);
+    assert!(n.pieces.is_empty());
+    assert_eq!(n.unplaced.len(), 1);
+    assert_eq!(n.unplaced[0].reason, UnplacedReason::TooLarge);
+    assert_eq!(n.unplaced[0].stock.as_deref(), Some("4 x 8 sheet, 3/4"));
+    check_nesting_of(&list, &n).unwrap();
+    // Grain-bound the same way: 20 x 47 with its grain across fits the saw's 46 in only the
+    // other way round (and the router's 48 in either way).
+    let mut list = ply_parts(&[(20.0, 47.0, 1, "Long ply", false)]);
+    list.rows[0].grain = Grain::Width;
+    let n = nest_list(&list, &lib, st);
+    assert_eq!(n.unplaced[0].reason, UnplacedReason::Grain);
+    assert_eq!(n.unplaced[0].stock.as_deref(), Some("4 x 8 sheet, 3/4"));
+    check_nesting_of(&list, &n).unwrap();
+    // A part that names the saw's sheet, the same.
+    let list = ply_parts(&[(47.5, 95.0, 1, "4 x 8 sheet, 3/4", true)]);
+    let n = nest_list(&list, &lib, st);
+    assert_eq!(n.unplaced[0].reason, UnplacedReason::TooLarge);
+    check_nesting_of(&list, &n).unwrap();
+}
+
+/// A material that defaults to the router's sheet, or a part that names it, still sends
+/// what the router's sheet cannot take to the saw: "Shop ply" on the 4 x 4, two 20 x 71 1/4
+/// sides, were left on no stock while the same sides with no default went to the 4 x 8. The
+/// saw's sheet is the same material in the saw's size (the thickness and grain of the sheet
+/// that was said: MDF for MDF, never MDF for plywood); a part the saw could take only
+/// across its grain stays; a sheet of a third footprint is what was said.
+#[test]
+fn a_default_onto_the_routers_sheet_still_sends_the_large_parts_to_the_saw() {
+    let mut lib = with_a_four_by_four();
+    lib.defaults
+        .insert("Shop ply".into(), "4 x 4 sheet, 3/4".into());
+    let st = router_and_saw(0.375, 0.5, 0.125, 0.25);
+    let list = ply_parts(&[
+        (20.0, 71.25, 2, "Shop ply", false),
+        (20.0, 30.0, 2, "Shop ply", false),
+        (20.0, 71.25, 2, "Other", false),
+        (20.0, 71.25, 1, "4 x 4 sheet, 3/4", true),
+        (20.0, 30.0, 1, "4 x 4 sheet, 3/4", true),
+    ]);
+    let n = nest_list(&list, &lib, st);
+    check_nesting_of(&list, &n).unwrap();
+    assert!(n.unplaced.is_empty(), "{:#?}", n.unplaced);
+    for row in [0, 2, 3] {
+        assert_eq!(
+            sheets_of(&n, row),
+            [("4 x 8 sheet, 3/4", true)],
+            "row {row}"
+        );
+    }
+    for row in [1, 4] {
+        assert_eq!(
+            sheets_of(&n, row),
+            [("4 x 4 sheet, 3/4", false)],
+            "row {row}"
+        );
+    }
+    // With no saw set, as before: on no stock, named against the 4 x 4.
+    let n0 = nest_list(
+        &list,
+        &lib,
+        NestSettings {
+            overflow: None,
+            ..st
+        },
+    );
+    check_nesting_of(&list, &n0).unwrap();
+    let left: Vec<usize> = n0.unplaced.iter().map(|u| u.row).collect();
+    assert_eq!(left, [0, 0, 2, 2, 3]);
+    assert!(
+        n0.unplaced
+            .iter()
+            .all(|u| u.reason == UnplacedReason::TooLarge
+                && u.stock.as_deref() == Some("4 x 4 sheet, 3/4"))
+    );
+
+    // The saw's sheet of the thickness and grain that was said: a material on the router's
+    // MDF goes to the saw's MDF, not to the plywood before it in the library; and plywood
+    // never to the MDF, though with no grain it would take the part turned.
+    let mut lib = with_a_four_by_four();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 MDF, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 0.75 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::None,
+    });
+    lib.defaults
+        .insert("Cabinet white".into(), "4 x 4 MDF, 3/4".into());
+    lib.defaults
+        .insert("Shop ply".into(), "4 x 4 sheet, 3/4".into());
+    lib.defaults
+        .insert("Baltic".into(), "5 x 5 Baltic birch, 3/4".into());
+    let mut list = ply_parts(&[
+        (20.0, 71.25, 1, "Cabinet white", false),
+        (20.0, 71.25, 1, "Shop ply", false),
+        // Grain across: turned, 60 in is wider than any sheet. The 4 x 8 of plywood would
+        // take it only along; the 4 x 8 of MDF either way, but it is not the plywood that
+        // was said. It stays, against the router's sheet.
+        (30.0, 60.0, 1, "Shop ply", false),
+        // Longer than the 5 x 5 its material says: not moved to the saw's 4 x 8.
+        (20.0, 70.0, 1, "Baltic", false),
+        (20.0, 50.0, 1, "Baltic", false),
+    ]);
+    list.rows[2].grain = Grain::Width;
+    let n = nest_list(&list, &lib, st);
+    check_nesting_of(&list, &n).unwrap();
+    assert_eq!(sheets_of(&n, 0), [("4 x 8 MDF, 3/4", true)]);
+    assert_eq!(sheets_of(&n, 1), [("4 x 8 sheet, 3/4", true)]);
+    assert_eq!(sheets_of(&n, 4), [("5 x 5 Baltic birch, 3/4", false)]);
+    let left: Vec<_> = n
+        .unplaced
+        .iter()
+        .map(|u| (u.row, u.reason, u.stock.as_deref()))
+        .collect();
+    assert_eq!(
+        left,
+        [
+            (2, UnplacedReason::TooLarge, Some("4 x 4 sheet, 3/4")),
+            (3, UnplacedReason::TooLarge, Some("5 x 5 Baltic birch, 3/4")),
+        ]
+    );
+}
+
+/// With no router's sheet of a part's thickness, a part the saw's sheet cannot take either
+/// is reported for what it is, against the saw's sheet: too large, or grain-bound. It was
+/// "no stock" with the router's 4 x 4 asked for, as if a 4 x 4 of 1/2 in would take a part
+/// 100 in long.
+#[test]
+fn a_part_the_saws_sheet_cannot_take_is_too_large_not_without_stock() {
+    // A 4 x 4 only at 3/4; 4 x 8s at 3/4, 1/2 and 1/4.
+    let lib = with_a_four_by_four();
+    let st = router_and_saw(0.375, 0.5, 0.125, 0.25);
+    let half = |w: f64, l: f64, grain| (0.5, w, l, 1, grain, true, 0u8);
+    let list = list_of(
+        &[
+            half(30.0, 100.0, Grain::Length),
+            half(30.0, 60.0, Grain::Width),
+            half(10.0, 10.0, Grain::Length),
+        ],
+        0,
+    );
+    let n = nest_list(&list, &lib, st);
+    check_nesting_of(&list, &n).unwrap();
+    assert_eq!(sheets_of(&n, 2), [("4 x 8 sheet, 1/2", true)]);
+    let left: Vec<_> = n
+        .unplaced
+        .iter()
+        .map(|u| (u.row, u.reason, u.stock.as_deref(), u.asked))
+        .collect();
+    assert_eq!(
+        left,
+        [
+            (0, UnplacedReason::TooLarge, Some("4 x 8 sheet, 1/2"), None),
+            (1, UnplacedReason::Grain, Some("4 x 8 sheet, 1/2"), None),
+        ]
+    );
+    // No sheet of the thickness at all, the router's or the saw's: no stock, as before,
+    // with the router's footprint asked for.
+    let list = list_of(&[(1.5, 10.0, 10.0, 1, Grain::Length, true, 0)], 0);
+    let n = nest_list(&list, &lib, st);
+    check_nesting_of(&list, &n).unwrap();
+    assert_eq!(n.unplaced[0].reason, UnplacedReason::NoStock);
+    assert_eq!(n.unplaced[0].asked, Some([48.0 * IN, 48.0 * IN]));
+}
+
+/// The checker measures a nesting itself; it does not take the nesting's word. Each of
+/// these is a good nesting changed in one way a wrong kernel could have produced.
+#[test]
+fn the_checker_makes_the_cuts_and_measures_the_trim() {
+    let lib = with_a_four_by_four();
+    let st = router_and_saw(0.375, 0.5, 0.125, 1.0);
+    let list = ply_parts(&[
+        (20.0, 71.25, 2, "Ply", false),
+        (20.0, 30.0, 2, "Ply", false),
+    ]);
+    let good = nest_list(&list, &lib, st);
+    check_nesting_of(&list, &good).unwrap();
+    let saw = good.pieces.iter().position(|p| p.saw).unwrap();
+    let router = good.pieces.iter().position(|p| !p.saw).unwrap();
+    assert_eq!(good.pieces[saw].placements.len(), 2);
+    let refused = |change: &dyn Fn(&mut Nesting), why: &str| {
+        let mut n = good.clone();
+        change(&mut n);
+        let e = check_nesting_of(&list, &n).expect_err(why);
+        assert!(e.contains(why), "{e}");
+    };
+    // The cuts that free the parts left out: the piece still says it comes apart.
+    refused(
+        &|n| n.pieces[saw].cuts.retain(|c| c.trim),
+        "the cuts do not free",
+    );
+    // A cut that stops short of the edge of the offcut it cuts.
+    refused(
+        &|n| {
+            let c = n.pieces[saw].cuts.iter_mut().find(|c| !c.trim).unwrap();
+            c.to = (c.from + c.to) / 2.0;
+        },
+        "stops inside the offcut",
+    );
+    // Laid out with no trim: the usable area the whole sheet, the parts in its corner.
+    refused(
+        &|n| {
+            let p = &mut n.pieces[saw];
+            p.usable = [0.0, 0.0, p.length, p.width];
+            for q in &mut p.placements {
+                q.x -= IN;
+                q.y -= IN;
+            }
+        },
+        "usable area is not the stock inside its trim",
+    );
+    // One of the saw's sheets not marked, and a router's sheet marked.
+    refused(
+        &|n| n.pieces[saw].saw = false,
+        "one of the saw's sheets but not on the saw",
+    );
+    refused(
+        &|n| n.pieces[router].saw = true,
+        "on the saw but not one of the saw's sheets",
+    );
+    // A piece that is not its library stock.
+    refused(
+        &|n| n.pieces[router].length += IN,
+        "is not its library stock",
+    );
+    // The saw never asked: the long parts left against the router's sheet, as they are
+    // with no saw set, while a saw's sheet would take them.
+    let unsawn = nest_list(
+        &list,
+        &lib,
+        NestSettings {
+            overflow: None,
+            ..st
+        },
+    );
+    check_nesting_of(&list, &unsawn).unwrap();
+    let mut n = unsawn.clone();
+    n.settings = st;
+    let e = check_nesting_of(&list, &n).unwrap_err();
+    assert!(e.contains("but the saw's 4 x 8 sheet, 3/4 takes it"), "{e}");
+    // And a part given no stock while a saw's sheet of its thickness is in the library.
+    let half = list_of(&[(0.5, 10.0, 10.0, 1, Grain::Length, true, 0)], 0);
+    let no_saw = NestSettings {
+        overflow: None,
+        ..st
+    };
+    let mut n = nest_list(&half, &lib, no_saw);
+    check_nesting_of(&half, &n).unwrap();
+    assert_eq!(n.unplaced[0].reason, UnplacedReason::NoStock);
+    n.settings = st;
+    let e = check_nesting_of(&half, &n).unwrap_err();
+    assert!(e.contains("reported no stock but 4 x 8 sheet, 1/2"), "{e}");
 }
 
 /// The bookshelf's part definitions, found by name after `bookshelf` built them.
@@ -1604,7 +2320,10 @@ fn parts_of_different_lengths_share_sections_and_cut_in_order() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+    // 256 cases; `PROPTEST_CASES=5000 cargo test -p sawhorse-kernel --test nesting` for a long run.
+    #![proptest_config(ProptestConfig::with_cases(
+        std::env::var("PROPTEST_CASES").ok().and_then(|c| c.parse().ok()).unwrap_or(256)
+    ))]
 
     /// No overlaps, every part inside its stock, kerf gaps, grain, parts in = placed +
     /// unplaced, efficiency from the exact areas, cuts that cross no part, guillotine
@@ -1743,4 +2462,81 @@ fn the_nesting_golden_is_this_bookshelf() {
             "golden/nesting.json is not this bookshelf (UPDATE_GOLDEN=1)"
         );
     }
+}
+
+/// A cut list of plain sheet parts of "Front ply" (metres: width, length, copies, grain),
+/// each 0.018288 thick, as a reviewer's property test shrank one.
+fn plain_sheet_list(parts: &[(f64, f64, usize, Grain)]) -> CutList {
+    let mut l = list_of(&[], 0);
+    for (k, &(w, len, qty, grain)) in parts.iter().enumerate() {
+        let mut one = list_of(&[(0.72, 1.0, 1.0, qty, grain, true, 0)], 0);
+        let mut row = one.rows.remove(0);
+        let size = [0.018288, w, len];
+        row.size = size;
+        row.rounded = size;
+        row.nominal_thickness = size[0];
+        row.key = PartKey::Object(k as u64 + 1);
+        row.target = PartRef::Object(k as u64 + 1);
+        row.name = format!("Part {}", k + 1);
+        row.grain_set = true;
+        row.not_solid = false;
+        row.included = true;
+        row.uncounted = None;
+        row.material = Some("Front ply".into());
+        for (c, o) in row.occurrences.iter_mut().enumerate() {
+            o.item = Item::Object((k * 10 + c) as u64 + 1);
+            o.visible = true;
+            o.bbox.size = size;
+        }
+        l.rows.push(row);
+    }
+    l
+}
+
+fn front_ply_on_a_four_by_four() -> StockLibrary {
+    let mut lib = StockLibrary::builtin();
+    lib.defaults.clear();
+    lib.stocks.push(StockDef {
+        name: "4 x 4 sheet, 3/4".into(),
+        kind: StockKind::Sheet,
+        length: 48.0 * IN,
+        width: 48.0 * IN,
+        thickness: 23.0 / 32.0 * IN,
+        nominal: Some("3/4".into()),
+        grain: StockGrain::Length,
+    });
+    lib.defaults
+        .insert("Front ply".into(), "4 x 4 sheet, 3/4".into());
+    lib
+}
+
+/// Shrunk by a property test of keep-together blocks, though no part is kept: the cuts of
+/// this guillotine layout must free every part ("the cuts do not free 3a").
+#[test]
+fn the_cuts_free_every_part_of_a_shrunk_guillotine_layout() {
+    let l = plain_sheet_list(&[
+        (0.6442612838650706, 0.7363554082871545, 1, Grain::None),
+        (0.0508, 0.6498525976377879, 2, Grain::Width),
+        (0.33855859117933723, 0.3454716150585676, 2, Grain::Length),
+    ]);
+    let st = NestSettings {
+        kerf: 0.00635,
+        trim: 0.0127,
+        algorithm: NestAlgorithm::Guillotine,
+        joint_loss: 0.003175,
+        sheet_size: None,
+        overflow: None,
+    };
+    let lib = front_ply_on_a_four_by_four();
+    let n = nest_list(&l, &lib, st);
+    check_nesting_of(&l, &n).unwrap_or_else(|e| panic!("{e}\n{n:#?}"));
+    let m = nest_list(
+        &l,
+        &lib,
+        NestSettings {
+            algorithm: NestAlgorithm::Maxrects,
+            ..st
+        },
+    );
+    check_nesting_of(&l, &m).unwrap_or_else(|e| panic!("maxrects: {e}\n{m:#?}"));
 }

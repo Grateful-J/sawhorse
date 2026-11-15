@@ -44,14 +44,19 @@ export function lenU(m: number, r: Units): string {
 
 /** A small length the saw is set to (kerf, trim) with the precision it needs, whatever the
  * cut list's rounding: inches to the nearest 1/64 ("3/32 in"), decimal inches to 0.001,
- * millimetres to 0.01 ("2.38 mm"). */
+ * millimetres to 0.01 ("2.38 mm"). A negative length keeps its sign ("-1/8 in"). */
 export function fineU(m: number, u: Units): string {
   const r = roundingOf(u);
   const style = styleOf(u);
   if (r === "half_mm" || style === "mm") return `${Number((m * 1000).toFixed(2))} mm`;
   const inches = m / M_PER_IN;
   if (style === "decimal") return `${Number(inches.toFixed(3))} in`;
-  const n = Math.round(inches * 64);
+  return `${sixtyFourths(Math.round(inches * 64))} in`;
+}
+
+/** A whole number of 64ths of an inch as a shop writes it: "4 23/32", "3/8", "0", "-1/8". */
+function sixtyFourths(n: number): string {
+  if (n < 0) return `-${sixtyFourths(-n)}`;
   const whole = Math.floor(n / 64);
   let num = n - whole * 64;
   let den = 64;
@@ -60,7 +65,54 @@ export function fineU(m: number, u: Units): string {
     den /= 2;
   }
   const frac = num ? `${num}/${den}` : "";
-  return `${whole && frac ? `${whole} ${frac}` : whole ? whole : frac || "0"} in`;
+  return whole && frac ? `${whole} ${frac}` : whole ? String(whole) : frac || "0";
+}
+
+/** One step of [`fineU`]'s precision, metres: 1/64 in, 0.001 in (decimal inches), 0.01 mm. */
+export function fineStep(u: Units): number {
+  const style = styleOf(u);
+  if (roundingOf(u) === "half_mm" || style === "mm") return 1e-5;
+  return style === "decimal" ? M_PER_IN / 1000 : M_PER_IN / 64;
+}
+
+/** [`fineU`]'s precision in words: "1/64 in", "0.001 in", "0.01 mm". */
+export function finePrecision(u: Units): string {
+  const style = styleOf(u);
+  if (roundingOf(u) === "half_mm" || style === "mm") return "0.01 mm";
+  return style === "decimal" ? "0.001 in" : "1/64 in";
+}
+
+/** A whole number of [`fineStep`]s written bare, as [`fineU`] writes a length: "4 23/32",
+ * "0.727", "18.46". Lengths rounded to steps first and then added or subtracted still agree
+ * when written (a width and the two edges it lies between). */
+export function fineSteps(steps: number, u: Units): string {
+  const style = styleOf(u);
+  if (roundingOf(u) === "half_mm" || style === "mm") return String(Number((steps / 100).toFixed(2)));
+  return style === "decimal" ? String(Number((steps / 1000).toFixed(3))) : sixtyFourths(steps);
+}
+
+/**
+ * A thickness (or any length where a hair matters) written so that what is printed is what it
+ * is: millimetres to 0.01; inches as a fraction only when the length is that fraction (within
+ * 0.005 mm of a 64th), otherwise decimal inches to 0.001. [`fineU`] rounds 0.727 in to
+ * "47/64 in" and a 0.15 mm difference to "0 in"; this never does.
+ */
+export function exactU(m: number, u: Units): string {
+  const style = styleOf(u);
+  if (roundingOf(u) === "half_mm" || style === "mm") return `${Number((m * 1000).toFixed(2))} mm`;
+  const inches = m / M_PER_IN;
+  const n = Math.round(inches * 64);
+  if (style !== "decimal" && n !== 0 && Math.abs(inches - n / 64) * M_PER_IN <= 5e-6) return `${sixtyFourths(n)} in`;
+  return `${Number(inches.toFixed(3))} in`;
+}
+
+/** A small difference between two lengths, as a real number: "0.15 mm"; in an inch document
+ * "1/32 in" when it is that fraction, otherwise "0.006 in (0.15 mm)". Never "0 in". */
+export function diffU(m: number, u: Units): string {
+  const mm = `${Number((Math.abs(m) * 1000).toFixed(2))} mm`;
+  if (roundingOf(u) === "half_mm" || styleOf(u) === "mm") return mm;
+  const exact = exactU(Math.abs(m), u);
+  return /\//.test(exact) ? exact : `${exact} (${mm})`;
 }
 
 /** "11 1/4 × 34 1/2" (width × length of a placed part, or of a stock). */
@@ -110,7 +162,7 @@ export function pieceNumber(p: StockPiece): string {
 
 /** "Sheet 1 of 2 · 4 x 8 sheet, 3/4 · Oak". */
 export function pieceTitle(p: StockPiece): string {
-  return `${pieceNumber(p)} · ${p.stock}${p.material ? ` · ${p.material}` : ""}`;
+  return `${pieceNumber(p)} · ${p.stock}${p.material ? ` · ${p.material}` : ""}${p.saw ? " · track saw" : ""}`;
 }
 
 /** "62.4% used · 12.71 sq ft waste". */
@@ -160,7 +212,20 @@ export function reasonText(u: Unplaced): string {
       return "a solid thicker than any board with more than 30% of its box empty: a whole piece, not a blank; draw each board as its own part";
     case "too_wide":
       return "wider than 4 ft and than any board; mark it sheet goods if it is a sheet, or draw the boards of the glue-up";
+    case "together":
+      // Kept together (grain-matched fronts): a block is never split between sheets.
+      return `kept together with ${blockText(u)}, and the block cannot be cut whole: another part of it has no stock, or its parts want different stock or material, share a place in the order, or run different ways; fix that part, or stop keeping them together (the Cabinet generator: Grain-matched fronts off)`;
+    case "together_too_large":
+      return `kept together with ${blockText(u)}: the block, laid out a kerf apart, is larger than ${u.stock ?? "any stock"}; add larger stock, tick "Track saw what won't fit", or stop keeping them together (the Cabinet generator: Grain-matched fronts off)`;
   }
+}
+
+/** "the 3 other parts of “Cabinet 1 fronts”" (part 2 of 4). */
+function blockText(u: Unplaced): string {
+  const b = u.together;
+  if (!b) return "other parts";
+  const others = b.of - 1;
+  return `the ${others === 1 ? "other part" : `${others} other parts`} of “${b.key}” (it is ${b.n} of ${b.of})`;
 }
 
 export interface NestSummary {
@@ -177,7 +242,8 @@ export function nestSummary(n: Nesting, r: Units): NestSummary {
   const t = n.totals;
   const sheetGroups = t.groups.filter((g) => g.kind === "sheet");
   const stocks = [...new Set(sheetGroups.map((g) => g.stock))];
-  const sheetsLabel = stocks.length === 0 ? "sheets" : stocks.length === 1 ? `sheet${t.sheets === 1 ? "" : "s"}: ${stocks[0]}` : `sheets, ${stocks.length} kinds`;
+  const saw = n.pieces.filter((p) => p.saw).length;
+  const sheetsLabel = (stocks.length === 0 ? "sheets" : stocks.length === 1 ? `sheet${t.sheets === 1 ? "" : "s"}: ${stocks[0]}` : `sheets, ${stocks.length} kinds`) + (saw ? `, ${saw} on the track saw` : "");
   const nominal = t.by_nominal.map((b) => `${b.count} × ${b.nominal}`).join(", ");
   const bf = t.by_nominal.reduce((s, b) => s + b.board_feet, 0);
   const boardsLabel = t.boards === 0 ? "boards" : `board${t.boards === 1 ? "" : "s"}: ${nominal}, ${bf.toFixed(1)} bd ft`;
@@ -196,7 +262,10 @@ export function settingsText(n: Nesting, r: Units): string {
   const alg = n.algorithm === "guillotine" ? "table saw" : "tightest layout (CNC)";
   // #49: the joint loss only when something is glued up, so every other footer reads as before.
   const joint = n.glue_ups?.length ? ` · joint loss ${fineU(n.settings.jointLoss ?? JOINT_LOSS_DEFAULT, r)}` : "";
-  return `Kerf ${fineU(n.settings.kerf, r)} · trim ${n.settings.trim > 0 ? `${fineU(n.settings.trim, r)} per edge` : "none"}${joint} · ${alg}`;
+  // Mixed: the track saw's own kerf and trim, when anything went to it.
+  const o = n.settings.overflow;
+  const saw = o && n.pieces.some((p) => p.saw) ? ` · track saw: kerf ${fineU(o.kerf, r)}, trim ${o.trim > 0 ? `${fineU(o.trim, r)} per edge` : "none"}, straight cuts` : "";
+  return `Kerf ${fineU(n.settings.kerf, r)} · trim ${n.settings.trim > 0 ? `${fineU(n.settings.trim, r)} per edge` : "none"}${joint} · ${alg}${saw}`;
 }
 
 /** The footer every nesting output carries. */
