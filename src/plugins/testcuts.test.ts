@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
 import { applyPreset, defaults, normalize, plan, PRESETS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
-import { areaText, clearanceSteps, clearanceText, ladderCoupons, machineCheck, measureText, miniDoor, miniDrawer, partArea, TEST_KINDS, testCut, validSteps } from "../../plugins/cabinet-generator/testcuts.js";
+import { areaText, clearanceSteps, clearanceText, fitFromPicks, ladderCoupons, ladderRecord, liveLadders, machineCheck, measureText, miniDoor, miniDrawer, partArea, pickOptions, TEST_KINDS, testCut, validLadderRecord, validSteps } from "../../plugins/cabinet-generator/testcuts.js";
 
 // The test cuts (plugins/cabinet-generator/testcuts.js): small pieces that prove a setup before
 // the real sheet. Each must go through the planner's own code, so these tests hold the coupons'
@@ -450,8 +450,8 @@ describe("every test", () => {
     }
     const drawer = testCut("drawer", { ...applyPreset(defaults(false), "drawers", false), hardware: false }, false);
     expect(drawer.error).toBeNull();
-    expect(drawer.rows[4][0]).toBe("Hardware holes");
-    expect(drawer.rows).toHaveLength(6);
+    expect(drawer.rows.filter((r) => r[0] === "Hardware holes")).toHaveLength(1);
+    expect(drawer.rows.some((r) => /screw/.test(r[0]))).toBe(false);
   });
 
   it("the machine check says what to measure in the document's units", () => {
@@ -471,5 +471,203 @@ describe("every test", () => {
     expect(t.holes[14][1]).toBe("Dado 5 (5 dimples)");
     const xs = t.parts.map((p) => p.copies[0].at[0]);
     for (let i = 1; i < t.parts.length; i++) expect(xs[i] - (xs[i - 1] + t.parts[i - 1].blank[0])).toBeCloseTo(1 * IN, 12);
+  });
+});
+
+// From the review of feat/test-cuts: each finding's own test.
+describe("review: a pick after the stock was retyped (C1)", () => {
+  const s0 = applyPreset(defaults(true), "base", true);
+  const rec = ladderRecord(testCut("ladders", s0, true), 7);
+
+  it("keeps each ladder's mating stock and the widths it was cut at, with the node it was added as", () => {
+    expect(rec.node).toBe(7);
+    expect(rec.ladders.map((l) => l.kind)).toEqual(["dado", "back", "bottom"]);
+    expect(rec.ladders[0].mating).toBeCloseTo(18 * MM, 12);
+    expect(rec.ladders[0].widths[2]).toBeCloseTo(18.3 * MM, 12);
+    expect(validLadderRecord(JSON.parse(JSON.stringify(rec)))).toEqual(rec);
+    // A record that cannot say what was cut (steps alone, as 1.9.0's first cut kept) is not used.
+    expect(validLadderRecord({ steps: rec.steps })).toBeNull();
+    expect(validLadderRecord({ ...rec, ladders: [{ ...rec.ladders[0], widths: [1, 2] }] })).toBeNull();
+  });
+
+  it("is the width that fit less the stock typed now, and says the stock changed", () => {
+    const s1 = { ...s0, thickness: 18.2 * MM };
+    const a = fitFromPicks(rec.ladders, { dado: "3" }, s1, true);
+    expect(a.value).toBeCloseTo(0.1 * MM, 12);
+    expect(a.text).toContain("The carcass stock was 18 mm when the Dado ladder was cut; it is 18.2 mm now");
+    expect(a.tone).toBe("info");
+    // Unchanged stock: the step itself.
+    expect(fitFromPicks(rec.ladders, { dado: "3" }, s0, true).value).toBeCloseTo(0.3 * MM, 12);
+    // The options say the width and the clearance it is now.
+    expect(pickOptions(rec.ladders[0], s1, true)[3]).toEqual(["3", "Dado 3 · 18.3 mm wide · 0.1 mm now"]);
+  });
+
+  it("is held to the panel's 0 to 1 mm, and says so", () => {
+    const thick = fitFromPicks(rec.ladders, { dado: "1" }, { ...s0, thickness: 18.4 * MM }, true);
+    expect(thick.value).toBe(0);
+    expect(thick.tone).toBe("warning");
+    expect(thick.text).toContain("narrower than the stock typed now");
+    const thin = fitFromPicks(rec.ladders, { dado: "5" }, { ...s0, thickness: 17 * MM }, true);
+    expect(thin.value).toBeCloseTo(1 * MM, 12);
+    expect(thin.tone).toBe("warning");
+  });
+
+  it("ladders that disagree: the stock, or for the two back-plywood ladders the toolpaths (d3)", () => {
+    const stock = fitFromPicks(rec.ladders, { dado: "2", back: "3" }, s0, true);
+    expect(stock.value).toBeNull();
+    expect(stock.text).toContain("the difference is in the stock");
+    const paths = fitFromPicks(rec.ladders, { back: "3", bottom: "2" }, s0, true);
+    expect(paths.value).toBeNull();
+    expect(paths.text).toContain("try the same back plywood in grooves of the same widths");
+    expect(paths.text).not.toContain("the difference is in the stock");
+    // A retyped carcass makes the dado ladder's clearance differ from the back's at the same dado.
+    expect(fitFromPicks(rec.ladders, { dado: "3", back: "3" }, { ...s0, thickness: 18.2 * MM }, true).value).toBeNull();
+  });
+});
+
+describe("review: the bit each ladder needs (M1)", () => {
+  it("a ladder narrower than the bit names the bit it needs; the centre-line fallback is for the slot only", () => {
+    const s = defaults(false);
+    const t = testCut("ladders", s, false);
+    const bits = t.rows.filter((r) => r[0].startsWith("Bit for the "));
+    expect(bits.map((r) => r[0])).toEqual(["Bit for the Back groove ladder", "Bit for the Drawer bottom ladder"]);
+    expect(bits[0][1]).toBe(`narrower than ${measureText(s.backThickness + 0.004 * IN, false)} (dado 1): 1/8 in (3 mm) is`);
+    expect(bits[0][2]).toContain("The 0.250 in (6.35 mm) bit cannot cut it");
+    expect(bits[0][2]).toContain("never as a profile on a centre line");
+    // A bit too wide for even 1/8 in to help: said so, without naming one.
+    const fine = testCut("ladders", normalize({ ...defaults(true), backThickness: 2.5 * MM, fit: 0 }, true), true);
+    expect(fine.rows.find((r) => r[0] === "Bit for the Back groove ladder")![1]).toBe("narrower than 2.5 mm (dado 1)");
+    const machine = testCut("machine", s, false);
+    expect(machine.holes[1][3]).toContain("never for a joint ladder");
+  });
+});
+
+describe("review: the machine check's square (M2)", () => {
+  it("catches gross errors only, never a change of calibration; the scale is checked on a long cut", () => {
+    for (const metric of [false, true]) {
+      const m = testCut("machine", defaults(metric), metric);
+      const all = m.rows.flat().join(" ");
+      expect(all).not.toMatch(/steps per mm|steps\/mm/i);
+      expect(m.rows[1][2]).toContain("do not change the machine's calibration from a 100 mm part");
+      expect(m.rows[1][2]).toContain("500 mm or more");
+      const d = testCut("drawer", applyPreset(defaults(metric), "drawers", metric), metric);
+      const long = d.rows.find((r) => r[0].startsWith("Each side's length"))!;
+      expect(long[1]).toBe(measureText(d.sizes!.depth, metric));
+    }
+  });
+});
+
+describe("review: inset fronts (M3)", () => {
+  it("the mini drawer and door say what is not drilled, and claim only what is", () => {
+    const dr = testCut("drawer", { ...applyPreset(defaults(false), "drawers", false), front: "inset" }, false);
+    expect(dr.error).toBeNull();
+    expect(dr.sizes!.front).toBe("inset");
+    expect(dr.columns).toEqual(["Part", "What", "Hole", "Depth", "How"]);
+    expect(dr.holes.some((r) => r[4].startsWith("Not drilled"))).toBe(true);
+    expect(dr.proves).not.toContain("fits its screw holes");
+    expect(dr.proves).toContain("not drilled with inset fronts");
+    expect(dr.rows.find((r) => r[0] === "Runner screw holes")![1]).toContain("Not drilled with inset fronts");
+    const door = testCut("door", { ...applyPreset(defaults(false), "base", false), front: "inset" }, false);
+    expect(door.holes.some((r) => r[4].startsWith("Not drilled"))).toBe(true);
+    expect(door.proves).not.toContain("the mounting plates");
+    expect(door.rows.find((r) => r[0] === "Mounting plates")![1]).toContain("Not drilled with inset fronts");
+    // Overlay: drilled, said as before.
+    const over = testCut("drawer", applyPreset(defaults(false), "drawers", false), false);
+    expect(over.proves).toContain("fits its screw holes");
+  });
+});
+
+describe("review: dimples never meet a dado (m1)", () => {
+  it("every back stock and clearance the planner takes makes its ladders", () => {
+    let tried = 0;
+    for (let bT = 3; bT <= 7.01; bT += 0.1) {
+      for (let f = 0; f <= 1.001; f += 0.05) {
+        const s = normalize({ ...applyPreset(defaults(true), "base", true), backThickness: bT * MM, fit: f * MM }, true);
+        if (plan(s, true).error) continue;
+        tried++;
+        const t = testCut("ladders", s, true);
+        expect(t.error, `bT ${bT.toFixed(1)} fit ${f.toFixed(2)}`).toBeNull();
+      }
+    }
+    expect(tried).toBeGreaterThan(700);
+  });
+});
+
+describe("review: the mini door's cups are the door's (m5) and its gap the hinge's (m6)", () => {
+  it("no cup moves on the mini door where the cabinet's door has none moved (metric inset)", () => {
+    // The sink base's hinges are 100 mm from the door's ends.
+    const s = { ...applyPreset(defaults(true), "sink", true), front: "inset" as const };
+    const mini = miniDoor(s, true);
+    expect(mini.planned!.rows.filter((r) => /moved/.test(r[1]))).toEqual([]);
+    const door = copyNamed(mini.planned!.parts, "Door").part;
+    const zs = rings(door, 1, s.thickness).filter(([x]) => x < door.blank[0] / 2).map(([, z]) => Math.round(Math.min(z, door.blank[2] - z) * 1e6));
+    expect(zs).toEqual([100000, 100000]);
+  });
+
+  it("a cover the hinge cannot reach is not expected: the gap row is the door as planned", () => {
+    const s = { ...applyPreset(defaults(false), "base", false), cupDistance: 3 * MM };
+    const t = testCut("door", s, false);
+    const door = copyNamed(t.parts, "Door");
+    const gap = t.rows.find((r) => r[0] === "The gap round the door, closed")!;
+    expect(door.at[0]).toBeGreaterThan(s.gap / 2 + 1e-6);
+    expect(gap[1]).toBe(`${measureText(door.at[0], false)} at each edge of the cabinet; the door covers ${measureText(s.thickness - door.at[0], false)} of each side`);
+    expect(gap[1]).toContain("covers 0.630 in (16 mm)");
+  });
+});
+
+describe("review: what mutation showed untested (m7)", () => {
+  it("the mini drawer's runner is pinned to the cabinet's where Automatic would take another", () => {
+    let differs = 0;
+    for (const extra of [{ back: false, nailers: "both" as const }, { nailers: "both" as const }, { nailers: "top" as const }]) {
+      for (let d = 15.5; d <= 24.5; d += 0.125) {
+        const s = normalize({ ...applyPreset(defaults(false), "drawers", false), depth: d * IN, ...extra }, false);
+        const real = plan(s, false);
+        if (real.error) continue;
+        const mini = miniDrawer(s, false);
+        expect(mini.error).toBeNull();
+        expect(mini.planned!.runner!.part, `${JSON.stringify(extra)} ${d}`).toBe(real.runner!.part);
+        const auto = plan({ ...mini.sizes!, runner: 0 }, false);
+        if (!auto.error && auto.runner!.part !== real.runner!.part) differs++;
+      }
+    }
+    expect(differs).toBeGreaterThan(0);
+  });
+
+  it("the mini drawer keeps inset fronts", () => {
+    for (const metric of [false, true]) {
+      const s = { ...applyPreset(defaults(metric), "drawers", metric), front: "inset" as const };
+      const mini = miniDrawer(s, metric);
+      expect(mini.sizes!.front).toBe("inset");
+      expect(mini.planned!.rows.some((r) => /runner screws \(inset\)/.test(r[1]))).toBe(true);
+      expect(copyNamed(mini.planned!.parts, "Drawer 1 front").at[1]).toBe(0);
+    }
+  });
+
+  it("the drawer bottom ladder's groove is at most 1/4 in deep with thick drawer sides, as the drawer's", () => {
+    const s = { ...applyPreset(defaults(true), "drawers", true), drawerThickness: 16 * MM };
+    const lad = ladderCoupons(s, true);
+    const bottom = lad.coupons.find((c) => c.kind === "bottom")!;
+    expect(bottom.depth).toBeCloseTo(0.25 * IN, 12);
+    const side = copyNamed(plan(s, true).parts, "Drawer 1 left").part;
+    expect(floors(side, 0, 16 * MM - 0.25 * IN, 2).length).toBeGreaterThan(0);
+    expect(floors(bottom.part, 2, 16 * MM - 0.25 * IN, 0)).toHaveLength(5);
+  });
+});
+
+describe("review: ladders no longer in the model name nothing (m4)", () => {
+  it("this session's record while its ladders stand (the document's write may have failed), else the document's, else none", () => {
+    const t = testCut("ladders", defaults(true), true);
+    const older = ladderRecord(t, 3);
+    const newer = ladderRecord(testCut("ladders", { ...defaults(true), fit: 0.5 * MM }, true), 9);
+    const all = (id: number) => id === 3 || id === 9;
+    // The write of the newer one failed: the document still holds the older, whose ladders stand too.
+    expect(liveLadders(newer, older, all)).toBe(newer);
+    // The newer ladders undone: back to the older ones, still in the model.
+    expect(liveLadders(newer, older, (id) => id === 3)).toBe(older);
+    // Both gone: none.
+    expect(liveLadders(newer, older, () => false)).toBeNull();
+    expect(liveLadders(null, older, () => false)).toBeNull();
+    // A new document: the document's, while its ladders stand.
+    expect(liveLadders(null, older, all)).toBe(older);
   });
 });
