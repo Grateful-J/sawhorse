@@ -287,6 +287,11 @@ describe("checks, at their cited boundaries", () => {
     expect(row("dw-bosch-int", 870, true)).toEqual([]);
     expect(row("dw-bosch-int", 870.1, true).join()).toMatch(/813 mm to 870 mm/);
     expect(row("dw-bosch-int", 812.9, true).join()).toMatch(/813 mm to 870 mm/);
+    // The lower of the two tops beside it is the countertop's underside.
+    const lo = cab(1, base(false, { openRight: "dw-ge", openRightWidth: 24 * IN }));
+    const hi = (h: number) => cab(2, base(false, { height: h * IN }), placeNext(lo, base(), "right"));
+    expect(rowChecks([lo, hi(34.5)], [lo, hi(34.5)], false)).toEqual([]);
+    expect(rowChecks([lo, hi(34.49)], [lo, hi(34.49)], false).join()).toMatch(/beside Cab 1 and Cab 2: the countertop's underside would be 34.49 in/);
     // Lifted onto a frame, the tops are higher: the check reads where they stand.
     const a = cab(1, base(false, { height: 30.5 * IN, base: "none", openRight: "dw-ge", openRightWidth: 24 * IN }), translation([0, 0, 4 * IN]));
     expect(rowChecks([a], [a], false)).toEqual([]);
