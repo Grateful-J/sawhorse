@@ -128,7 +128,9 @@ describe("the report's §8a starting values, on the Compact Router's shop-page t
     expect(r.makerRange?.min).toBe(0.0031);
     expect(r.makerRange?.max).toBe(0.016); // Onsrud 60-100, hard plywood
     expect(r.makerRange!.spread).toBeGreaterThan(3);
-    expect(new Set(r.makerFigures.map((f) => f.src))).toEqual(new Set(["amana-a1", "amana-a2", "onsrud-o2", "freud"]));
+    // Amana's Spektra rows are shown, but count only for a Spektra bit (the 46170 is not one).
+    expect(new Set(r.makerFigures.map((f) => f.src))).toEqual(new Set(["amana-a1", "onsrud-o2", "freud"]));
+    expect(r.figures.map((f) => f.src)).toContain("amana-a2");
     // The reseller and the community are shown after the makers, not counted.
     expect(r.figures.at(-1)!.src).toBe("atoz");
   });
@@ -228,9 +230,9 @@ describe("the warnings fire at their boundaries", () => {
     expect(ids(run(compression, { depth: 0.3 * IN, feedIpm: 18250 * 2 * 0.0031 * 0.75 }))).not.toContain("chipload-low");
   });
 
-  it("a chipload above every maker's figure", () => {
-    expect(ids(run(compression, { feedIpm: 18250 * 2 * 0.016 }))).not.toContain("chipload-high");
-    expect(ids(run(compression, { feedIpm: 18250 * 2 * 0.0161 }))).toContain("chipload-high");
+  it("a chipload above the bit's own maker's figure (the 46170 is Amana's: .0031 in Baltic birch)", () => {
+    expect(ids(run(compression, { feedIpm: 18250 * 2 * 0.0031 }))).not.toContain("chipload-high");
+    expect(ids(run(compression, { feedIpm: 18250 * 2 * 0.0032 }))).toContain("chipload-high");
   });
 
   it("a shank larger than the router's collet, and one no listed collet fits", () => {

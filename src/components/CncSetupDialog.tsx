@@ -3,9 +3,9 @@
 // (src/cam/store.ts), never in the model: changing it does not mark the document changed.
 // Every built-in number shows its source and how far to trust it.
 import { useEffect, useMemo, useState } from "react";
-import { BIT_TYPES, MATERIALS, type BitType, type ChartFigure, type MaterialId } from "../cam/chipload";
+import { BIT_TYPES, MAKERS, MATERIALS, figureCounts, type BitType, type ChartFigure, type MakerId, type MaterialId } from "../cam/chipload";
 import { COMMUNITY, M_PER_IN, ROUTERS, SHAPEOKO_5_PRO_4X4, confidenceOf, tableGap, type DialTable, type Router, type Sourced } from "../cam/data";
-import { PLUNGE, bothUnits, chiploadText, ipmToMmMin, mmMinToIpm, type FeedsOptions, type FeedsResult } from "../cam/feeds";
+import { PLUNGE, bothUnits, chiploadText, ipmToMmMin, mmMinToIpm, type FeedInput, type FeedsOptions, type FeedsResult } from "../cam/feeds";
 import { HOLE_LAYERS, OPERATIONS, holeOf, type Operation } from "../cam/layers";
 import { SCRAP_TEST } from "../cam/scrap";
 import { feedsFor, machineOf, routerOf, tableOf, toolById } from "../cam/shop";
@@ -13,6 +13,7 @@ import { HOLD_DOWN_DEFAULT, JOB_KINDS, LABEL_SIZES, type JobKind, type JobPrefs,
 import { SOURCES, type Confidence, type Source, type SourceId } from "../cam/sources";
 import { CUSTOM_MACHINE, CUSTOM_ROUTER, defaultShop, loadShop, saveShop, type Shop } from "../cam/store";
 import { seedField, seedTools, toolProblem, type Tool, type ToolField } from "../cam/tools";
+import { askYesNo } from "../io/files";
 import { parseLength, type UnitSystem } from "../lib/units";
 
 export type CncTab = "machine" | "tools" | "feeds" | "jobs";
@@ -53,15 +54,36 @@ function sourcedText(s: Sourced, metric: boolean): string {
   }
 }
 
-/** Where a number comes from: its confidence, and the source on hover. Not a link: the
+/** Where a number comes from: its confidence and maker, which open (click, tap, or Enter
+ * on the focused label) to the document, the place in it and its address. Not a link: the
  * desktop app's window must never navigate away. */
 function Src({ id, conf }: { id: SourceId; conf?: Confidence }) {
   const s = SOURCES[id] as Source;
   const c = conf ?? s.confidence;
   return (
-    <span className="cam-src" data-conf={c} data-src={id} title={`${s.maker}, ${s.document}. ${s.where}. ${s.url} (report ${s.report})`}>
-      {c} · {s.maker}
-    </span>
+    <details className="cam-src" data-conf={c} data-src={id}>
+      <summary aria-label={`Source: ${s.maker}, ${c} confidence`}>
+        {c} · {s.maker}
+      </summary>
+      <span className="cam-src-doc">
+        {s.maker}, {s.document}. {s.where}. <span className="cam-src-url">{s.url}</span> (research {s.report})
+      </span>
+    </details>
+  );
+}
+
+/** A feed's inputs, each with its source (or "yours"), and the confidence of the lot. */
+function Inputs({ from, conf }: { from: FeedInput[]; conf: Confidence | null }) {
+  return (
+    <small>
+      {from.map((f, i) => (
+        <span key={i}>
+          {f.what} {f.src ? <Src id={f.src} conf={f.confidence ?? undefined} /> : <span className="cam-yours">yours</span>}
+          {i < from.length - 1 ? "; " : ". "}
+        </span>
+      ))}
+      {conf ? <b className="cam-conf" data-conf={conf}>{conf} confidence (the lowest of its inputs)</b> : null}
+    </small>
   );
 }
 
@@ -319,7 +341,7 @@ function MachineTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; 
 // ---------------------------------------------------------------------------------------
 // Tools
 
-type Draft = { id: string | null; name: string; type: BitType; flutes: string } & Record<Exclude<ToolField, "flutes">, string>;
+type Draft = { id: string | null; name: string; type: BitType; maker: MakerId | ""; flutes: string } & Record<Exclude<ToolField, "flutes">, string>;
 const LEN_FIELDS: { key: Exclude<ToolField, "flutes">; label: string }[] = [
   { key: "diameter", label: "Cutting diameter" },
   { key: "shank", label: "Shank" },
@@ -333,6 +355,7 @@ function draftOf(t: Tool | null, metric: boolean): Draft {
     id: t?.id ?? null,
     name: t?.name ?? "",
     type: t?.type ?? "downcut",
+    maker: t?.maker ?? "",
     flutes: t?.flutes === null || t?.flutes === undefined ? "" : String(t.flutes),
     diameter: fieldText(t?.diameter ?? null, metric),
     shank: fieldText(t?.shank ?? null, metric),
@@ -382,6 +405,7 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
       id: draft.id ?? `tool-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       name: draft.name.trim(),
       type: draft.type,
+      maker: draft.maker || null,
       diameter: out.diameter ?? null,
       flutes: fl,
       shank: out.shank ?? null,
@@ -473,6 +497,17 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
             ))}
           </select>
         </label>
+        <label>
+          <span>Maker</span>
+          <select aria-label="Maker" value={draft.maker} onChange={(e) => setDraft({ ...draft, maker: e.currentTarget.value as MakerId | "" })} title="A bit by a maker whose chart Sawhorse carries is checked against that maker's own figures">
+            <option value="">Unknown or another</option>
+            {MAKERS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
         {LEN_FIELDS.filter((f) => draft.type === "compression" || (f.key !== "upcut" && f.key !== "upcutTol")).map((f) => (
           <label key={f.key}>
             <span>{f.label}</span>
@@ -505,7 +540,8 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
           type="button"
           className="btn"
           title="Put back the three bits the research gives (Amana 46170 compression, 1/4 in down-cut, 1/8 in end mill); bits you added are removed"
-          onClick={() => {
+          onClick={async () => {
+            if (!(await askYesNo("Replace your bits with the three built-in ones? Bits you added or changed are lost."))) return;
             const tools = seedTools();
             set({ ...shop, tools, profileTool: null, feeds: { ...shop.feeds, tool: tools[0].id } });
             setDraft(draftOf(null, metric));
@@ -659,7 +695,7 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
               )}
               {res.makerRange ? (
                 <small data-testid="maker-range">
-                  The bit makers disagree 3–5× for the same nominal job (research §1g). For this bit and material their figures run from {chiploadText(res.makerRange.min, metric)} to {chiploadText(res.makerRange.max, metric)}, {res.makerRange.spread.toFixed(1)} times apart. Their charts assume industrial machines at 18,000 RPM; the scrap test below finds yours.
+                  The bit makers disagree: for this bit and material their figures run from {chiploadText(res.makerRange.min, metric)} to {chiploadText(res.makerRange.max, metric)}, {res.makerRange.spread.toFixed(1)} times apart. Their charts assume industrial machines at 18,000 RPM; the scrap test below finds yours.
                 </small>
               ) : null}
               {res.figures.length ? (
@@ -680,6 +716,7 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
                           {f.bit}
                           {f.flutes ? `, ${f.flutes} flute${f.flutes === 1 ? "" : "s"}` : ""}, {f.dia} {f.diaUnit}, {f.column}
                           {f.note ? <small>{f.note}</small> : null}
+                          {f.only && !figureCounts(f, tool.name) ? <small>Not counted: only for {f.only.label}.</small> : null}
                         </td>
                         <td>{figureRange(f)}</td>
                         <td>
@@ -715,9 +752,9 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
                       ? res.chipload !== null
                         ? `Your feed gives ${chiploadText(res.chipload, metric)}: feed ÷ (RPM × flutes).`
                         : "Your feed, as typed."
-                      : `= ${num(res.rpm!)} RPM × ${tool.flutes} flutes × ${chiploadText(res.chipload!, metric)}${res.depthFactor !== null && res.depthFactor < 1 ? ` (the start × ${res.depthFactor} for a pass deeper than the bit's diameter)` : ""}.`}{" "}
-                    <Src id="amana-a1" />
+                      : `= ${num(res.rpm!)} RPM × ${tool.flutes} flutes × ${chiploadText(res.chipload!, metric)}${res.depthFactor !== null && res.depthFactor < 1 ? ` (the start × ${res.depthFactor} for a pass deeper than the bit's diameter)` : ""}.`}
                   </small>
+                  <Inputs from={res.feedFrom} conf={res.feedConfidence} />
                 </>
               ) : (
                 <>Not worked out: see above.</>
@@ -727,7 +764,8 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
             <dd data-testid="ramp">
               {res.rampIpm !== null ? (
                 <>
-                  Ramp at <b>{ipm(res.rampIpm)}</b>: the feed ÷ {tool.flutes} flute{tool.flutes === 1 ? "" : "s"} <Src id="amana-a1" />
+                  Ramp at <b>{ipm(res.rampIpm)}</b>: the feed ÷ {tool.flutes} flute{tool.flutes === 1 ? "" : "s"}
+                  <Inputs from={res.rampFrom} conf={res.feedConfidence} />
                 </>
               ) : (
                 <>No ramp feed without a feed.</>
@@ -762,7 +800,8 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
                 "Type the bit's cutting diameter."
               )}
               <small>
-                The bit makers' charts are for a pass 1 × the diameter deep; past that take 25% off the feed, past 2 × take 50% off <Src id="amana-charts" />. The Shapeoko community uses about half the diameter <SrcOf s={COMMUNITY.halfD} />, and says to reduce the makers' depths on a Shapeoko, giving no percentage <Src id="atoz" />.
+                The bit makers' charts are for a pass 1 × the diameter deep; past that take 25% off the feed, past 2 × take 50% off <Src id="amana-charts" />. For later passes, the Shapeoko community uses about half the diameter <SrcOf s={COMMUNITY.halfD} />, and says to reduce the makers' depths on a Shapeoko, giving no percentage <Src id="atoz" />.
+                {tool.type === "compression" ? " That half-diameter rule is never for a compression bit's first pass, which must be deeper than its up-cut part." : ""}
               </small>
             </dd>
             {op !== "profile" ? (
@@ -922,7 +961,14 @@ export function CncSetupDialog(p: CncSetupDialogProps) {
         <button type="button" className="btn" onClick={p.onClose}>
           Done
         </button>
-        <button type="button" className="btn" title="Back to the Shapeoko 5 Pro 4x4, the Compact Router and the three built-in bits" onClick={() => set(defaultShop())}>
+        <button
+          type="button"
+          className="btn"
+          title="Back to the Shapeoko 5 Pro 4x4, the Compact Router and the three built-in bits"
+          onClick={async () => {
+            if (await askYesNo("Go back to the built-in machine, router and three bits? Your bits and settings here are lost.")) set(defaultShop());
+          }}
+        >
           Built-in shop
         </button>
       </div>

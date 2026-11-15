@@ -57,6 +57,9 @@ export interface ChartFigure {
   unit: "in/tooth" | "mm/tooth";
   /** Why the row is only near the material, or what else to know. */
   note?: string;
+  /** A row for some bits only (Amana's Spektra-coated tools): counted only for a bit whose
+   * name matches, shown for the others as not counted. */
+  only?: { pattern: string; label: string };
 }
 
 type Row = Omit<ChartFigure, "src" | "bit" | "kinds" | "unit" | "diaUnit"> & { diaUnit?: "in" | "mm" };
@@ -68,6 +71,8 @@ const LAM_PLY_NOTE = 'Onsrud\'s "Laminated Plywood" sheet: not clear whether it 
 const PB_NOTE = "Melamine on particleboard: the nearest chart to laminate on MDF";
 const SOFT_PLY_NOTE = "Rennie's row is soft plywood; Baltic birch is harder";
 const SPEKTRA_NOTE = "Spektra-coated tools (46700-K, 46701-K, …) in Baltic plywood";
+/** A bit named Spektra, or by an Amana 467xx Spektra number. */
+const SPEKTRA = { pattern: "spektra|\\b467\\d\\d", label: "Amana's Spektra-coated bits" };
 const FREUD_NOTE = "Freud's chart does not separate up-cut, down-cut and compression";
 const ATOZ_NOTE = 'The e-book\'s range for "soft wood & hard plastics" on a Shapeoko';
 
@@ -90,7 +95,7 @@ export const CHART_FIGURES: ChartFigure[] = [
     one(2, 0.125, "Baltic plywood", PLY, 0.004, 0.004, SPEKTRA_NOTE),
     one(2, 0.25, "Baltic plywood", PLY, 0.004, 0.005, SPEKTRA_NOTE),
     one(3, 0.25, "Baltic plywood", PLY, 0.005, 0.005, SPEKTRA_NOTE),
-  ]),
+  ]).map((f) => ({ ...f, only: SPEKTRA })),
   // Amana A4: up-cut and down-cut spiral plunge bits.
   ...rows("amana-a4", "Up-cut / down-cut spiral", SPIRAL, "in/tooth", [
     one(2, 0.125, "Wood/Plywood", PLY, 0.004),
@@ -142,6 +147,27 @@ export const CHART_FIGURES: ChartFigure[] = [
 /** Bit makers' own charts: the figures the starting value and the "below the maker's
  * minimum" warning are measured against. Resellers and the community are shown, not used. */
 export const MAKER_SOURCES: SourceId[] = ["amana-a1", "amana-a2", "amana-a4", "onsrud-o1", "onsrud-o2", "onsrud-o3", "onsrud-o4", "freud"];
+
+/** The bit makers whose charts are carried, as a tool names its maker. */
+export type MakerId = "amana" | "onsrud" | "freud";
+export const MAKERS: { id: MakerId; label: string }[] = [
+  { id: "amana", label: "Amana Tool" },
+  { id: "onsrud", label: "Onsrud" },
+  { id: "freud", label: "Freud" },
+];
+
+/** Whose chart a maker source is. */
+export function makerOf(src: SourceId): MakerId | null {
+  if (src.startsWith("amana-")) return "amana";
+  if (src.startsWith("onsrud-")) return "onsrud";
+  if (src === "freud") return "freud";
+  return null;
+}
+
+/** Does a bit maker's figure count for this bit (a Spektra-only row counts for Spektra bits)? */
+export function figureCounts(f: ChartFigure, toolName: string): boolean {
+  return MAKER_SOURCES.includes(f.src) && (!f.only || new RegExp(f.only.pattern, "i").test(toolName));
+}
 
 /** A figure in inches per tooth. */
 export function inPerTooth(v: number, unit: ChartFigure["unit"]): number {

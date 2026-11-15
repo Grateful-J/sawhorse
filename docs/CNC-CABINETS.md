@@ -17,11 +17,12 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 8. [Set up the CAM job](#set-up-the-cam-job)
 9. [Job sheet and part labels](#job-sheet-and-part-labels)
 10. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
-11. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
-12. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-13. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-14. [What is kept with the model](#what-is-kept-with-the-model)
-15. [Limits](#limits)
+11. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
+12. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
+13. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
+14. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+15. [What is kept with the model](#what-is-kept-with-the-model)
+16. [Limits](#limits)
 
 ## Why this exists
 
@@ -49,7 +50,7 @@ On a 4 x 4 bed, two more problems come up: a run of cabinets needs a base, and s
 7. **Save the files.** Click **CNC files**. You get one DXF per sheet, in millimetres, with the sheet's lower-left corner at 0,0. This Base is four sheets, so four files: the door, two sheets of carcass parts, and the back.
 8. **Cut.** Open each file in your CAM program and give each layer its toolpath ([Set up the CAM job](#set-up-the-cam-job)). Cut one small part first ([Cut one small part first](#7-cut-one-small-part-first)).
 
-Before cutting real plywood, do [Set up your shop once](#set-up-your-shop-once): the defaults assume plywood that measures exactly 23/32 in and a 1/4 in bit.
+Before cutting real plywood, do [Set up your shop once](#set-up-your-shop-once): the defaults assume plywood that measures exactly 23/32 in and a 1/4 in bit. Then prove the setup on small pieces ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)): all four tests together use about a third of the plywood of one Base (9.9 of 30.1 sq ft).
 
 ## Set up your shop once
 
@@ -96,7 +97,7 @@ In the cabinet panel's **7 · CNC** group:
 | **Bit diameter** | 1/4 in (6 mm) | 1/8 in (3 mm) to 1/2 in | The end mill you cut the dados and profiles with. Rail corners are notched the dado stop plus one bit diameter deep, so the round end the bit leaves in a blind dado never meets a square shoulder. Dados, grooves and holes narrower than the bit are listed in **8 · Cuts and holes** as **Change bit**, to cut with a smaller tool. | You use a different bit. |
 | **Joint clearance** | 0.008 in (0.2 mm) | 0 to 1 mm (0.04 in) | Added to every dado and groove over the stock's thickness. | Test joints are too tight (raise it) or sloppy (lower it). |
 
-To find your clearance, cut one test dado in a scrap, then try the plywood in it. A part that needs a mallet wants about 0.004 in (0.1 mm) more. One that wobbles wants less.
+To find your clearance, cut the **joint ladders** ([Test cuts](#joint-ladders)): five dados a step apart in a strip of the real sheet, and **Set Joint clearance** to the one the plywood slides into by hand.
 
 ### 4. Space the parts for the bit
 
@@ -214,6 +215,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | Check | A warning. Act on it before you cut: the row says what to change. |
 | Not drilled | Left out of the files, with the reason (inset hinge plates and runner screws). |
 
+**9 · Test cuts** makes small pieces that prove the setup before the real sheet: a machine check, joint ladders, a mini drawer and a mini door ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)).
+
 ### Edit a cabinet
 
 - **Change the one you just made:** it is selected and the panel edits it. Every change rebuilds it in place, with one undo step (Ctrl+Z) per change and no button to press.
@@ -329,7 +332,7 @@ Click **CNC files**. If something is wrong, Sawhorse asks first in **The nesting
 - **Parts on no stock** or the wrong stock: fix them in **Stock…** first.
 
 Two things to know about these questions:
-- **The spacing check reads your profile bit.** Choose it in **CNC setup** > **Tools** (**Profile bit**). The check passes when Kerf is the bit's diameter plus 1/16 in or more: 5/16 in for a 1/4 in bit, 3/16 in for a 1/8 in bit. With no profile bit chosen it assumes 1/4 in and says so. It does not read the cabinet panel's **Bit diameter**, which sizes the joints. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type, and does not offer **Use CNC spacing**.
+- **The spacing check reads your profile bit.** Choose it in **CNC setup** > **Tools** (**Profile bit**). The check passes when Kerf is the bit's diameter plus 1/16 in or more: 5/16 in for a 1/4 in bit, 3/16 in for a 1/8 in bit. With no profile bit chosen it assumes 1/4 in and says so. It does not read the cabinet panel's **Bit diameter**, which sizes the joints. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type, and does not offer **Use CNC spacing**. Kerf goes up to 1/2 in, so a bit wider than 7/16 in cannot be spaced at all: the question says so and names the largest bit that can.
 - **A part drawn at a thickness its sheet is not** (more than 0.1 mm apart) is asked about when the file holds machined cuts: a pocket, a hole, a cutout or a notch somewhere. The line reads, for a cabinet drawn at 3/4 in on 23/32 in plywood: "drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4 (23/32 in), a sheet 1/32 in thinner: joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut". Take it seriously, and fix it before you save. A file of plain rectangles has nothing sized to the thickness and is not asked about.
 
 You get one DXF for each sheet the router cuts (and for each board, when the model has solid-lumber parts such as a lumber base frame), ready for one CAM job per sheet:
@@ -415,7 +418,7 @@ With plywood that has one good face, lay the door sheets good face down, and cho
 
 ### 7. Cut one small part first
 
-A test dado ([Enter your bit and joint clearance](#3-enter-your-bit-and-joint-clearance)) checks the fit, not the job. Before the first full sheet:
+The [test cuts](#test-cuts-prove-the-setup-before-the-real-sheet) check the machine, the fit and the hardware. Before the first full sheet, check the job too:
 1. In the CAM program, toolpath one small part of the real file. A base cabinet's rear stretcher (4 x 23 in in the 24 in Base) has an outline and a groove.
 2. Cut it from an offcut of the same plywood, set up as you will set up the sheet.
 3. Measure it: the length and width against the Cut list, the groove's width and depth against **8 · Cuts and holes**.
@@ -491,13 +494,13 @@ The PDF's last pages are one label per part on the router's sheets, sheet by she
 ## Feeds, speeds and your bits
 
 **CNC setup…**, in the Nesting section beside **Stock…**, gives you a place to start: a dial setting, a feed and a depth per pass for your bit in your material. Treat each value as a starting point, never the answer:
-- the bit makers' own charts disagree with each other by 3 to 5 times for the same job;
+- the bit makers' own charts disagree with each other: the research found them 3 to 5 times apart for a 1/4 in compression bit, and the panel works out the spread for your bit and material;
 - every one of those charts is written for an industrial machine at 18,000 RPM;
 - Carbide 3D publishes no feeds and speeds for the Shapeoko 5 Pro on the web, and no maximum feed.
 
 The number that suits your bit, your sheet and your machine comes from a test cut in scrap ([Find your number](#find-your-number)).
 
-Every built-in number shows where it comes from and how far to trust it. Hover the small label beside it for the document, the page and the address. The labels mean:
+Every built-in number shows where it comes from and how far to trust it. Click or tap the small label beside it (or Tab to it and press Enter) for the document, the page and the address. The labels mean:
 - **high**: a maker's chart, manual, or spec page;
 - **medium**: a maker's blog, Carbide 3D staff on the forum, or a reseller;
 - **low**: forums and the community e-book.
@@ -547,23 +550,23 @@ Your bits, each editable. Sawhorse starts you with three:
 
 The compression bit is that one Amana bit. Other compression bits have other up-cut lengths. If yours is not a 46170, type its own: the maker's drawing gives it, or measure from the tip to where the flutes change direction.
 
-Each bit has a name, a type (up-cut, down-cut, compression, end mill or O-flute), a cutting diameter, flutes, a shank, a cutting length, and for a compression bit its up-cut length and tolerance. A size left empty is unknown, and Sawhorse then says what it cannot check: a collet for an unknown shank, a hole deeper than unknown flutes. A size you type over loses its source label, since it is now yours. **Built-in bits** puts the three back.
+Each bit has a name, a type (up-cut, down-cut, compression, end mill or O-flute), a **Maker** (Amana Tool, Onsrud, Freud, or unknown: the chipload is then checked against that maker's own figures), a cutting diameter, flutes, a shank, a cutting length, and for a compression bit its up-cut length and tolerance. A size left empty is unknown, and Sawhorse then says what it cannot check: a collet for an unknown shank, a hole deeper than unknown flutes. A size you type over loses its source label, since it is now yours. **Built-in bits** puts the three back, after asking: bits you added or changed are lost.
 
 **Profile bit** is the bit you cut the outlines with. The spacing check before **CNC files** saves reads its diameter ([Save the CNC files](#save-the-cnc-files)). With none chosen, it assumes 1/4 in. Each job sheet gives the outlines this bit, and the other layers the bits set in **Job sheet** ([Which bit each layer gets](#which-bit-each-layer-gets)).
 
 ### Feeds
 
 Choose a **Bit**, a **Material** and a **Cut**:
-- **Materials:** raw MDF, melamine / TFL on MDF, HPL on MDF, Baltic birch, and laminate-faced Baltic birch (read from the Baltic birch rows, as the research does).
+- **Materials:** raw MDF, melamine / TFL on MDF, HPL on MDF, Baltic birch, and laminate-faced Baltic birch. Laminate-faced Baltic birch reads Amana's and Freud's plywood rows, as the research's starting values do, but Onsrud's row for it is its Laminated Plywood sheet (.015–.017 in/tooth for a 1/4 in compression bit), not the Hard Plywood sheet plain Baltic birch reads (.014–.016); the research could not tell whether that sheet means laminate-faced plywood.
 - **Cuts:** a profile through the sheet, a pocket or dado, or a hole pocketed with an end mill. For a hole, pick its layer (`DRILL_D35MM_13MM`, `DRILL_D5MM_10MM` and the others from [the layer table](#2-give-each-layer-its-toolpath)).
-- **Optional:** the sheet's thickness, the pocket's depth, your depth per pass, a compression bit's first pass, a dial of your own, and **Check a feed** to check a feed from Carbide Create.
+- **Optional:** the sheet's thickness, the pocket's depth, your depth per pass, a compression bit's first pass, a dial of your own, and **Check a feed** to check a feed from Carbide Create. With a compression bit and no first pass typed, your depth per pass is the first pass, and must be deeper than the up-cut part.
 
 It shows:
-- **Chipload:** the starting value and where it comes from, then each maker's figure for this bit and material, with the lowest and highest and how far apart they are.
-- **Speed:** the dial and its RPM. **Automatic** picks the dial nearest the research's speed for this job, then turns it down while the feed would be over the machine's warning. Pick a dial yourself and the feed follows it. On the Compact Router the panel also shows what Carbide's other table says at that dial.
-- **Feed** = RPM × flutes × chipload, in IPM and mm/min (Amana, Onsrud, Freud). A pass deeper than the bit's diameter takes 25% off the feed, and one deeper than twice the diameter takes 50% off (the same three charts).
+- **Chipload:** the starting value, where it comes from and which rule of the research chose it, then each maker's figure for this bit and material, with the lowest and highest and how far apart they are. Amana's Spektra rows are shown for every compression bit but count only for a bit named Spektra (or an Amana 467xx).
+- **Speed:** the dial and its RPM. **Automatic** picks the dial nearest the research's speed for this job, then turns it down while the feed would be over the machine's warning. Pick a dial yourself and the feed follows it. On the Compact Router the panel also shows what Carbide's other table says at that dial, and a dial outside the range the maker states (the shop page's dial 1 and 6) is noted.
+- **Feed** = RPM × flutes × chipload, in IPM and mm/min (Amana, Onsrud, Freud). A pass deeper than the bit's diameter takes 25% off the feed, and one deeper than twice the diameter takes 50% off (the same three charts). Under the feed, each of its inputs (the chipload, the dial, any of those cuts) is listed with its source, or as yours, and the feed's confidence is the lowest of them: the 1/8 in end mill's feed is low, because its chipload is.
 - **Plunge and ramp:** ramp at the feed ÷ flutes (Amana; high). ToolsToday says many users plunge or ramp at about half the feed (medium). The Shapeoko e-book says a straight plunge at 30–40% of the feed (low). A forum user ramps in at about 20° (low). No bit maker's ramp angle was found.
-- **Depth per pass**, with its confidence. For a compression bit, the first pass first.
+- **Depth per pass**, with its confidence. For a compression bit, the first pass first. The community's half-diameter rule is for later passes, never for a compression bit's first pass.
 - **Stepover**, for pockets and holes: roughing 40–100% of the diameter, finishing 5–10% (the e-book; low). No bit maker's stepover was found.
 
 The Shapeoko figures for depth per pass, stepover and ramp are all community advice, low confidence: no bit maker and no Carbide 3D page gives them. The panel says so under the results.
@@ -584,7 +587,10 @@ How the research chose them:
 - **Two rows are exceptions.** HPL is derived, as the table says. The 1/8 in end mill starts below every bit maker's figure (Amana's .0040, Freud's .003), from the e-book's range for a light machine. The panel marks that row below the makers on purpose.
 - **The light machine is allowed for in the depth per pass**, not in the chipload.
 - **On another router**, Automatic takes the dial nearest the same RPM. On a Makita, the Baltic birch row is dial 3, 17,000 RPM: 17,000 × 2 × .0031 = 105 IPM.
-- **For a bit with no row** (a 3-flute bit, a 1/8 in down-cut), the start is the lowest bit maker's figure, at the dial nearest 18,000 RPM, the charts' own speed.
+- **For a bit with no row**, the panel says which rule it follows:
+  - a 1/8 in bit starts at half of Amana's printed figure (§8b, "on a light machine, start at half of it"), but never under the 0.001 in/tooth rubbing floor the research keeps to (§8a). A 1/8 in down-cut in Baltic birch: half of Amana's .0040 is .002, 73 IPM at dial 3.
+  - any other bit starts at the lowest bit maker's figure (§8a, rule 1). A 1/4 in end mill in Baltic birch: Amana's .0050.
+  - it runs at the dial §8a uses for its nearest row (the same diameter and material, the same type, else an up-cut, down-cut or end mill row for the others): the 1/4 in end mill at dial 2, 135 IPM. With no near row, near 18,000 RPM, the charts' own speed (§8b).
 
 ### The warnings
 
@@ -592,15 +598,18 @@ Each warning says **Stop** (do not cut like this) or **Check** (look before you 
 
 | Warning | When | Why |
 |---|---|---|
-| Compression first pass (Stop) | A compression bit's first pass, or the whole cut (the pocket's depth, the sheet's thickness, the hole's depth), is not deeper than its up-cut length plus its tolerance | The up-cut part lifts the top face and it chips. A 1/4 in dado is shallower than the 46170's 0.2756 in up-cut part: cut dados with the down-cut bit. |
-| Feed over the machine's warning (Check) | Over 200 IPM on the Shapeoko (low confidence), or over the figure you typed for a custom machine | Turn the dial down: the feed drops and the chipload stays the same. |
-| Chipload under the makers' (Check) | Under the lowest bit maker's figure for this bit and material (lowered with the feed for a deep pass) | The bit rubs, heats the edge and dulls. Under 0.001 in/tooth, the commonly cited minimum (low), it is a Stop. |
-| Chipload over the makers' (Check) | Over every bit maker's figure | The bit can break. |
-| Collet (Stop) | The shank is larger than the router takes (1/4 in on the Compact Router), or no listed collet is its size (a 6 mm shank in a 1/4 in collet) | A bit in the wrong collet can slip or fly out. An unknown shank, or a router whose collets were not found, is a Check. |
+| Compression first pass (Stop) | A compression bit's first pass (with none typed, your depth per pass), or the whole cut (the pocket's depth, the sheet's thickness, the hole's depth), is not deeper than its up-cut length plus its tolerance | The up-cut part lifts the top face and it chips. A 1/4 in dado is shallower than the 46170's 0.2756 in up-cut part: cut dados with the down-cut bit. For a sheet no thicker than the up-cut part, the down-cut keeps the top face but can chip the bottom face: cut it on a flat spoilboard. |
+| Pocket depth needed (Check) | A compression bit in a pocket, with no pocket depth typed | Sawhorse cannot judge the up-cut rule without it. Dados shallower than the up-cut part want the down-cut bit. |
+| Feed over the machine's warning (Check) | Over 200 IPM on the Shapeoko (low confidence), or over the figure you typed for a custom machine; also a compression bit's first pass on its own | Turn the dial down: the feed drops and the chipload stays the same. |
+| Chipload under the makers' (Check) | Under the lowest bit maker's figure for this bit and material (lowered with the feed for a deep pass) | The bit rubs, heats the edge and dulls. Where the starting value itself is under it (HPL, the 1/8 in end mill), the warning gives that row's own reason and confidence. |
+| Rubbing (Stop or Check) | Under 0.001 in/tooth, the commonly cited minimum (low), for the cut or a compression bit's first pass. The same source says it may drop to 0.0005 for 1/8 in and smaller bits, so for those it is a Check down to 0.0005 and a Stop below. | The bit rubs instead of cutting: it heats, dulls, and wood can burn. |
+| Chipload over the makers' (Check) | Over the bit's own maker's figure for this material (the 46170 is Amana's: .0031 in Baltic birch), or for a bit of unknown make, over the most conservative maker's highest figure, named | The bit can break or the cut tear. Onsrud's figures run far higher, but for Onsrud's own bits. |
+| Collet (Stop) | The shank is larger than the router takes (1/4 in on the Compact Router), or no listed collet is its size (a 6 mm shank in a 1/4 in collet) | A bit in the wrong collet can slip or fly out. An unknown shank, a router whose collets were not found, or a router whose RPM you typed (with no shank limit typed in a Custom machine), is a Check. |
 | Hole size (Stop) | The bit is not smaller than the hole | Only a bit smaller than the hole can pocket it. A 1/4 in bit cannot make a 5 or 6 mm hole: use the 1/8 in end mill. |
 | Hole depth (Stop) | The flutes are shorter than the hole is deep (for a hole through the sheet, the sheet's thickness) | Past its flutes the bit's shank rubs. An unknown flute length, or an unknown thickness for a through hole, is a Check. |
-| Forstner or hinge-boring bit (Stop) | A bit named Forstner or hinge-boring | Amana's 35 mm hinge-boring bit is rated 8,000 RPM at most and "Not to be used in … hand held routers"; Würth runs a Forstner over 35 mm at 900 rpm in MDF. The Compact Router's slowest dial is 10,000 or 11,000 RPM. Pocket the 35 mm cups with an end mill: the panel says so for that layer. |
-| Up-cut on a laminate face (Check) | An up-cut bit or an end mill in melamine, HPL or laminate-faced Baltic birch | An up-cut bit lifts the face and chips it. Use a down-cut or a compression bit for a finished face. |
+| Forstner or hinge-boring bit (Stop) | A bit whose name says Forstner, hinge, cup or 35 mm | Amana's 35 mm hinge-boring bit is rated 8,000 RPM at most and "Not to be used in … hand held routers"; Würth runs a Forstner over 35 mm at 900 rpm in MDF. The Compact Router's slowest dial is 10,000 or 11,000 RPM. Pocket the 35 mm cups with an end mill: the panel says so for that layer. |
+| Up-cut on a laminate face (Stop) | An up-cut bit in melamine, HPL or laminate-faced Baltic birch. An end mill there is a Check: it chips the same way if it is an up-cut spiral. | The research: never on a laminate top face. An up-cut bit lifts the face and chips it. Use a down-cut or a compression bit for a finished face. |
+| Down-cut through a laminate face (Check) | A down-cut bit cutting a profile or cutout through melamine, HPL or laminate-faced Baltic birch | It pushes the skin off the bottom face, where nothing supports it. Cut through-profiles in a faced sheet with a compression bit, on a flat spoilboard. |
 | Too deep (Stop) | A pass deeper than 3 × the bit's diameter | No chart goes that deep. |
 
 ### Find your number
@@ -630,6 +639,128 @@ The research looked and found no source it could open for these, so Sawhorse giv
 - a bit maker's ramp angle, stepover, or ratio of end mill to hole for wood;
 - a percentage by which to derate a bit maker's chart for a hobby machine;
 - an HPL chipload from Onsrud or Amana (the HPL factor is Rennie's alone).
+
+## Test cuts: prove the setup before the real sheet
+
+One wrong number in the setup costs a whole cabinet: a dado 0.1 mm tight in every joint, runner holes 3 mm off, a machine that cuts 0.3% short. Each of these shows on a small piece as plainly as on a cabinet. The cabinet panel's **9 · Test cuts** makes four such pieces from the settings you will cut with.
+
+A test proves something only if it is made the way the cabinet is made, so:
+- the **mini drawer** and the **mini door** are cabinets, planned by the generator from your settings. Only what makes them smaller is changed: the width, the height (and the door's depth), one drawer or one door, no toe kick, no nailers, two stretchers for a top where they fit. The mini drawer keeps your cabinet's runner and depth, so its runner holes, its box and its hook holes are your cabinet's, coordinate for coordinate.
+- the **machine check** and the **joint ladders** are coupons: each dado is sized by the rule the cabinet's dados are (the stock plus **Joint clearance**), as deep as the cabinet's, and reaches the DXF on the same layers.
+- a test the generator would refuse is refused, with its message.
+
+### What each one costs, against a cabinet
+
+For a Base · door and shelf and a Drawer base · 3 drawers with the starting sizes in an inch document (metric sizes in brackets). "Plywood" is the area of the parts, before the waste between them; a 4 x 4 sheet is 16 sq ft.
+
+| Test | Size | Parts | Plywood | Against a cabinet | Proves |
+|---|---|---|---|---|---|
+| Machine check | 4 x 4 in (100 x 100 mm) | 1 | 0.11 sq ft | 0.4% of a Base (30.1 sq ft) | the machine's travel, its squareness, the bit's real diameter, Z zero |
+| Joint ladders | 7.44 x 4.16 in, and two 4.94 x 4.16 in (188.5 x 103 and 128.5 x 103 mm) | 3 | 0.50 sq ft | 1.7% of a Base | the joint clearance in the sheets you will cut |
+| Mini drawer | 10 x 4 3/4 x 23 1/4 in (250 x 120 x 560 mm) | 12 | 6.0 sq ft | 14% of a Drawer base (42.1 sq ft) | the runner's holes, the box's size, the rear hooks, the locking devices |
+| Mini door | 12 x 10 x 5 in (300 x 260 x 130 mm) | 7 | 3.3 sq ft | 11% of a Base | the hinge cups and plates, the reveal, the shelf pins |
+
+All four come to 9.9 sq ft of parts: under two thirds of one 4 x 4 sheet, against 30 sq ft for one Base and 42 for one Drawer base. The sizes follow your settings (the mini drawer is as deep as your cabinet), and the panel says each test's own figure against the cabinet it is showing.
+
+### The order that saves the most
+
+1. **The machine check, on scrap MDF.** Nothing else is worth cutting until the machine moves true, the bit is the size the CAM program thinks and Z is zeroed where the depths are measured from.
+2. **The mini door and the mini drawer, in cheap MDF, for function.** Where the hinge cups, plates, runner screws and hook holes go does not depend on the sheet. Buy the hardware first: two hinges and plates, four shelf pins, the runner pair and its locking devices.
+   - The tests are drawn at the thicknesses in **4 · Materials**, and MDF is rarely the thickness of your plywood (the panel starts at 23/32 in, 0.719 in, for "3/4" plywood): measure it. Cut from thicker MDF as drawn, the dados are too tight. So, with no cabinet selected, type the MDF's measured thicknesses, add the tests, then type your plywood's back before the next cabinet. Or cut these two from plywood offcuts.
+3. **Then only the joint ladders, in the real sheet goods.** Sheet thickness varies by sheet and by lot, and the clearance is the one number that must be found in the sheets you will cut. The strip left after breaking a sheet down for the bed is free test material.
+4. **Cut the ladders again when a new lot of plywood arrives.**
+
+### Add a test, and cut only the tests
+
+1. Open **9 · Test cuts** and pick the test. The panel says what it proves, the stock to cut it from, what to measure with the value expected and what to change when it is off, then lists its cuts (for the mini drawer and door, the generator's own rows from **8 · Cuts and holes**) and how much plywood it is against the cabinet the panel shows.
+2. Click **Add the … to the model**. The test goes beside the model as its own assembly, named like **Test cuts · Mini drawer**, on the tag **Test cuts**, in one undo step. Its parts are on the cabinet's materials (Cabinet plywood, Drawer box plywood and so on), so they nest on the same sheets. The selection stays where it was, so the panel keeps the cabinet it was showing.
+
+A test nests with everything else in the model. To choose:
+- **One test alone** (the joint ladders for the real sheets, say): hide the cabinets, the base frames and the other tests (select them in the Outliner, right-click, **Hide**), then tick **Visible only** at the top of the Cut list. Nesting and **CNC files** then take only what is shown. Show the rest again afterwards.
+- **A test cut from MDF:** its parts are on the cabinet's plywood materials, so they nest on your plywood sheets. In **Stock…** add your MDF sheet at its measured thickness, then select the test's rows in the Cut list (**By assembly** puts them under the test's name), right-click, **Stock / material…**, and pick the MDF sheet.
+- **Only the cabinets:** in the Tags pane, click the eye of **Test cuts**, and tick **Visible only**.
+
+With **Visible only** off, hidden parts are nested too. A test is not rebuilt when the settings change: delete it and add it again.
+
+### Machine check
+
+A 4 in (100 mm) square of carcass stock, cut out by its outside profile, with a slot one bit wide and 2 in (50 mm) long, cut in one pass, 1/8 in (3 mm) deep, and a 1 1/4 in (30 mm) square pocket 1/4 in (6 mm) deep. Cut it from any flat scrap at least 5 x 5 in (130 x 130 mm). It is drawn in Cabinet plywood at the carcass thickness, so it nests on that sheet: type the scrap's measured thickness as the CAM job's.
+
+The slot is on a pocket layer of its own (`POCKET_3.18MM`, `POCKET_3MM` in a metric document). Pocket it with your bit: being exactly one bit wide, it is one pass. If the CAM program makes no toolpath for a shape as wide as the tool, cut this slot as a profile on its centre line. That is for the slot only: never cut a joint ladder that way, since every dado would come out one bit wide and the pick would mean nothing.
+
+Measure in this order:
+
+| Measure | Expected | If it is off |
+|---|---|---|
+| The slot's width, with calipers | the **Bit diameter**: 0.250 in (6.35 mm); 6 mm in a metric document | The slot is your bit's real cutting width, runout included. Type it as the CAM tool's diameter and as **7 · CNC** > **Bit diameter**, then cut the square again before you judge it. |
+| The square, the side along X and the side along Y (mark which ran along X before you unclamp it) | 4.000 in (101.6 mm); 100 mm | For gross errors only. 25.4 times too big or too small: the CAM program's units. Several millimetres off: the CAM job's units or scale, or the machine (its belts or drive); check them with your machine maker's support documents (Carbide 3D's for a Shapeoko). An outside profile cut with a tool diameter typed larger than the bit's comes out larger by the difference, so settle the slot first. A small difference at 100 mm is measurement and the bit's deflection, not scale: do not change the machine's calibration from it. |
+| Both diagonals | 5.657 in (143.68 mm); 141.42 mm; the two equal | Unequal by clearly more than you can measure: the axes are not square. Each 0.1 mm between the diagonals is 0.033 in (0.85 mm) out of square across a 4 ft sheet (0.86 mm at 100 mm): square the machine as its maker's documents say. |
+| The pocket's depth, with a depth gauge from the top face | 0.250 in (6.35 mm); 6 mm | Z zero. Zero Z on the top of the stock for pockets, or, with Z zeroed on the bed, type the stock's measured thickness in the CAM job: a depth off by x means a thickness off by x. |
+| The slot's depth | 0.125 in (3.18 mm); 3 mm | As the pocket. |
+
+**The scale on a long cut.** A 100 mm part cannot show a scale error smaller than you can measure on it. To check the scale, measure a cut of 500 mm or more against the file: the mini drawer's sides are your cabinet's depth (23 1/4 in, 590.55 mm, with the starting sizes), and its measurement table lists their length.
+
+The squareness figure is geometry: the difference between the diagonals of a square, divided by a diagonal, is how far out of square the axes are per unit of length.
+
+### Joint ladders
+
+One coupon per joint whose stock differs:
+
+| Coupon | Cut from | Tried with | Dados | Made when |
+|---|---|---|---|---|
+| Dado ladder | the carcass sheet | an offcut of the same sheet | the carcass stock plus each step, **Dado depth** deep | **Joinery** is Blind dados |
+| Back groove ladder | the carcass sheet | a piece of the back plywood | the back stock plus each step, **Groove depth** deep | **Back** is In a groove and the back's inset from the rear edge is not 0: **Back inset**, or with **Rear nailers** at least the nailer's thickness plus the clearance, so never 0 (at 0 the groove is a rabbet: nothing to fit) |
+| Drawer bottom ladder | the drawer box sheet | a piece of the back plywood | the back stock plus each step, half the box stock deep, at most 1/4 in, as the drawer's groove | always |
+
+Each has five dados at five clearances a step apart: one under **Joint clearance** and three over it, 0.004 in apart in an inch document (0.004, 0.008, 0.012, 0.016, 0.020 in at the starting 0.008) and 0.1 mm apart in a metric one (0.1 to 0.5 mm at the starting 0.2), moved to stay within the panel's 0 to 1 mm. The panel lists every dado's clearance and width.
+
+The labels are on the LABELS layer, which is not cut, so the wood names each dado: the dados run 2 in (50 mm) in from the coupon's rear edge and stop behind a strip, and in front of dado *k* are *k* round dimples, 1 mm wider than the bit and 2 mm deep. Dado 3 is the one with three dimples whichever way the coupon lies. The dimples are on a drill layer of their own (`DRILL_D7.35MM_2MM` with a 1/4 in bit, `DRILL_D7MM_2MM` with a 6 mm one): drill them with the same bit, or pocket them. Where a dado would be as wide as a dimple, the dimples are made a little wider than the widest dado instead.
+
+**The bit for each ladder.** A dado narrower than **Bit diameter** cannot be cut with that bit, as **8 · Cuts and holes** says for the cabinet's own grooves (**Change bit**). With the starting inch sizes the back groove and drawer bottom ladders' dados are 0.223 to 0.239 in wide, under a 1/4 in bit. The panel names each such ladder and the bit it needs ("narrower than 0.223 in (dado 1): 1/8 in (3 mm) is"). Cut their pocket layers with that smaller end mill, its diameter typed in the CAM program, as pockets.
+
+1. Cut the ladders from the real sheets, as the cabinets will be cut.
+2. Slide the mating stock into each dado. Under **Which dado fits**, pick for each ladder the dado it goes into with hand pressure: no mallet, no wobble.
+3. When the ladders agree, click **Set Joint clearance to …**. With a cabinet selected it goes to that cabinet, rebuilt with it in one undo step; with none, to new cabinets. Cabinets already made keep their own: select each and set it in **7 · CNC**. A cabinet that is not rebuilt from the panel (made by an older version, scaled by hand), or whose rebuild the generator refuses at that clearance, keeps its build, and the message says so and why.
+
+**A dado that fit is a width.** Each pick names a dado by the width it was cut at, and the clearance is that width less the mating stock as **4 · Materials** says now. Measure a sheet again and retype it, and the clearance follows: a dado cut 23/32 + 0.012 = 0.731 in wide that fits is a clearance of 0.006 in over a carcass retyped as 0.725 in. The panel says when a stock has changed since the ladders were cut. A clearance under 0 or over 1 mm is held to the panel's limit and said as a warning: measure the sheet again.
+
+What else the ladders say:
+- **They disagree** (the dado ladder fits at 0.012 in, the back's at 0.008): one clearance serves every dado and groove, so the difference is in the stock. Measure the sheets again, type what they measure in **4 · Materials**, and cut the ladders again. The two back-plywood ladders try the same stock in grooves of the same widths, so they should agree; when only those two disagree, the panel points at the two jobs' groove toolpaths (the bit, its diameter in the CAM program, Z zero), not the stock.
+- **All too tight** or **All loose**: the sheet is thicker or thinner than you typed by more than the steps reach. Measure it again and cut the ladder again.
+- **Every dado wider (or narrower) than listed by the same amount**: the bit is not the size the CAM program thinks (the machine check's slot).
+
+The last ladders added are kept in the document as cut (each dado's width and the mating stock then), with the assembly they were added as. A pick names the dado that was cut even after the clearance or the stock has changed; the panel says when the ladders in the model were cut at other steps than Add would make now. Undo the Add or delete the ladders, and the picks no longer name them: the panel says no ladders were added and names the dados Add would make.
+
+### Mini drawer
+
+One drawer with your cabinet's runner (with **Length** on Automatic, the one your cabinet's inside depth takes), depth, catalogue, stock, clearance, front and pulls, in the narrowest and shortest opening the generator accepts: Blum's locking devices need 170 mm inside the box, and the box at least 60 mm tall. A cabinet with no drawers is planned with a drawer to find the runner. Blum sizes the box from the opening (inside, the opening less 42 mm), so a narrow box tests the same fit. For a Drawer base with the starting inch sizes it is 10 x 4 3/4 x 23 1/4 in on a 563H5330B (21 in) runner; in millimetres 250 x 120 x 560 on a 560H5200B (520 mm).
+
+| Measure | Expected | If it is off |
+|---|---|---|
+| The runner | the part number the panel names, your cabinet's | Buy that one: another length has other screw holes and another box. |
+| The drawer box's outside width | as the panel says (the opening less 42 mm, plus two sides) | Tight or loose on the runners: measure the drawer box stock again (**4 · Materials**). |
+| The box's length | the runner's length (Blum Inc.), or the runner less 10 mm (Blum Europe) | The CAM job's scale (the machine check). |
+| The box's height | the opening less Blum's deduction (21 mm for TANDEM 563H), rounded down | |
+| Each side's length (a long cut: the machine's scale) | your cabinet's depth | Off by more than you can measure: the CAM job's units or scale, or the machine (its belts or drive); check them with your machine maker's support documents. |
+| The runner screw holes and rear hook holes | the rows the panel lists, from **8 · Cuts and holes** | X and Y zero, or the scale (the machine check). With inset fronts the runner screw holes are listed and not drilled: place the runners by Blum's inset setback, by hand. |
+| The drawer in its runners | runs in and out freely, closes fully, the front's gaps even | Fit the locking devices and adjust them as Blum's instructions say. |
+
+### Mini door
+
+One door with your front type (overlay or inset), gap, boring distance, hinge inset (**From top, bottom**), pull and hinge side (a pair's left door), and one adjustable shelf on pins. It is 12 in (300 mm) wide, or your cabinet's width if that is less, so a hand and a screwdriver reach the plates; then as short and as shallow as the generator accepts with two rows of pins, so the shelf sits on four. For a Base · door and shelf with the starting sizes it is 12 x 10 x 5 in (300 x 260 x 130 mm).
+
+| Measure | Expected | If it is off |
+|---|---|---|
+| Each hinge cup's centre from the door's hinge edge | 17.5 mm plus the **Boring distance**: 22.5 mm at 5 mm | The door turned or mirrored in the CAM program, or X and Y zero. |
+| The cups' depth | 13 mm | Z zero or the CAM job's thickness (the machine check). |
+| The cups' centres from the door's ends | **From top, bottom**, unless **8 · Cuts and holes** says one moved to clear a rail | Off at both ends the same way: the door turned end for end. |
+| The mounting plate holes (overlay) | 5 mm, 11.5 mm deep, 32 mm apart, 37 mm from the side's front edge. With inset fronts they are listed and not drilled: place the plates by Blum's inset tables | X and Y zero. |
+| The gap round the closed door | where the planned door's edge is: overlay, half the reveal gap at each edge of the cabinet, or more where the hinge cannot reach that far over the side (the panel gives the planned figure); inset, half the gap all round | Even but wrong (overlay): the boring distance; the Overlay row says which matches. Uneven: the hinges' adjusting screws. |
+| The shelf pins | a 5 mm pin pushes in by hand and the shelf sits flat on four | The end mill that bores the 5 mm holes is not the size the CAM program thinks. |
+
+The test door is made tall enough that no hinge cup is moved off its place to clear the other (a cup moved on the test door but not on yours would prove nothing); only when no height it tries (up to 4 ft over the shortest, or your cabinet's height) does that is a moved cup accepted, and the panel's cuts list then says which moved and why. On a door this short the top and bottom hinges are closer together than the door is wide, and **8 · Cuts and holes** marks it **Check**, as Blum asks for more.
+
+The panel's cuts list for the mini drawer and door is the generator's own, with its last column: what is drilled, and what is listed and not drilled (inset hinge plates and runner screws), and why. What a test proves and what to measure follow what is drilled.
 
 ## Parts too big for the bed: the track saw
 
@@ -738,8 +869,9 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 
 | What you see | What to change |
 |---|---|
-| Joints too tight, parts need a mallet | **7 · CNC** > **Joint clearance** up by 0.004 in (0.1 mm). Re-measure the plywood first: **4 · Materials**. |
-| Joints sloppy | **Joint clearance** down, or re-measure the plywood. |
+| Joints too tight, parts need a mallet | Cut the [joint ladders](#joint-ladders) in that sheet and **Set Joint clearance** to the dado that fits. Re-measure the plywood first: **4 · Materials**. |
+| Joints sloppy | The same: the joint ladders, or re-measure the plywood. |
+| A part the wrong size, or holes in the wrong place | The [machine check](#machine-check): the machine's travel, the bit's diameter in the CAM program, and Z zero. |
 | "Drawn … thick but nested on …" in the status line | The cabinet's thickness and the sheet's actual thickness differ. Make **4 · Materials** and the sheet's **actual** thickness in **Stock…** the same measured number. |
 | The CAM program cuts around two parts as one | **Kerf** is narrower than your bit: click **CNC spacing**, or type a kerf wider than the bit. |
 | Parts at the very edge of the sheet | **Trim** is 0: click **CNC spacing**, or type a trim. |
@@ -766,6 +898,7 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 - The stock library, the nesting settings (kerf, trim, CNC spacing, the track saw) and per-part grain are saved with the model too.
 - The cabinet panel's last settings are kept for the next cabinet. The **By assembly** choice is kept on this device.
 - **CNC setup** (your machine, router and bits, and the profile bit) is kept on this device, not in the model.
+- The clearances of the last joint ladders added are kept in the model, so the ladders' picks name the dados that were cut.
 
 ## Limits
 
@@ -778,3 +911,4 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 - A base frame's dado clearance is fixed at 0.008 in (0.2 mm): it has no field.
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
+- A test cut is not rebuilt when the settings change, and is not edited as a cabinet: delete it and add it again. Nesting only the tests, or only the cabinets, takes hiding the others and **Visible only**.

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SHOP_KEY, defaultShop, loadShop, type Shop } from "../cam/store";
 import { smallNesting } from "../nesting/fixture";
@@ -27,7 +27,9 @@ describe("CNC setup: feeds", () => {
     expect(screen.getByTestId("speed").textContent).toContain("Carbide's other table says 18,000 RPM");
     expect(screen.getByTestId("feed").textContent).toContain("113 IPM (2,874 mm/min)");
     expect(screen.getByTestId("ramp").textContent).toContain("57 IPM");
-    expect(screen.getByTestId("maker-range").textContent).toContain("disagree 3–5×");
+    // The spread is worked out for this bit and material, not a fixed "3–5×".
+    expect(screen.getByTestId("maker-range").textContent).toContain("5.2 times apart");
+    expect(screen.getByTestId("maker-range").textContent).not.toContain("3–5×");
     const rows = within(screen.getByRole("table", { name: "Each maker's figure" })).getAllByRole("row");
     expect(rows.map((r) => r.getAttribute("data-src")).filter(Boolean)).toEqual(expect.arrayContaining(["amana-a1", "amana-a2", "onsrud-o2", "freud", "atoz"]));
     expect(screen.getByTestId("depth").textContent).toContain("deeper than 0.2856 in (7.25 mm)");
@@ -154,7 +156,7 @@ describe("CNC setup: tools", () => {
     expect(screen.getByTestId("depth").textContent).toContain("deeper than 0.3100 in");
   });
 
-  it("adds a bit, refuses one without a diameter, deletes one, and chooses the profile bit", () => {
+  it("adds a bit, refuses one without a diameter, deletes one, and chooses the profile bit", async () => {
     render(<CncSetupDialog units="frac-in" onClose={vi.fn()} tab="tools" />);
     fireEvent.change(screen.getByLabelText("Bit name"), { target: { value: "3/8 in compression" } });
     pick("Bit type", "compression");
@@ -169,8 +171,10 @@ describe("CNC setup: tools", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete 1/8 in end mill" }));
     expect(loadShop().profileTool).toBeNull();
     expect(loadShop().tools.map((t) => t.id)).not.toContain("seed-endmill");
+    const ask = vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Built-in bits" }));
-    expect(loadShop().tools.map((t) => t.id)).toEqual(["seed-compression", "seed-downcut", "seed-endmill"]);
+    await waitFor(() => expect(loadShop().tools.map((t) => t.id)).toEqual(["seed-compression", "seed-downcut", "seed-endmill"]));
+    ask.mockRestore();
   });
 
   it("keeps the shop on this device under its own key, and nothing else", () => {
@@ -185,6 +189,69 @@ describe("CNC setup: tools", () => {
     fireEvent.keyDown(screen.getByRole("dialog", { name: "CNC setup" }), { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("CNC setup: the review's findings", () => {
+  it("a source label is a control you can reach by keyboard or touch, and it opens to the document", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} />);
+    const src = document.querySelector('.cam-src[data-src="amana-a1"]') as HTMLDetailsElement;
+    expect(src.tagName).toBe("DETAILS");
+    const summary = src.querySelector("summary")!;
+    expect(summary.textContent).toContain("high");
+    fireEvent.click(summary);
+    expect(src.open).toBe(true);
+    expect(src.textContent).toContain("Solid-Carbide-Compression-Spirals-v12.pdf");
+  });
+
+  it("the feed shows its own sources and its confidence: the 1/8 in end mill's is low", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} />);
+    pick("Bit", "seed-endmill");
+    const feed = screen.getByTestId("feed");
+    expect(feed.textContent).toContain("low confidence");
+    expect(feed.querySelector('.cam-src[data-src="report8a"]')?.getAttribute("data-conf")).toBe("low");
+    expect(feed.querySelector('.cam-src[data-src="ccr-shop"]')).not.toBeNull();
+    expect(screen.getByTestId("ramp").querySelector('.cam-src[data-src="report8a"]')).not.toBeNull();
+  });
+
+  it("the community's half-diameter is never offered for a compression bit's first pass", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} />);
+    expect(screen.getByTestId("depth").textContent).toContain("never for a compression bit's first pass");
+    type("Depth per pass", "1/8");
+    expect(document.querySelector('[data-warning="compression-first-pass"]')?.getAttribute("data-level")).toBe("stop");
+  });
+
+  it("a compression bit in a pocket with no depth typed says to type it", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} />);
+    pick("Cut", "pocket");
+    expect(document.querySelector('[data-warning="compression-depth-unknown"]')?.textContent).toContain("down-cut");
+  });
+
+  it("Built-in bits and Built-in shop ask before they replace your bits", async () => {
+    const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} tab="tools" />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete 1/8 in end mill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Built-in bits" }));
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(loadShop().tools.map((t) => t.id)).not.toContain("seed-endmill");
+    fireEvent.click(screen.getByRole("button", { name: "Built-in shop" }));
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+    expect(loadShop().tools.map((t) => t.id)).not.toContain("seed-endmill");
+    ask.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Built-in bits" }));
+    await waitFor(() => expect(loadShop().tools.map((t) => t.id)).toContain("seed-endmill"));
+    ask.mockRestore();
+  });
+
+  it("a bit names its maker: the 46170 is Amana's, and a maker can be set", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} tab="tools" />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Amana 46170, 1/4 in compression" }));
+    expect((screen.getByRole("combobox", { name: "Maker" }) as HTMLSelectElement).value).toBe("amana");
+    fireEvent.click(screen.getByRole("button", { name: "Edit 1/4 in down-cut" }));
+    pick("Maker", "onsrud");
+    fireEvent.change(screen.getByLabelText("Shank"), { target: { value: "1/4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save bit" }));
+    expect(loadShop().tools[1]).toMatchObject({ maker: "onsrud", shank: 0.25 * 0.0254 });
   });
 });
 

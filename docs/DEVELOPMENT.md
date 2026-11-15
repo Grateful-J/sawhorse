@@ -300,6 +300,8 @@ node scripts/capture-lane09.mjs --url http://localhost:5201 --out ../_captures
 | The API for other code (a job sheet) | `src/cam/shop.ts`: `loadShop`, `machineOf`, `routerOf`, `shopTools`, `profileBit`, `feedsFor(tool, material, op, opts?)`, `feedsForLayer(tool, material, layer)`, `onShop` |
 | The dialog | `src/components/CncSetupDialog.tsx`, opened from `NestingSection.tsx` |
 
+`src/cam/review.test.ts` holds one test per finding of the independent review, each written to fail before its fix, and pins every chart figure to the report.
+
 A built-in number is a `Sourced` (`{ value, unit, src }`) or sits in an object with a `src`. `src/cam/sources.test.ts` walks the data and fails on a number with no source; add the source to `sources.ts` and its row to the research before the number. A number the research marks NOT FOUND stays out: the field is null and the panel says it does not know.
 
 ```bash

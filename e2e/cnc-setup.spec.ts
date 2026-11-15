@@ -34,7 +34,7 @@ test("CNC setup works out a feed, warns about a shallow compression cut, and kee
   await expect(dialog.getByTestId("speed")).toContainText("Dial 2: 13,500 RPM");
   await expect(dialog.getByTestId("feed")).toContainText("165 IPM (4,183 mm/min)");
   await expect(dialog.getByTestId("ramp")).toContainText("82 IPM");
-  await expect(dialog.getByTestId("maker-range")).toContainText("disagree 3–5×");
+  await expect(dialog.getByTestId("maker-range")).toContainText("times apart");
   await expect(dialog.getByTestId("find-your-number").locator("li")).toHaveCount(7);
 
   // A 1/4 in dado with the compression bit: the up-cut part cuts it.

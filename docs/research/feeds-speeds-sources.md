@@ -1,5 +1,7 @@
 <!-- Copied unchanged from the research done for the feeds and speeds calculator (2026-11-14). Every built-in number in src/cam/ names its row here. Do not trim a row a number depends on. -->
 
+> **Erratum (2026-11-14, found by src/cam/sources.test.ts).** §3 says Carbide's two Compact Router tables "disagree by up to about 1,500 RPM". By the report's own tables they differ by up to **2,250 RPM, at dial 5** (29,250 on the shop page against 27,000 on the 2020 staff chart). The research below is left as it was written; Sawhorse works the difference out from the tables.
+
 # Feeds and speeds research for the CNC cabinet app
 
 Researched 2026-11-14. Every number below comes from a page or PDF opened in this session. Each row gives its URL. "NOT FOUND" means I looked and found no source I could open.

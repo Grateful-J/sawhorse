@@ -696,25 +696,43 @@ export function spacingNeeded(bit: number): number {
   return bit + 0.0625 * 0.0254;
 }
 
+/** The widest Kerf the Nesting section takes (src/components/NestingSection.tsx). */
+export const KERF_MAX = 0.5 * 0.0254;
+
+/** CNC spacing's gap between parts (NestingSection's `cncSettings`): 10 mm in a metric
+ * document, 3/8 in otherwise. */
+export function cncKerf(metric: boolean): number {
+  return metric ? 0.01 : 0.375 * 0.0254;
+}
+
+/** Does CNC spacing leave room for this bit? The spacing question and its Use CNC spacing
+ * button both ask this, with the document's units, so they cannot disagree. */
+export function cncSpacingFits(bit: number, metric: boolean): boolean {
+  return cncKerf(metric) >= spacingNeeded(bit) - 1e-9;
+}
+
 /**
  * Parts too close together for a router bit. An outside profile runs half the bit outside each
  * part, so two parts closer than the bit (plus 1/16 in of wood between the two cuts) have cuts
  * that meet, and CAM programs (Carbide Create, VCarve) merge outside cuts that meet: they cut
  * around the group and skip the edges between its parts. The bit is the profile bit chosen in
- * CNC setup; with none chosen, 1/4 in.
+ * CNC setup; with none chosen, 1/4 in. `metric` is the document's units (CNC spacing's gap
+ * follows them); it defaults to the rounding's.
  */
-export function spacingProblem(n: Nesting, units: Units, chosen: SpacingBit | null = null): NestProblem | null {
+export function spacingProblem(n: Nesting, units: Units, chosen: SpacingBit | null = null, metric: boolean = sizeUnit(units) === "mm"): NestProblem | null {
   const bit = chosen?.diameter ?? CNC_BIT;
   const gap = n.settings.kerf;
   const need = spacingNeeded(bit);
   if (gap >= need - 1e-9) return null;
   // The track saw's sheets are laid out with the saw's kerf: only the router's sheets count.
   if (!n.pieces.some((p) => !p.saw && p.placements.length > 1)) return null;
-  const metric = sizeUnit(units) === "mm";
-  // CNC spacing's kerf (src/components/NestingSection.tsx, cncSettings).
-  const cncKerf = metric ? 0.01 : 0.375 * 0.0254;
+  const cnc = metric ? "10 mm" : "3/8 in";
   const which = chosen ? `your profile bit (${chosen.name}, ${fineU(bit, units)})` : `a ${fineU(bit, units)} bit (no profile bit is chosen in CNC setup, so Sawhorse assumes 1/4 in)`;
-  const fix = cncKerf >= need - 1e-9 ? `Use CNC spacing (${metric ? "10 mm" : "3/8 in"} apart), or set Kerf larger than your bit.` : `Set Kerf to at least ${fineU(need, units)}: CNC spacing (${metric ? "10 mm" : "3/8 in"} apart) is too close for this bit.`;
+  const fix = cncSpacingFits(bit, metric)
+    ? `Use CNC spacing (${cnc} apart), or set Kerf larger than your bit.`
+    : need <= KERF_MAX + 1e-9
+      ? `Set Kerf to at least ${fineU(need, units)}: CNC spacing (${cnc} apart) is too close for this bit.`
+      : `No Kerf fits this bit: Kerf goes up to ${fineU(KERF_MAX, units)}, and the bit needs ${fineU(need, units)}. Cut the profiles with a bit of ${fineU(KERF_MAX - 0.0625 * 0.0254, units)} or less.`;
   return {
     kind: "spacing",
     tag: "",
