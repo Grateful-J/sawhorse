@@ -18,7 +18,7 @@
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
-import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { applyPreset, BAND, bandList, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
 import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
@@ -290,6 +290,7 @@ const runnerOptions = () => [
 const read = (values) => {
   const v = { ...values };
   if (typeof v.runner === "string") v.runner = Number(v.runner) || 0;
+  if (typeof v.bandCount === "string") v.bandCount = Number(v.bandCount) || 1;
   // Blum's boring distance is in millimetres whatever the document's units.
   if (typeof v.cupDistance === "string") v.cupDistance = Number(v.cupDistance) * MM;
   if (v.joinery === "dado" || v.joinery === "butt") v.dados = v.joinery === "dado";
@@ -356,7 +357,25 @@ const SECTIONS = [
   { id: "secCnc", label: "7 · CNC", applies: () => true, summary: () => `${exactThickness(sizes.bit, metric())} bit · ${exactThickness(sizes.fit, metric())} joint clearance` },
   { id: "secCuts", label: "8 · Cuts and holes", applies: () => true, summary: () => "Every cut and hole, and how it is made" },
   { id: "secTests", label: "9 · Test cuts", applies: () => true, summary: () => `${TEST_TITLES[testKind]} · prove the setup before the real sheet` },
+  { id: "secBand", label: "10 · Edge banding", applies: () => true, summary: () => bandSummary() },
 ];
+
+/** What the Edge banding group says while closed: off, or which parts take which band. */
+function bandSummary() {
+  const s = sizes;
+  if (!s.band) return "Off · cut at the finished sizes, no edges banded";
+  const list = bandList(s, planMetric());
+  const mm = (/** @type {import("./cabinet.js").BandPick} */ p) => {
+    const b = list[Number(p) - 1];
+    return b ? `${Math.round((b.thickness / MM) * 100) / 100} mm` : "?";
+  };
+  const on = /** @type {[import("./cabinet.js").BandPick, string][]} */ ([
+    [s.bandFronts, "fronts"],
+    [s.bandCarcass, "carcass edges"],
+    [s.bandShelves, "shelves"],
+  ]).filter(([p]) => p !== "none");
+  return on.length ? on.map(([p, w]) => `${w} ${mm(p)}`).join(" · ") : "On · no part picked";
+}
 
 /** The fields of the open group. @returns {Field[]} */
 function details() {
@@ -472,8 +491,78 @@ function details() {
     out.push({ type: "table", id: "holes", columns: ["Part", "What", "Hole", "Depth", "How"], rows: [], align: ["left", "left", "right", "right", "left"] });
   } else if (view === "secTests") {
     out.push(...testFields());
+  } else if (view === "secBand") {
+    out.push(...bandFields());
   }
   return out;
+}
+
+/** The Edge banding group's fields. @returns {Field[]} */
+function bandFields() {
+  const s = sizes;
+  /** @type {Field[]} */
+  const out = [
+    { type: "checkbox", id: "band", label: "Band the edges", value: s.band },
+    help("Each banded edge is cut short by its band's thickness, so the part comes out at its size with the band on. Holes, dados and notches stay where they are in the finished part: Blum measures from the finished edge. No maker's rule for this was found: it is the geometry."),
+  ];
+  if (!s.band) return out;
+  out.push(pick("bandCount", "Bands", String(s.bandCount), [["1", "One band"], ["2", "Two bands"], ["3", "Three bands"]]));
+  const raw = /** @type {const} */ ([
+    ["band1", s.band1Size, s.band1Thick, s.band1Name, s.band1Width],
+    ["band2", s.band2Size, s.band2Thick, s.band2Name, s.band2Width],
+    ["band3", s.band3Size, s.band3Thick, s.band3Name, s.band3Width],
+  ]).slice(0, Math.max(1, Math.min(3, s.bandCount)));
+  raw.forEach(([id, size, thick, name, width], i) => {
+    out.push(heading(`Band ${i + 1}`));
+    out.push(pick(`${id}Size`, "Thickness", size, [...BAND.sizes.map(([v, , label]) => /** @type {[string, string]} */ ([v, label])), ["custom", "Measured: type it"]]));
+    if (size === "custom") out.push({ type: "number", id: `${id}Thick`, label: "Measured thickness", unit: "length", value: thick, min: BAND.minThick, max: BAND.maxThick });
+    out.push({ type: "text", id: `${id}Name`, label: "Name or colour", value: name, placeholder: "White PVC" }, len(`${id}Width`, "Width", width));
+  });
+  out.push(help(`Measure the band with calipers, as you did the plywood, and type what it measures: REHAU's 1 mm band is made to +-0.1 mm. REHAU sells 0.018 in, 1, 2 and 3 mm, 15/16 in wide among other widths. The band must be at least as wide as the stock it covers.`));
+  const list = bandList(s, planMetric());
+  const which = [["none", "No banding"], ...list.map((b) => /** @type {[string, string]} */ ([String(b.n), `Band ${b.n} · ${b.label}`]))];
+  out.push(heading("Which edges"));
+  out.push(pick("bandFronts", "Doors and drawer fronts, all four edges", s.bandFronts, /** @type {[string, string][]} */ (which)));
+  out.push(pick("bandCarcass", "Front edges of the sides, top, bottom, fixed shelves and front stretcher", s.bandCarcass, /** @type {[string, string][]} */ (which)));
+  out.push(pick("bandShelves", "Adjustable shelves, front edge", s.bandShelves, /** @type {[string, string][]} */ (which)));
+  out.push(help("The starting choices follow the AWS standard (2009): a frameless cabinet bands the visible front edges of its sides, tops, bottoms, shelves and stretchers; an adjustable shelf's three hidden edges stay bare. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. Finished ends are not made by this plugin yet."));
+  out.push(heading("Edgebander and waste"));
+  out.push(len("bandPremill", "Edgebander pre-mill", s.bandPremill));
+  out.push(help("Edgebanders only: what the jointing cutter takes off each edge before the band goes on (Felder and SCM: 0 to 3 mm). Each banded edge's blank is cut that much larger. Iron-on banding: 0."));
+  out.push(len("bandWasteEnd", "Waste per banded side", s.bandWasteEnd), { type: "number", id: "bandWastePct", label: "Then add, %", unit: "none", value: s.bandWastePct, min: 0, max: BAND.maxWastePct });
+  out.push(help(`Microvellum's default, not a standard: ${metric() ? "25.4 mm" : "1 in"} per banded side, then 5%. The shopping list adds its own banding overage on top (15% to start): set that to 0% if this allowance is all you want.`));
+  out.push(heading("Banded parts"), { type: "table", id: "bandRows", columns: ["Part", "Qty", "Banded edges", "Band", "Finished", "Cut", "Band each"], rows: [], align: ["left", "right", "left", "left", "right", "right", "right"] });
+  out.push({ type: "note", id: "bandTotal", text: "" });
+  return out;
+}
+
+/** Fill in the Edge banding group's table: each banded part, finished and cut, and its band.
+ * @param {Record<string, Record<string, unknown>>} fields @param {ReturnType<typeof plan> | null} planned */
+function explainBand(fields, planned) {
+  if (!sizes.band) return;
+  const m = planMetric();
+  const face = (/** @type {[number, number, number]} */ v) => {
+    const thin = v.indexOf(Math.min(...v));
+    return v.filter((_, k) => k !== thin).map((x) => (m ? `${Math.round((x / MM) * 10) / 10}` : `${(x / IN).toFixed(3)}`)).join(" × ") + (m ? " mm" : " in");
+  };
+  const banded = (planned?.parts ?? []).filter((p) => p.bands);
+  fields.bandRows = {
+    rows: banded.map((p) => {
+      const on = /** @type {import("./cabinet.js").PartBand[]} */ (p.bands);
+      const metres = (p.bom ?? []).filter((x) => x.unit === "m").reduce((t, x) => t + x.qty, 0);
+      return [p.name, p.copies.length, on.length === 4 ? "all four" : on.map((e) => e.edge).join(", "), [...new Set(on.map((e) => e.band))].map((n) => `Band ${n}`).join(", "), face(/** @type {[number, number, number]} */ (p.finished)), face(p.blank), `${metres.toFixed(3)} m`];
+    }),
+  };
+  /** @type {Map<string, number>} */
+  const total = new Map();
+  for (const p of banded) for (const x of p.bom ?? []) if (x.unit === "m") total.set(x.item, (total.get(x.item) ?? 0) + x.qty * p.copies.length);
+  fields.bandTotal = {
+    text: planned
+      ? banded.length
+        ? `In all, with waste: ${[...total].map(([item, q]) => `${q.toFixed(2)} m of ${item.replace(/^Edge banding, /, "")}`).join("; ")}. Cut sizes are what the CNC files draw; the shopping list counts the band.`
+        : "No part of this cabinet is banded: pick a band for a kind of part above."
+      : "",
+  };
 }
 
 // --- test cuts ------------------------------------------------------------------------------
@@ -755,6 +844,11 @@ const panel = await ui.registerPanel({
       shown = "";
     } else {
       sizes = read(values);
+      // Fewer bands: a kind of part that took one no longer listed takes band 1.
+      if (id === "bandCount") {
+        const n = sizes.bandCount;
+        for (const k of /** @type {const} */ (["bandFronts", "bandCarcass", "bandShelves"])) if (sizes[k] !== "none" && Number(sizes[k]) > n) sizes = { ...sizes, [k]: "1" };
+      }
       // Another runner has other lengths: back to Automatic.
       if ((id === "slides" || id === "catalog") && sizes.runner && !runnerLine(sizes).lengths.some((r) => r.nl === sizes.runner)) sizes = { ...sizes, runner: 0 };
       // Fields whose label or options name another choice are rebuilt with it.
@@ -818,6 +912,7 @@ async function explain() {
   for (const sec of SECTIONS) if (sec.applies()) fields[sec.id] = { summary: sec.summary() };
   if (view === "secCuts") fields.holes = { rows: planned ? planned.rows : [] };
   if (view === "secTests") explainTests(fields, planned);
+  if (view === "secBand") explainBand(fields, planned);
   await send(panel, fields);
 }
 
