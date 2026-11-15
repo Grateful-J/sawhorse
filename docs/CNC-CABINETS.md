@@ -41,7 +41,7 @@ On a 4 x 4 bed, two more problems come up: a run of cabinets needs a base, and s
 1. **Turn the plugin on.** Open the **Plugins** pane (the puzzle-piece tab at the end of the right panel). Click **Enable…** beside **Cabinet generator**, read what it asks for, and click **Enable**. Its **Cabinet** panel appears in the pane.
 2. **Pick a cabinet.** In **Start from**, choose **Base · door and shelf**. Type a **Name** if you like ("Sink base 1"): it names the cabinet and its CNC files.
 3. **Make it.** Click **Generate cabinet**. The cabinet appears in the model, selected, and the panel now edits it.
-4. **Read the shop sheet.** Open **8 · Cuts and holes** and read every row before you cut anything. A row marked **Check** is a warning. This Base has one: its two hinges are 23 3/8 in apart on a door 23 7/8 in wide (567 mm on 597 mm in a metric document), closer than Blum asks for. To clear it, open **6 · Hardware** and set **From top, bottom** to 3 in (75 mm).
+4. **Read the shop sheet.** Open **8 · Cuts and holes** and read every row before you cut anything. A row marked **Check** is a warning to act on before you cut. No **Start from** choice has one as it starts; one can appear when you change sizes ([what to change](#dialling-in-what-to-change-when-something-is-off)).
 5. **Tell Sawhorse your sheets.** Open the **Cut list** tab, click **Nesting ›** at the bottom, click **Stock…**, then **Use 4 × 4 plywood (3/4, 1/2, 1/4)** and **Done**. In a metric document the button reads **Use 4 × 4 plywood (18, 12, 6 mm)**.
 6. **Space the parts for your bit.** Back in the Nesting section, click **CNC spacing**.
 7. **Save the files.** Click **CNC files**. You get one DXF per sheet, in millimetres, with the sheet's lower-left corner at 0,0. This Base is four sheets, so four files: the door, two sheets of carcass parts, and the back.
@@ -64,10 +64,12 @@ Every dado, groove and rabbet is cut to the thickness you type, not the thicknes
 | **Drawer boxes** | 15/32 in (12 mm) | drawer sides, sub-fronts and backs |
 | **Back, bottoms** (or **Back**) | 7/32 in (6 mm) | the back and the drawer bottoms. Must be thinner than the carcass. |
 
-Each must be more than 0 and at most 2 in. Three limits are tighter, and a thickness outside them is refused:
-- **Carcass, doors:** at least 16 mm (0.63 in) while **Drill hinge, runner and pull holes** is on. The hinge cups and the system screw holes are 13 mm deep.
+Each must be more than 0 and at most 2 in. These limits are tighter, and a thickness outside them is refused:
+- **Carcass, doors:** at least 16 mm (0.63 in) while **Drill hinge, runner and pull holes** is on: the hinge cups and the system screw holes are 13 mm deep, and 3 mm of wood must stay behind them. The door's limit applies only when there is a door, the carcass's only when runner screws are drilled.
+- **Carcass with adjustable shelves:** at least 13 mm, whether hardware holes are on or off. The shelf-pin holes are 10 mm deep and leave 3 mm behind. Thinner stock takes fixed shelves.
+- **Drawer faces:** at least 3/8 in (10 mm) in a cabinet with drawers: the drawer box's screws hold the front.
 - **Drawer boxes:** 11.5 to 16.2 mm with Blum Inc.'s runners, 11 to 16.2 mm with Blum Europe's. That takes 15/32, 1/2 and 5/8 in plywood (12, 15 and 16 mm). Boxes of 3/4 in or 18 mm plywood are refused.
-- **Back, bottoms:** in a cabinet with drawers and hardware holes on, at most 6.8 mm (0.268 in) at the starting joint clearance. Use 1/4 in (6 mm) or thinner: under a thicker bottom, the runner's rear hook hole would break out of the drawer back's bottom edge.
+- **Back, bottoms:** at least 3/32 in (2.5 mm). In a cabinet with drawers and hardware holes on, at most 6.8 mm (0.268 in) at the starting joint clearance. Use 1/4 in (6 mm) or thinner: under a thicker bottom, the runner's rear hook hole would break out of the drawer back's bottom edge.
 
 ### 2. Tell Nesting which sheets you buy
 
@@ -89,7 +91,7 @@ In the cabinet panel's **7 · CNC** group:
 
 | Field | Starts at | Limits | What it does | Change it when |
 |---|---|---|---|---|
-| **Bit diameter** | 1/4 in (6 mm) | more than 0, up to 1/2 in | The end mill you cut the dados and profiles with. Rail corners are notched the dado stop plus one bit diameter deep, so the round end the bit leaves in a blind dado never meets a square shoulder. Grooves and holes narrower than the bit are listed in **8 · Cuts and holes**, to cut with a smaller tool. | You use a different bit. |
+| **Bit diameter** | 1/4 in (6 mm) | 1/8 in (3 mm) to 1/2 in | The end mill you cut the dados and profiles with. Rail corners are notched the dado stop plus one bit diameter deep, so the round end the bit leaves in a blind dado never meets a square shoulder. Dados, grooves and holes narrower than the bit are listed in **8 · Cuts and holes** as **Change bit**, to cut with a smaller tool. | You use a different bit. |
 | **Joint clearance** | 0.008 in (0.2 mm) | 0 to 1 mm (0.04 in) | Added to every dado and groove over the stock's thickness. | Test joints are too tight (raise it) or sloppy (lower it). |
 
 To find your clearance, cut one test dado in a scrap, then try the plywood in it. A part that needs a mallet wants about 0.004 in (0.1 mm) more. One that wobbles wants less.
@@ -123,16 +125,18 @@ It puts these back to a new cabinet's, unless the preset has its own:
 - the door pull's **Measure from** (Top) and distance (2 1/2 in, 64 mm). The wall cabinet and the pantry measure from the bottom, the pantry 30 in (760 mm) up;
 - the drawer **Pull** (Centred). The trash pull-out's is **Near the top**;
 - **Rear nailers** (None). The wall cabinet has top and bottom nailers, the pantry a top one;
-- the trash **Bins** and **Bin**.
+- the trash **Bins** and **Bin**;
+- **Doors** (Automatic). Base · drawer over 2 doors has a pair;
+- **From top, bottom** (3 1/2 in, 100 mm). Base · door and shelf sets 3 in (80 mm), and the wall cabinet 50 mm in a metric document, so the hinges are farther apart than the door is wide, as Blum asks.
 
-It keeps everything else you have set: the thicknesses and the grain, the joinery and the back, the hardware, the bit and the joint clearance, and also **Mounting**, the reveal gap, the shelf type, **Doors** and **Hinge side**, the pull's direction, spacing and hole, and the kick's height and setback.
+It keeps everything else you have set: the thicknesses and the grain, the joinery and the back, the hardware, the bit and the joint clearance, and also **Mounting**, the reveal gap, the shelf type, **Hinge side**, the pull's direction, spacing and hole, and the kick's height and setback.
 
 | Preset | What you get |
 |---|---|
 | Base · door and shelf | 24 x 34 1/2 x 23 1/4 in (600 x 870 x 560 mm), a door, one adjustable shelf, two stretchers for a top, a 4 x 3 in toe kick |
 | Drawer base · 3 drawers | Three drawers on Blum runners |
 | Sink base · 2 doors, open top | Two doors, stretchers, no shelf |
-| Base · drawer over door | A drawer front 6 in (150 mm) tall over a door |
+| Base · drawer over 2 doors | A drawer front 6 in (150 mm) tall over a pair of doors |
 | Trash pull-out · one 50 qt bin | A full-height pull-out with a bin frame cut for one Rev-A-Shelf 50 qt bin |
 | Wall cabinet · doors, nailers | Doors, shelves and rear nailers to screw it to the wall |
 | Tall pantry · needs sheets over 4 ft | Doors and shelves, 84 in tall: its sides, its door and its back need a sheet over 4 ft (see the track saw) |
@@ -150,23 +154,24 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 |---|---|---|
 | Width, Height, Depth | 24 / 600, 34 1/2 / 870, 23 1/4 / 560 | Height includes the toe kick. Depth is the box, without the door. |
 | Toe kick | Notched into the sides | **None (on a separate base)** for a cabinet that will sit on a base frame. A base frame takes the kick off for you, so you can leave it on. |
-| Kick height, Kick setback | 4 / 100, 3 / 75 | The setback must leave the side standing. |
+| Kick height, Kick setback | 4 / 100, 3 / 75 | The height is at least 1 in (25 mm). The setback must leave the side standing. |
 
 **2 · Layout:** the **Style** (doors and shelves, drawers, drawers over a door, trash pull-out, open shelves), then:
 - **Shelves** (0 to 20) and **Shelf type**: **Adjustable, on 5 mm pins** (loose shelves, 1/32 in short of each side) or **Fixed, in dados**.
 - **Drawers** (up to 8) and **Drawer heights**: **All equal**, or **Short top drawer, rest equal** with its **Top face height** (at least 3 in, 76 mm). In drawers over a door, **Drawer face height** is each front's height (at least 3 in).
-- **Doors**: **Automatic** (a pair over 24 in), **Single** or **Double**, and the **Hinge side** of a single door.
+- **Doors**: **Automatic** (a pair over 24 in), **Single** or **Double**, and the **Hinge side** of a single door. A single door is at most 36 in (914 mm) wide.
+- A loose shelf rests on the nearest pin height where all four of its pins are drilled, clear of every hinge plate and above the shelf below it. A cabinet with no such height for a shelf is refused: fewer shelves, or fixed ones.
 - For a trash pull-out, **Bins** (two front to back, two side by side, or one), **Bin** (Rev-A-Shelf 27, 35 or 50 qt, or **Other: measure it**) and **Tray side height**.
 
 **3 · Fronts and pulls**
 
 | Field | Starts at | Notes |
 |---|---|---|
-| Mounting | Full overlay | **Inset** puts the fronts inside the opening. With inset, hinge plates and runner screws are listed, not drilled. Behind an inset door, each shelf starts the carcass thickness plus 3 mm back from the cabinet's front (0.837 in with 23/32 in plywood, 21 mm with 18 mm), so the door and its bumpers close in front of it. The shelf is that much shallower, and a fixed shelf's dados start that much further back. The pin rows do not move: the front row stays 37 mm from the cabinet's front. A cabinet too shallow to leave a shelf behind the door is refused. |
-| Reveal gap | 1/8 in (3 mm) | Between fronts, with half of it at the outer edges. 0 to 1/2 in. |
+| Mounting | Full overlay | **Inset** puts the fronts inside the opening. With inset, hinge plates and runner screws are listed, not drilled. An inset door's hinge never lands on a fixed shelf, the bottom, the top or a stretcher. Behind an inset door, each shelf starts the carcass thickness plus 3 mm back from the cabinet's front (0.837 in with 23/32 in plywood, 21 mm with 18 mm), so the door and its bumpers close in front of it. The shelf is that much shallower, and a fixed shelf's dados start that much further back. The pin rows do not move: the front row stays 37 mm from the cabinet's front. A cabinet too shallow to leave a shelf behind the door is refused. |
+| Reveal gap | 1/8 in (3 mm) | Between fronts, with half of it at the outer edges. At most 1/2 in, and at least Blum's minimum reveal for the door's thickness and boring distance (the message names it). |
 | Door **Pull** | Vertical | Vertical, horizontal or none, on the edge away from the hinges. |
 | Measure from | Top (base cabinets) | **Bottom** for wall cabinets. |
-| From the top/bottom, From the edge, Hole spacing | 2 1/2 in, 1 1/2 in, 3 in (64, 38, 96 mm) | A pull that would land on a hinge cup is refused. |
+| From the top/bottom, From the edge, Hole spacing | 2 1/2 in, 1 1/2 in, 3 in (64, 38, 96 mm) | A pull that would land on a hinge cup is refused, and so is one whose screw head would land on a side, the bottom, the top, a stretcher or a fixed shelf behind an overlay front: the message says how far from the edge to keep it. |
 | Drawer **Pull** | Centred | **Near the top** (with **From the top**), **Finger notch** (with **Notch width** and **Notch depth**: the sub-front behind it is cut 25 mm lower for your fingers), or none. |
 | Pull hole | 3/16 in (5 mm) | Up to 12 mm. 3/16 in suits US 8-32 pull screws. |
 
@@ -178,19 +183,19 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 |---|---|---|---|
 | Joinery | Blind dados | | **Butt joints** for screws only. |
 | Dado depth | 1/4 / 6 | at most half the stock | |
-| Dado stop | 1/2 / 12 | more than 0 | How far short of the front the dado stops, so it never shows. |
+| Dado stop | 1/2 / 12 | at least 1/8 in (3 mm) | How far short of the front the dado stops, so it never shows. |
 | Top | Full panel (**Two stretchers** after a base preset) | | **Two stretchers** (front and rear) for a countertop or a sink. |
-| Stretcher width | 4 / 100 | at least 2 in, two narrower than the depth | |
+| Stretcher width | 4 / 100 | at least 2 in (50 mm), two narrower than the depth in front of the back | |
 | Back | In a groove | | **Between the sides**, or **None**. |
 | Groove depth | 5/16 / 8 | at most half the stock | Must differ from the dado depth, so each gets its own DXF layer and toolpath. |
-| Back inset | 1/2 / 12 | under a third of the depth | The groove's distance from the rear edge. |
+| Back inset | 1/2 / 12 | 0, or enough to leave 3 mm of wood behind the groove; under a third of the depth | The groove's distance from the rear edge. At 0 the groove is a rabbet along the rear edge of the sides, top and bottom. With nailers, an inset that leaves a sliver under 3 mm between the back's groove and the nailers' dados is refused, and the message gives the values that work. |
 | Rear nailers | None (**Top and bottom** after Wall cabinet, **Top** after Tall pantry) | | **Top**, or **Top and bottom**, with **Nailer height** (3 in, 75 mm). Needs the back in a groove, or no back. |
 
 **6 · Hardware**
 - **Drill hinge, runner and pull holes** (on): the router drills 35 x 13 mm hinge cups, the plates' 5 mm system-screw holes, the runners' screw holes, the rear hook holes in each drawer back, and the pull holes. Turn it off to drill by hand or with a jig.
 - **Runners**: Blum **TANDEM** or **MOVENTO**. **Catalogue**: **Blum Inc. (US, inch lengths)** or **Blum Europe (mm lengths)**. **Length**: **Automatic: longest that fits**, or a length you pick.
-- **From top, bottom** (3 1/2 in, 100 mm): each hinge's distance from the door's end. Blum's charts set how many hinges by door height and weight.
-- **Boring distance** (5 mm, 3 to 7 mm, in steps of 0.5 mm): the cup's edge to the door's edge. **8 · Cuts and holes** compares the overlay it gives with what your door covers, and says what to do about the difference. With the starting sizes it reads "Bore at 5.7 mm to match, or take up 0.7 mm with the hinge's side screw" (5.5 and 0.5 mm in a metric document). The list has no 5.7: pick 5.5 and the row reads "Matched", or stay at 5 and adjust the hinge.
+- **From top, bottom** (3 1/2 in, 100 mm; 3 in, 80 mm, for Base · door and shelf): each hinge's distance from the door's end. Blum's charts set how many hinges by door height and weight. One so large that two cups do not fit on the door, or so small that the cup runs off its end, is refused with the value to type. A hinge that would land on a shelf, rail or stretcher is moved, and the row says how far and what it cleared.
+- **Boring distance** (5 mm, 3 to 7 mm, in steps of 0.5 mm): the cup's edge to the door's edge. **8 · Cuts and holes** compares the overlay it gives with what your door covers, and says what to do about the difference. With the starting sizes it reads "Bore at 5.7 mm to match, or take up 0.7 mm with the hinge's side screw" (5.5 and 0.5 mm in a metric document). The list has no 5.7: pick 5.5 and the row reads "Matched", or stay at 5 and adjust the hinge. The side screw adjusts about 2 mm either way, and the row never asks for more. With sides thicker than a CLIP top can cover (11 mm plus the boring distance plus 2 mm), the door is cut to cover what the hinge reaches, and the row says how much of the side shows.
 
 **8 · Cuts and holes** is the shop sheet: every cut and hole, its size and depth, and how it is made. Read it before you cut. The last column, **How**, says what each row asks of you:
 
@@ -508,7 +513,7 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 | A groove narrower than your bit (the back's, about 7/32 in) | Listed in **8 · Cuts and holes**: cut that layer with a smaller bit. |
 | A dado shows at the cabinet's front | **Dado stop** up. |
 | Doors cover too much or too little of the sides | **6 · Hardware** > **Boring distance**: the Overlay row in **8 · Cuts and holes** names the distance that would match. Pick the nearest in the list (it goes in 0.5 mm steps); the hinge's side screw takes up the rest. |
-| A row marked **Check** in **8 · Cuts and holes** | A warning to act on before you cut. For hinges closer together than the door is wide: **From top, bottom** down, or two doors. |
+| A row marked **Check** in **8 · Cuts and holes** | A warning to act on before you cut. For hinges closer together than the door is wide: **From top, bottom** down, or **Doors** > **Double**. |
 | A dado's end is round where it runs out of a part | The parts had no gap (**Kerf**) or the sheet no margin (**Trim**) when the files were saved: click **CNC spacing** and save them again, or square the end with a chisel. Also check that the CAM program did not trim the pocket back to the outline. |
 | A base frame's sleepers are tight or loose in their dados | The frame's clearance is fixed at 0.008 in (0.2 mm). Check that its **Thickness** is your plywood's measured thickness. If the fit is still wrong, use **Butted between the rails**. |
 | "The … lands on a dado" / "runs into the …" | Move the hinges (**From top, bottom**), change the drawer sizes, or turn hardware holes off. |
