@@ -1111,6 +1111,9 @@ export interface BomItem {
   sku?: string;
   qty: number;
   unit: BomUnit;
+  /** Bought once for the shop however many parts carry it (a drilling template): the shopping
+   * list takes the most any part asks for instead of adding them up. */
+  once?: boolean;
 }
 
 /** Lane 15 fixes: why a listed part counts nowhere. */

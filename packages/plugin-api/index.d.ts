@@ -211,6 +211,8 @@ declare module "sawhorse" {
     /** How many per piece of the part: more than 0, at most 10,000; whole for "each" and "pair". */
     qty: number;
     unit: "each" | "pair" | "m";
+    /** Bought once for the shop however many parts carry it (a drilling template, a tool set). */
+    once?: boolean;
   }
 
   export interface CutList {

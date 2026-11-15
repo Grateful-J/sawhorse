@@ -203,6 +203,15 @@ pub struct BomItem {
     /// number for `each` and `pair`.
     pub qty: f64,
     pub unit: BomUnit,
+    /// Bought once for the shop, however many parts carry it (a drilling template, a tool
+    /// set): the shopping list takes the most any part asks for instead of adding them up.
+    /// Written only when true.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub once: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl BomItem {
@@ -248,6 +257,10 @@ impl BomItem {
         }
         h.u64(self.qty.to_bits());
         h.u64(self.unit.code());
+        // Hashed only when set, so an item without it hashes as it did before.
+        if self.once {
+            h.tag("once");
+        }
     }
 }
 
@@ -2061,6 +2074,7 @@ mod tests {
             sku: sku.map(str::to_string),
             qty,
             unit,
+            once: false,
         }
     }
 
@@ -2137,6 +2151,26 @@ mod tests {
             json,
             r#"{"grain":"width","bom":[{"item":"Shelf pin","qty":4.0,"unit":"each"}]}"#
         );
+        // A tool bought once for the shop says so; an ordinary item writes nothing for it.
+        let tool: BomItem = serde_json::from_str(
+            r#"{"item":"Blum drilling template","sku":"T65.1000.02","qty":1,"unit":"each","once":true}"#,
+        )
+        .unwrap();
+        assert!(tool.once && tool.problem().is_none());
+        assert!(
+            serde_json::to_string(&tool)
+                .unwrap()
+                .ends_with(r#""once":true}"#)
+        );
+        let mut t1 = StableHasher::default();
+        let mut t2 = StableHasher::default();
+        tool.hash_into(&mut t1);
+        BomItem {
+            once: false,
+            ..tool.clone()
+        }
+        .hash_into(&mut t2);
+        assert_ne!(t1.finish(), t2.finish());
         // The hash of attributes without a list is what it was before lists existed.
         let mut a = StableHasher::default();
         let mut b = StableHasher::default();

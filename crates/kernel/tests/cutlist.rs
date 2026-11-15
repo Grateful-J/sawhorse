@@ -1132,6 +1132,7 @@ fn pins() -> Vec<BomItem> {
         sku: None,
         qty: 4.0,
         unit: BomUnit::Each,
+        once: false,
     }]
 }
 
@@ -1201,6 +1202,7 @@ fn a_hardware_list_that_cannot_be_kept_is_refused_and_changes_nothing() {
         sku: None,
         qty,
         unit,
+        once: false,
     };
     for bom in [
         vec![bad("", 1.0, BomUnit::Each)],
