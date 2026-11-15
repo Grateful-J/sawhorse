@@ -149,7 +149,8 @@ export function rightOf(cabs, id) {
  * - right, left: against its side (past the fillers, end panels and openings beside both), backs in line, on its floor;
  * - cornerRight, cornerLeft: around an inside corner at that end, turned a quarter, its back
  *   on the next wall (in line with the anchor's end) and its side `filler` in front of the
- *   anchor's carcass, for the doors and pulls to clear (a filler strip covers the gap).
+ *   anchor's carcass, for the doors and pulls to clear (a filler strip covers the gap). The new
+ *   cabinet's own piece on that side (its end panel or filler) is counted too.
  * @param {Cab} anchor @param {{ width: number, depth: number, ends?: Cab["ends"] }} size @param {Place} where @param {number} [filler]
  * @returns {Frame}
  */
@@ -160,8 +161,8 @@ export function placeNext(anchor, size, where, filler = 0) {
   if (where === "right") local = translation([anchor.width + reach(anchor, "right") + reach(size, "left"), anchor.depth - d, 0]);
   else if (where === "left") local = translation([-w - reach(size, "right") - reach(anchor, "left"), anchor.depth - d, 0]);
   // Around a corner, the next wall is past what stands beside the anchor's end (a filler there).
-  else if (where === "cornerRight") local = { linear: TURN_RIGHT, translation: [anchor.width + reach(anchor, "right") - d, -filler, 0] };
-  else local = { linear: TURN_LEFT, translation: [d - reach(anchor, "left"), -filler - w, 0] };
+  else if (where === "cornerRight") local = { linear: TURN_RIGHT, translation: [anchor.width + reach(anchor, "right") - d, -filler - reach(size, "left"), 0] };
+  else local = { linear: TURN_LEFT, translation: [d - reach(anchor, "left"), -filler - w - reach(size, "right"), 0] };
   return compose(anchor.world, local);
 }
 

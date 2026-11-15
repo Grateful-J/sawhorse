@@ -53,6 +53,25 @@ describe("rows", () => {
     expect(rowOf([a, right, next], 2).map((c) => c.id)).toEqual([2, 4]);
   });
 
+  it("a corner counts the new cabinet's own end piece on the side that faces the anchor", () => {
+    const a = cab(1, 36);
+    const d = 23.25 * IN;
+    const piece = (width: number) => ({ kind: "filler" as const, width, label: "Filler" });
+    const size = (ends: { left: { kind: "filler"; width: number; label: string }[]; right: { kind: "filler"; width: number; label: string }[] }) => ({ width: 24 * IN, depth: d, ends });
+    const none = { left: [], right: [] };
+    // The left side faces the anchor (cornerRight): a 3 in left filler stands the cabinet 3 in further out.
+    const right = placeNext(a, size(none), "cornerRight", 3 * IN);
+    const rightFilled = placeNext(a, size({ left: [piece(3 * IN)], right: [] }), "cornerRight", 3 * IN);
+    expect(r6((right.translation[1] - rightFilled.translation[1]) / IN)).toBe(3);
+    // The right side faces the anchor (cornerLeft): likewise for a right filler.
+    const left = placeNext(a, size(none), "cornerLeft", 3 * IN);
+    const leftFilled = placeNext(a, size({ left: [], right: [piece(3 * IN)] }), "cornerLeft", 3 * IN);
+    expect(r6((left.translation[1] - leftFilled.translation[1]) / IN)).toBe(3);
+    // Nothing on the side that faces the anchor, or no ends at all: the same place as before.
+    expect(placeNext(a, size({ left: [piece(3 * IN)], right: [] }), "cornerLeft", 3 * IN).translation).toEqual(left.translation);
+    expect(placeNext(a, { width: 24 * IN, depth: d, ends: none }, "cornerRight", 3 * IN).translation).toEqual(right.translation);
+  });
+
   it("does not take cabinets apart, turned, or at another height for a row", () => {
     const a = cab(1, 24);
     expect(touchesRight(a, cab(2, 24, translation([24.1 * IN, 0, 0])))).toBe(false);
