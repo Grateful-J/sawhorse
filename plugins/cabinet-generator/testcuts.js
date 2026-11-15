@@ -259,6 +259,7 @@ export function ladderCoupons(s, metric, steps = clearanceSteps(s.fit, metric)) 
   /** @type {{ kind: LadderKind, name: string, material: string, host: string, mating: string, stock: number, matingStock: number, depth: number }[]} */
   const want = [];
   if (s.dados) want.push({ kind: "dado", name: "Dado ladder", material: MATERIALS.carcass.name, host: "carcass", mating: "an offcut of the same carcass sheet", stock: t, matingStock: t, depth: s.dadoDepth });
+  else if (s.fastener === "dowels" || s.fastener === "confirmat") skipped.push(`Dado ladder: the carcass is joined with ${s.fastener === "dowels" ? "dowels" : "Confirmat screws"}, not dados. A ladder proves a dado's clearance; it does not apply to ${s.fastener === "dowels" ? "dowel holes" : "Confirmat holes"}.`);
   else skipped.push("Dado ladder: Butt joints, no dados to fit.");
   if (s.back && s.backMount === "groove" && backInsetOf(s) > 1e-9) want.push({ kind: "back", name: "Back groove ladder", material: MATERIALS.carcass.name, host: "carcass", mating: "a piece of the back plywood", stock: t, matingStock: bT, depth: s.backGrooveDepth });
   else skipped.push(`Back groove ladder: ${!s.back ? "no back" : s.backMount !== "groove" ? "the back sits between the sides, not in a groove" : "a back inset of 0 is a rabbet, with nothing to fit"}.`);

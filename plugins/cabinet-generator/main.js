@@ -18,7 +18,7 @@
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
-import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, CONFIRMAT, CONFIRMAT_LAYOUT, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
 import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
@@ -293,7 +293,10 @@ const read = (values) => {
   if (typeof v.bandCount === "string") v.bandCount = Number(v.bandCount) || 1;
   // Blum's boring distance is in millimetres whatever the document's units.
   if (typeof v.cupDistance === "string") v.cupDistance = Number(v.cupDistance) * MM;
-  if (v.joinery === "dado" || v.joinery === "butt") v.dados = v.joinery === "dado";
+  if (typeof v.confirmatLength === "string") v.confirmatLength = Number(v.confirmatLength) || 0;
+  // One select stands for the dados and the fastener: blind dados, butt joints, dowels or Confirmat.
+  if (v.joinery === "dado" || v.joinery === "butt") Object.assign(v, { dados: v.joinery === "dado", fastener: "none" });
+  else if (v.joinery === "dowels" || v.joinery === "confirmat") Object.assign(v, { dados: false, fastener: v.joinery });
   if (v.backType === "groove" || v.backType === "butt") Object.assign(v, { back: true, backMount: v.backType });
   else if (v.backType === "none") v.back = false;
   for (const k of ["preset", "view", "joinery", "backType", "place", "filler", ...TEST_FIELDS, ...SECTIONS.map((x) => x.id)]) delete v[k];
@@ -311,6 +314,11 @@ const heading = (text) => /** @type {Field} */ ({ type: "note", text: text.toUpp
 
 const f = (/** @type {number} */ m) => units.format(m);
 const stock = (/** @type {number} */ m) => exactThickness(m, metric()).replace(/ (in|mm)$/, "");
+
+/** What the Joinery select says for each choice. */
+const JOINERY = { dado: "Blind dados", butt: "Butt joints", dowels: "Dowels", confirmat: "Confirmat screws" };
+/** Which Joinery choice the settings are. @param {Sizes} s @returns {keyof typeof JOINERY} */
+const joineryOf = (s) => (s.dados ? "dado" : s.fastener === "none" ? "butt" : s.fastener);
 
 /** The panel's groups, in a cabinet shop's order. Each says what is in it while closed. */
 const SECTIONS = [
@@ -346,7 +354,7 @@ const SECTIONS = [
     id: "secBuild",
     label: "5 · Construction",
     applies: () => true,
-    summary: () => [sizes.dados ? "Blind dados" : "Butt joints", !sizes.back ? "no back" : sizes.backMount === "groove" ? "back in a groove" : "back between the sides", sizes.top === "stretchers" ? "stretchers" : "full top", ...(sizes.nailers !== "none" ? ["nailers"] : [])].join(" · "),
+    summary: () => [JOINERY[joineryOf(sizes)], ...(hasShelves() && sizes.shelves && sizes.shelfType === "adjustable" && sizes.lineBoring === "full" ? ["full-height pins"] : []), !sizes.back ? "no back" : sizes.backMount === "groove" ? "back in a groove" : "back between the sides", sizes.top === "stretchers" ? "stretchers" : "full top", ...(sizes.nailers !== "none" ? ["nailers"] : [])].join(" · "),
   },
   {
     id: "secHardware",
@@ -450,13 +458,18 @@ function details() {
     out.push(pick("grainHidden", "Inside parts", s.grainHidden, [["any", "Free to turn"], ["length", "Along their length"]]));
     out.push(help("Free to turn lets nesting rotate a part to save plywood: the bottom, stretchers, back, toe kick, nailers and drawer boxes. Shelves always run along their span, where plywood is stiffest."));
   } else if (view === "secBuild") {
-    out.push(pick("joinery", "Joinery", s.dados ? "dado" : "butt", [["dado", "Blind dados"], ["butt", "Butt joints"]]));
+    out.push(pick("joinery", "Joinery", joineryOf(s), /** @type {[string, string][]} */ (Object.entries(JOINERY))));
     if (s.dados) {
       out.push(len("dadoDepth", "Dado depth", s.dadoDepth), len("dadoStop", "Dado stop", s.dadoStop));
       out.push(help("Dados stop short of the front so they don't show; the rails are notched to match."));
+    } else if (s.fastener === "dowels") {
+      out.push(help(`8 mm dowels where the top, bottom and fixed shelves meet the sides. Häfele's layout: 37 mm from the front and back edges, at least 3 up to 18 in deep, 4 up to 24 in, those between on the 32 mm grid. The router drills the sides' holes, 11 mm deep; the rails' end holes, 25 mm deep, are listed for a doweling jig (Cuts and holes). The depths are Häfele's for its 8 mm assembly dowel.`));
+    } else if (s.fastener === "confirmat") {
+      out.push(pick("confirmatLength", "Confirmat length", String(s.confirmatLength), Object.entries(CONFIRMAT.lengths).map(([l, x]) => /** @type {[string, string]} */ ([l, `7 x ${l} mm · Häfele ${x.sku}`]))));
+      out.push(help(`Self-countersinking Confirmat screws (no countersink cut). The router drills a 7 mm through hole in the sides; the rails' 5 mm end pilots are listed for a jig, as deep as the screw maker's instructions give. Placed by ${CONFIRMAT_LAYOUT}.`));
     }
     out.push(pick("top", "Top", s.top, [["full", "Full panel"], ["stretchers", "Two stretchers"]]));
-    if (s.top === "stretchers") out.push(len("stretcher", "Stretcher width", s.stretcher), help("Front and rear, under the countertop: open for a sink."));
+    if (s.top === "stretchers") out.push(len("stretcher", "Stretcher width", s.stretcher), (!s.dados && s.fastener !== "none" ? help("Front and rear, under the countertop: open for a sink. With dowels or Confirmat they are made at least 117 mm (4-5/8 in) wide, for Häfele's three.") : help("Front and rear, under the countertop: open for a sink.")));
     out.push(pick("backType", "Back", !s.back ? "none" : s.backMount, [["groove", "In a groove"], ["butt", "Between the sides"], ["none", "None"]]));
     if (s.back && s.backMount === "groove") {
       out.push(len("backGrooveDepth", "Groove depth", s.backGrooveDepth), len("backInset", "Back inset", s.backInset));
@@ -464,6 +477,10 @@ function details() {
     }
     out.push(pick("nailers", "Rear nailers", s.nailers, [["none", "None"], ["top", "Top"], ["both", "Top and bottom"]]));
     if (s.nailers !== "none") out.push(len("nailerHeight", "Nailer height", s.nailerHeight), help("Boards behind the back, to screw the cabinet to the wall."));
+    if (hasShelves() && s.shelves && s.shelfType === "adjustable") {
+      out.push(pick("lineBoring", "Line boring", s.lineBoring, [["shelves", "Around each shelf"], ["full", "Full height"]]));
+      if (s.lineBoring === "full") out.push(help("Shelf-pin rows the full height on the 32 mm grid: the lowest hole 46.5 mm above the bottom of the box, none nearer the top than 56.5 mm (Blum Process 32's 775 mm side, generalised). Holes that would meet a hinge plate, a runner screw or a joint are left out."));
+    }
   } else if (view === "secHardware") {
     out.push({ type: "checkbox", id: "hardware", label: "Drill hinge, runner and pull holes", value: s.hardware });
     if (hasDrawers()) {
@@ -482,7 +499,7 @@ function details() {
       out.push(pick("hingeClose", "Hinges", s.hingeClose, [["soft", "BLUMOTION (soft close)"], ["self", "Self-closing"]]));
       out.push(help("Which CLIP top hinge the shopping list names: the holes are the same."));
     }
-    if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help("5 mm holes, 10 deep, 32 mm apart, five around each shelf: a row 37 mm from the front and a rear row on the same 32 mm grid. Drilled whenever shelves are adjustable."));
+    if (s.shelfType === "adjustable" && hasShelves() && s.shelves) out.push(heading("Shelf pins"), help(`5 mm holes, 10 deep, 32 mm apart, ${s.lineBoring === "full" ? "the full height (Construction › Line boring)" : "five around each shelf"}: a row 37 mm from the front and a rear row on the same 32 mm grid. Drilled whenever shelves are adjustable.`));
   } else if (view === "secCnc") {
     out.push(len("bit", "Bit diameter", s.bit), len("fit", "Joint clearance", s.fit));
     out.push(help("Clearance is added to every dado and groove over the stock. Grooves and holes smaller than the bit are listed in Cuts and holes, for a smaller bit."));
@@ -853,7 +870,7 @@ const panel = await ui.registerPanel({
       // Another runner has other lengths: back to Automatic.
       if ((id === "slides" || id === "catalog") && sizes.runner && !runnerLine(sizes).lengths.some((r) => r.nl === sizes.runner)) sizes = { ...sizes, runner: 0 };
       // Fields whose label or options name another choice are rebuilt with it.
-      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "nailers", "base", "drawerPull", "doorPull", "doors"].includes(id) || before.runner !== sizes.runner) shown = "";
+      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "lineBoring", "nailers", "base", "drawerPull", "doorPull", "doors"].includes(id) || before.runner !== sizes.runner) shown = "";
     }
     if (!SECTIONS.some((x) => x.id === view && x.applies())) view = "";
     if (editing === null) {

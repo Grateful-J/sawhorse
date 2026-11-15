@@ -40,6 +40,10 @@ const MM = 0.001;
 /** The cut list's grain: along a part's length or width, or none (it may turn on the sheet).
  * @typedef {"length" | "width" | "none"} Grain */
 /** @typedef {"groove" | "butt"} BackMount */
+/** What holds the carcass's rails to the sides when there are no blind dados: nothing drilled
+ * (butt joints), 8 mm dowels, or Confirmat screws. @typedef {"none" | "dowels" | "confirmat"} Fastener */
+/** Shelf-pin rows: a band around each shelf, or the full height on Blum Process 32's grid.
+ * @typedef {"shelves" | "full"} LineBoring */
 /** @typedef {"center" | "top" | "notch" | "none"} DrawerPull */
 /** @typedef {"vertical" | "horizontal" | "none"} DoorPull */
 /** @typedef {"top" | "bottom"} DoorPullFrom */
@@ -60,6 +64,7 @@ const MM = 0.001;
  *   back: boolean, backMount: BackMount, backInset: number, backGrooveDepth: number,
  *   front: Front, gap: number,
  *   dados: boolean, dadoDepth: number, dadoStop: number, fit: number, bit: number,
+ *   fastener: Fastener, confirmatLength: number, lineBoring: LineBoring,
  *   slides: Slides, catalog: Catalog, runner: number,
  *   hardware: boolean, hingeInset: number, cupDistance: number, hingeClose: HingeClose,
  *   drawerPull: DrawerPull, drawerPullFromTop: number, pullSpacing: number, notchWidth: number, notchDepth: number,
@@ -288,6 +293,7 @@ const MAX_LEAF = 36 * IN;
 const PLATE_HALF = 26 * MM;
 /** The least wood left between a drilled hole and a cut or an edge. */
 export const WEB = 3 * MM;
+const WEB_MM = 3;
 /** System 32 screw holes for runners (5 mm, for Blum system screws). */
 const SYS = { dia: 5, depth: 13 };
 /** Hinge mounting plate holes: Blum draws them 5 mm, 11.5 deep, for the plate's pre-mounted
@@ -306,6 +312,47 @@ export const PIN = { dia: 5, depth: 10, setback: 37, pitch: 32 };
 const PIN_END = 64 * MM;
 /** Pin holes around each shelf's place: this many each side of it, 32 mm apart (+-64 mm). */
 const PIN_REACH = 2;
+/**
+ * Full-height line boring: Blum's Process 32 drawing (BUS0126, rev. 4/12/04, p. 3) bores a 775 mm
+ * (30 1/2 in) side with its first hole 56.5 mm below the top end and its last 46.5 mm above the
+ * bottom end, "672 (22 holes)" between (21 x 32). Generalised here (Sawhorse's own reading, not
+ * Blum's): the lowest hole is 46.5 mm above the bottom of the box (the bottom panel's underside:
+ * the side's bottom end with no toe kick, the top of the toe-kick notch with one), as Blum
+ * measures its hinge-plate holes from the bottom, then one every 32 mm up to the highest that is
+ * at least 56.5 mm below the side's top end. A 775 mm side gives Blum's 22 holes exactly.
+ */
+export const LINE_BORE = { bottom: 46.5, top: 56.5 };
+/**
+ * Dowelled carcass joints, 8 mm dowels (docs/research/joinery-sources.md):
+ * - Häfele America catalogue ch. 11 (2017), FC 11.124, the case-dowelling drawing: dowels 37 mm
+ *   from the front edge and 37 mm from the back edge; "up to 18"": "Min. 3 dowels", "up to 24"":
+ *   "Min. 4 dowels". Häfele gives no count deeper than 24 in, so a deeper joint is refused.
+ * - AWS 2nd ed. (2014) sec. 10: a dowel joint "is often based on 1-1/4" (32 mm) spacing of
+ *   dowels": the dowels between the front and back ones go on the 32 mm grid from the front one.
+ * - Depths are those of ONE product: Häfele's 8 mm permanent assembly dowel (UK catalogue 2023,
+ *   p. 7.96, drawing): 25 mm into the shelf's edge, 11 mm into the side panel's face, "for minimum
+ *   wood thickness 18 mm". No maker's depth table for a plain 8 mm wood dowel was found.
+ * `dia` and the depths are mm; `setback` and `pitch` mm; `upTo` inches, with the least count.
+ */
+export const DOWEL = { dia: 8, face: 11, edge: 25, setback: 37, pitch: 32, minStock: 18, upTo: /** @type {[number, number][]} */ ([[18, 3], [24, 4]]) };
+/**
+ * Confirmat (one-piece connector) screws, 7 mm, from the Häfele America catalogue ch. 11 (2017),
+ * FC 11.160 to 11.162: a 5 mm pilot hole in the edge ("Drill hole: Ø5 mm"), a 7 mm "through-hole
+ * for Confirmat shank" in the face piece, a 10 mm head; the self-countersinking type needs no
+ * countersink ("Countersink is not necessary as the nibs countersink hole"). Häfele lists the
+ * self-countersinking connector in 50 and 70 mm only (pointed tip, Pozi drive size 3, zinc-plated:
+ * 264.44.190 and 264.44.194), so those are the lengths offered. Not found in any maker's document:
+ * the pilot's depth, the distance from the edges, the spacing. The pilot's depth is left to the
+ * screw maker's instructions, and the screws go where Häfele's dowels go (DOWEL), said as such.
+ */
+export const CONFIRMAT = {
+  through: 7,
+  pilot: 5,
+  head: 10,
+  lengths: /** @type {Record<string, { sku: string }>} */ ({ 50: { sku: "264.44.190" }, 70: { sku: "264.44.194" } }),
+};
+/** What the panel and the rows say of the Confirmat layout. */
+export const CONFIRMAT_LAYOUT = "Häfele's dowel layout; no confirmat spacing was found in a maker's document";
 /**
  * What the shopping list names for the hardware, from Blum's own catalogues (read 2026-11-14).
  * Only part numbers Blum prints are given; anything Blum does not number is named in words.
@@ -581,6 +628,12 @@ function bandDefaults(width) {
   };
 }
 
+/** Joinery as a new cabinet starts: blind dados (no fastener), pins around each shelf, and a 50 mm
+ * Confirmat should Confirmat be picked. */
+function joineryDefaults() {
+  return { fastener: /** @type {Fastener} */ ("none"), confirmatLength: 50, lineBoring: /** @type {LineBoring} */ ("shelves") };
+}
+
 /** @param {boolean} metric @returns {Sizes} */
 export function defaults(metric) {
   return metric
@@ -597,6 +650,7 @@ export function defaults(metric) {
         back: true, backMount: "groove", backInset: 12 * MM, backGrooveDepth: 8 * MM,
         front: "overlay", gap: 3 * MM,
         dados: true, dadoDepth: 6 * MM, dadoStop: 12 * MM, fit: 0.2 * MM, bit: 6 * MM,
+        ...joineryDefaults(),
         slides: "tandem", catalog: "eu", runner: 0,
         hardware: true, hingeInset: 100 * MM, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 38 * MM, pullSpacing: 96 * MM, notchWidth: 100 * MM, notchDepth: 25 * MM,
@@ -623,6 +677,7 @@ export function defaults(metric) {
         back: true, backMount: "groove", backInset: 0.5 * IN, backGrooveDepth: (5 / 16) * IN,
         front: "overlay", gap: 0.125 * IN,
         dados: true, dadoDepth: 0.25 * IN, dadoStop: 0.5 * IN, fit: 0.008 * IN, bit: 0.25 * IN,
+        ...joineryDefaults(),
         slides: "tandem", catalog: "us", runner: 0,
         hardware: true, hingeInset: 3.5 * IN, cupDistance: 5 * MM, hingeClose: "soft",
         drawerPull: "center", drawerPullFromTop: 1.5 * IN, pullSpacing: 3 * IN, notchWidth: 4 * IN, notchDepth: 1 * IN,
@@ -653,6 +708,7 @@ export function normalize(saved, metric) {
   // router can drill, now no pull).
   const oldPull = saved && !("drawerPull" in saved) && typeof s.pull === "string" ? (s.pull === "face" ? "center" : "none") : null;
   const name = typeof s.name === "string" && s.name.trim() ? s.name.trim().slice(0, 60) : d.name;
+  const fastener = pick("fastener", /** @type {const} */ (["none", "dowels", "confirmat"]));
   return {
     name,
     width: num("width"),
@@ -675,11 +731,15 @@ export function normalize(saved, metric) {
     backGrooveDepth: num("backGrooveDepth"),
     front: pick("front", /** @type {const} */ (["overlay", "inset"])),
     gap: num("gap"),
-    dados: !!s.dados,
+    // Dowels or Confirmat screws replace the blind dados: never both.
+    dados: !!s.dados && fastener === "none",
     dadoDepth: num("dadoDepth"),
     dadoStop: num("dadoStop"),
     fit: num("fit"),
     bit: num("bit"),
+    fastener,
+    confirmatLength: Object.keys(CONFIRMAT.lengths).includes(String(s.confirmatLength)) ? Number(s.confirmatLength) : d.confirmatLength,
+    lineBoring: pick("lineBoring", /** @type {const} */ (["shelves", "full"])),
     slides: pick("slides", /** @type {const} */ (["tandem", "movento"])),
     catalog: pick("catalog", /** @type {const} */ (["us", "eu"])),
     runner: Math.round(num("runner")),
@@ -859,10 +919,11 @@ export function validate(s, metric) {
     if (!(s.drawerFront >= lowFront.v - 1e-9)) return `The top drawer front must be at least ${lowFront.text} tall.`;
   }
   if (s.top === "stretchers") {
+    const sw = stretcherWidth(s, metric);
     const narrow = least(2, "2 in", 50);
     // The stretchers run from the front to the back's groove (or to the rear edge, past it), or to the back's face.
     const room = !s.back || s.backMount === "groove" ? s.depth : s.depth - s.backThickness;
-    if (!(s.stretcher >= narrow.v - 1e-9 && 2 * s.stretcher < room)) return `Stretchers must be at least ${narrow.text} wide, and two of them narrower than the ${room < s.depth ? `depth in front of the back (${both(room)})` : "depth"}.`;
+    if (!(s.stretcher >= narrow.v - 1e-9 && 2 * sw < room)) return `Stretchers must be at least ${narrow.text} wide, and two of them narrower than the ${room < s.depth ? `depth in front of the back (${both(room)})` : "depth"}.`;
   }
   if (!(s.gap >= 0) || s.gap > 0.5 * IN) return "The gap between fronts must be at most 1/2 in (12.7 mm).";
   // Blum's least reveal, with no door at all (drawer fronts must not rub either), and its table for hinged doors.
@@ -901,6 +962,18 @@ export function validate(s, metric) {
     if (!(s.dadoDepth > RELIEF + 0.5 * MM)) return "The dado is too shallow to hold a rail.";
     if (!(s.dadoStop >= WEB - 1e-9)) return `The dado stop must be at least ${metric ? "3 mm" : "1/8 in (3 mm)"}, or the wood in front of the groove breaks out.`;
     if (!(s.dadoStop + s.bit < s.depth / 2)) return "The cabinet is not deep enough for a blind dado this far back.";
+  }
+  // A dowel's face hole keeps 3 mm of wood behind it, and its edge hole 3 mm each side of it in
+  // the rail's thickness; a Confirmat's 5 mm pilot the same in the rail.
+  if (s.fastener === "dowels") {
+    const least = Math.max(DOWEL.face + WEB_MM, DOWEL.dia + 2 * WEB_MM);
+    if (!(t >= least * MM - 1e-9)) return `Dowel holes are ${DOWEL.dia} mm across and ${DOWEL.face} mm deep in the sides' faces (Häfele's depth for its 8 mm assembly dowel): the cabinet stock must be at least ${least} mm thick, for 3 mm of wood behind and beside each. Use blind dados, or thicker stock.`;
+  }
+  if (s.fastener === "confirmat") {
+    if (!Object.keys(CONFIRMAT.lengths).includes(String(s.confirmatLength))) return "Confirmat screws: 50 or 70 mm, the lengths Häfele lists for its self-countersinking connector.";
+    // The through hole is centred on the rail's thickness, so flush with the side's end it needs t/2 - 3.5 >= 3 mm too.
+    const least = Math.max(CONFIRMAT.pilot, CONFIRMAT.through) + 2 * WEB_MM;
+    if (!(t >= least * MM - 1e-9)) return `A Confirmat's ${CONFIRMAT.through} mm through hole in the side and ${CONFIRMAT.pilot} mm pilot in the rail are centred in the rail's thickness: the cabinet stock must be at least ${least} mm thick, for 3 mm of wood each side. Use blind dados, or thicker stock.`;
   }
   // Shelf pins are drilled whenever shelves are adjustable, hardware or not.
   if (hasShelf && s.shelfType === "adjustable" && !(t - PIN.depth * MM >= WEB - 1e-9)) return `Shelf pin holes are ${PIN.depth} mm deep: adjustable shelves need cabinet stock at least ${PIN.depth + 3} mm thick, for 3 mm of wood behind each hole. Use fixed shelves, or thicker stock.`;
@@ -1004,6 +1077,56 @@ export function holeClear(size, prisms, hole) {
 }
 
 /**
+ * Where the dowels (or Confirmat screws) of one carcass joint go, from the joint's front edge,
+ * for a joint `d` deep front to back (metres): Häfele's case dowelling (DOWEL), one 37 mm from the
+ * front edge and one 37 mm from the back edge, at least 3 up to 18 in deep and 4 up to 24 in; the
+ * ones between on the 32 mm grid counted from the front one, spread as evenly as the grid allows,
+ * each keeping 3 mm of wood (WEB) to the back one. Exactly Häfele's least count: the chart gives a
+ * minimum, and more holes are more to drill and line up. A string says why it cannot be done.
+ * @param {number} d @returns {number[] | string}
+ */
+export function dowelLayout(d) {
+  const e = DOWEL.setback * MM;
+  const pitch = DOWEL.pitch * MM;
+  const apart = (DOWEL.dia + WEB_MM) * MM;
+  const band = DOWEL.upTo.find(([inch]) => d <= inch * IN + 1e-9);
+  if (!band) return `${both(d)} deep: Häfele's dowel chart gives counts for joints up to 24 in (609.6 mm) deep, and nothing deeper`;
+  const n = band[1];
+  const rear = d - e;
+  // The grid points between, k = 1..most, each 3 mm of wood clear of the rear dowel.
+  const most = Math.floor((rear - apart - e) / pitch + 1e-9);
+  if (most < n - 2) return `${both(d)} deep: Häfele's chart asks for at least ${n} dowels up to ${band[0]} in, 37 mm from the front and back edges, with those between on the 32 mm grid, which needs the joint at least ${atLeast(2 * e + (n - 2) * pitch + apart)} deep`;
+  /** @type {number[]} */
+  const ks = [];
+  for (let i = 1; i <= n - 2; i++) {
+    const ideal = e + ((rear - e) * i) / (n - 1);
+    const k = Math.round((ideal - e) / pitch);
+    ks.push(Math.max(ks.length ? ks[ks.length - 1] + 1 : 1, Math.min(most - (n - 2 - i), k)));
+  }
+  return [e, ...ks.map((k) => e + k * pitch), rear];
+}
+
+/**
+ * The stretchers' width as built (metres). With dowels or Confirmat screws, at least the least
+ * joint that takes Häfele's fewest dowels (DOWEL.upTo[0]): 37 mm from each edge, those between on
+ * the 32 mm grid, 3 mm of wood to the rear one. Rounded up to a millimetre (metric) or a
+ * sixteenth (inches). Blind dados and butt joints keep the width as set.
+ * @param {Sizes} s @param {boolean} metric @returns {number}
+ */
+export function stretcherWidth(s, metric) {
+  if (s.dados || s.fastener === "none") return s.stretcher;
+  const n = DOWEL.upTo[0][1];
+  const need = (2 * DOWEL.setback + (n - 2) * DOWEL.pitch + DOWEL.dia + WEB_MM) * MM;
+  const step = metric ? MM : IN / 16;
+  return Math.max(s.stretcher, Math.ceil(need / step - 1e-6) * step);
+}
+
+/** A rail's name as a sentence says it: "bottom", "front stretcher", "fixed shelf 1". @param {string} name */
+const jointWord = (name) => (name.startsWith("Shelf") ? name.replace(/^Shelf/, "fixed shelf") : name.toLowerCase());
+/** The dowels a rail takes, in words: Häfele's assembly dowel's depths are the holes, no part number. */
+const DOWEL_ITEM = `Dowel, ${DOWEL.dia} x 35 mm or shorter (the holes are ${DOWEL.face} mm in the side and ${DOWEL.edge} mm in the edge, ${DOWEL.face + DOWEL.edge} mm together)`;
+
+/**
  * One band of the list, as the planner uses it: its number (1 to 3), thickness and width
  * (metres), name, and how a shopping list or a row names it ("1 mm x 15/16 in, White PVC").
  * @typedef {{ n: number, thickness: number, width: number, name: string, label: string }} Band
@@ -1081,7 +1204,9 @@ function bandIssue(s, metric) {
 /** What a hole is, for a message. @param {Hole} h */
 const holeWhat = (h) => {
   if (Math.abs(h.radius - CUP.radius * MM) < 1e-9) return "hinge cup";
+  if (h.through && h.axis === 0 && Math.abs(h.radius - (CONFIRMAT.through * MM) / 2) < 1e-9) return "Confirmat hole";
   if (h.through) return "pull hole";
+  if (Math.abs(h.radius - (DOWEL.dia * MM) / 2) < 1e-9 && Math.abs(h.depth - DOWEL.face * MM) < 1e-9) return "dowel hole";
   if (Math.abs(h.depth - PIN.depth * MM) < 1e-9) return "shelf pin hole";
   if (Math.abs(h.depth - PLATE_HOLE.depth * MM) < 1e-9) return "hinge plate hole";
   if (Math.abs(h.depth - SYS.depth * MM) < 1e-9) return "runner screw hole";
@@ -1456,16 +1581,66 @@ function build(s, metric) {
   const plates = { left: /** @type {number[]} */ ([]), right: /** @type {number[]} */ ([]) };
   /** What each side hole is for, to name the one a new hole would run into. */
   const sideWhat = { left: /** @type {string[]} */ ([]), right: /** @type {string[]} */ ([]) };
-  /** @param {"left" | "right"} which @param {number} y @param {number} z @param {string} what @param {string} [fix] @param {{ dia: number, depth: number }} [kind] */
+  /** @param {"left" | "right"} which @param {number} y @param {number} z @param {string} what @param {string} [fix] @param {{ dia: number, depth: number, through?: boolean }} [kind] */
   const sideHole = (which, y, z, what, fix, kind = SYS) => {
     const inner = which === "left" ? t : 0;
     const part = `${which === "left" ? "Left" : "Right"} side`;
-    const h = /** @type {Hole} */ ({ axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [y, z], radius: (kind.dia * MM) / 2, depth: kind.depth * MM });
+    const h = /** @type {Hole} */ ({ axis: 0, at: inner, inward: which === "left" ? -1 : 1, center: [y, z], radius: (kind.dia * MM) / 2, depth: kind.through ? t : kind.depth * MM, ...(kind.through ? { through: true } : {}) });
     // A hinge plate and a runner both want the 37 mm line: two holes must keep wood between them.
-    const hit = sideHoles[which].findIndex((o) => Math.hypot(o.center[0] - y, o.center[1] - z) < o.radius + h.radius + WEB);
+    const hit = sideHoles[which].findIndex((o) => Math.hypot(o.center[0] - y, o.center[1] - z) < o.radius + h.radius + WEB - 1e-9);
     if (hit >= 0) throw new Error(`${part}: the ${what} runs into the ${sideWhat[which][hit]}. Change the hinge inset or the drawer sizes, or turn hardware holes off.`);
     sideHoles[which].push(placeHole(part, sideSize, sidePrisms(inner), h, what, fix));
     sideWhat[which].push(what);
+  };
+
+  // --- dowels or Confirmat screws: each rail's joint with the sides ---------------------------
+  /** Where the top and the bottom end at the rear: the rear edge when they carry the back's groove. */
+  const railEnd = grooved ? s.depth : innerD;
+  /**
+   * Each rail the sides are joined to by dowels or Confirmat screws, with no blind dados: its
+   * name (the copy's), its height, its front and rear (`ya`, `yb`) and where the holes go along it
+   * from its front edge (dowelLayout). The face holes go in both sides now, before any hardware
+   * or pin hole, so those keep their wood to them; the rails' edge holes are listed for a jig.
+   * @type {{ z: number, name: string, ya: number, yb: number, at: number[] }[]}
+   */
+  const joints = [];
+  const fastener = s.dados ? "none" : s.fastener;
+  if (fastener !== "none") {
+    /** @type {{ z: number, name: string, ya: number, yb: number }[]} */
+    const spans = [];
+    const sw = stretcherWidth(s, metric);
+    for (const r of rails) {
+      if (r.name === "Top" && s.top === "stretchers") spans.push({ z: r.z, name: "Front stretcher", ya: 0, yb: sw }, { z: r.z, name: "Rear stretcher", ya: railEnd - sw, yb: railEnd });
+      else if (r.name === "Top" || r.name === "Bottom") spans.push({ z: r.z, name: r.name, ya: 0, yb: railEnd });
+      else spans.push({ z: r.z, name: r.name, ya: shelfFront, yb: shelfDepth });
+    }
+    const kind = fastener === "dowels" ? { dia: DOWEL.dia, depth: DOWEL.face } : { dia: CONFIRMAT.through, depth: 0, through: true };
+    const what = fastener === "dowels" ? "dowel hole" : "Confirmat hole";
+    for (const j of spans) {
+      const at = dowelLayout(j.yb - j.ya);
+      const word = jointWord(j.name);
+      if (typeof at === "string") throw new Error(`The ${word} is ${at}. ${/stretcher/.test(j.name) ? "Make the stretchers wider, use a full top, or use blind dados." : "Make the cabinet shallower, or use blind dados."}`);
+      // The rear hole (the last of `at`) can land in a grooved back's groove: say so, and say what to change.
+      const grooved = !!s.back && s.backMount === "groove";
+      at.forEach((y, i) => {
+        const fix = grooved && i === at.length - 1
+          ? `Change the back's inset (now ${both(backInsetOf(s))}): the rear hole is ${DOWEL.setback} mm in from the rail's back edge and may land in the back's groove. Or change the sizes, or use blind dados.`
+          : "Change the sizes, or use blind dados.";
+        for (const which of /** @type {const} */ (["left", "right"])) sideHole(which, j.ya + y, j.z + t / 2, `${what} for the ${word}`, fix, kind);
+      });
+      joints.push({ ...j, at });
+    }
+  }
+
+  /** What a rail's two joints take, for the shopping list: each end's dowels or Confirmat screws,
+   * on the rail (the part they go into). @param {string} copyName @returns {BomItem[]} */
+  const jointBom = (copyName) => {
+    const j = joints.find((x) => x.name === copyName);
+    if (!j) return [];
+    const qty = 2 * j.at.length;
+    if (fastener === "dowels") return [{ item: DOWEL_ITEM, qty, unit: "each" }];
+    const len = String(s.confirmatLength);
+    return [{ item: `Häfele self-countersinking Confirmat connector, 7 x ${len} mm, pointed tip, Pozi drive size 3, zinc-plated`, sku: CONFIRMAT.lengths[len].sku, qty, unit: "each" }];
   };
 
   // --- the shopping list: hardware that rides on the part it goes on (HARDWARE) -------------
@@ -2004,15 +2179,32 @@ function build(s, metric) {
     const front = PIN.setback * MM;
     const rear = front + Math.floor((shelfDepth - 2 * front) / pitch + 1e-9) * pitch;
     const ys = rear > front ? [front, rear] : [front];
-    const count = Math.floor((z1 - z0 - 2 * PIN_END) / pitch + 1e-9) + 1;
-    if (count < 1) throw new Error("The space for adjustable shelves is too short for pin holes: use fixed shelves, or none.");
-    /** @type {number[]} */
-    const grid = [];
-    for (let k = 0; k < count; k++) grid.push((z0 + z1) / 2 + (k - (count - 1) / 2) * pitch);
-    const nearest = (/** @type {number} */ z) => grid.reduce((a, b, k) => (Math.abs(b - z) < Math.abs(grid[a] - z) ? k : a), 0);
-    const keep = new Set(shelfZs.flatMap((z) => Array.from({ length: 2 * PIN_REACH + 1 }, (_, j) => nearest(z) - PIN_REACH + j)).filter((k) => k >= 0 && k < count));
-    const pinZs = [...keep].sort((a, b) => a - b).map((k) => grid[k]);
     const r = (PIN.dia * MM) / 2;
+    const full = s.lineBoring === "full";
+    /** @type {number[]} */
+    let pinZs;
+    if (full) {
+      // Full height on Blum Process 32's grid (LINE_BORE): 46.5 mm above the bottom of the box,
+      // then every 32 mm to the highest at least 56.5 mm below the top; of those, every one in the
+      // shelves' space that keeps 3 mm of wood to the rails' faces.
+      pinZs = [];
+      const lowest = kick + LINE_BORE.bottom * MM;
+      const holes = Math.floor((s.height - LINE_BORE.top * MM - lowest) / pitch + 1e-9) + 1;
+      for (let k = 0; k < holes; k++) {
+        const z = lowest + k * pitch;
+        if (z - r - WEB >= z0 - 1e-9 && z + r + WEB <= z1 + 1e-9) pinZs.push(z);
+      }
+      if (!pinZs.length) throw new Error("The space for adjustable shelves is too short for pin holes: use fixed shelves, or none.");
+    } else {
+      const count = Math.floor((z1 - z0 - 2 * PIN_END) / pitch + 1e-9) + 1;
+      if (count < 1) throw new Error("The space for adjustable shelves is too short for pin holes: use fixed shelves, or none.");
+      /** @type {number[]} */
+      const grid = [];
+      for (let k = 0; k < count; k++) grid.push((z0 + z1) / 2 + (k - (count - 1) / 2) * pitch);
+      const nearest = (/** @type {number} */ z) => grid.reduce((a, b, k) => (Math.abs(b - z) < Math.abs(grid[a] - z) ? k : a), 0);
+      const keep = new Set(shelfZs.flatMap((z) => Array.from({ length: 2 * PIN_REACH + 1 }, (_, j) => nearest(z) - PIN_REACH + j)).filter((k) => k >= 0 && k < count));
+      pinZs = [...keep].sort((a, b) => a - b).map((k) => grid[k]);
+    }
     /** The pin heights with every one of their holes drilled, in both sides. */
     const whole = new Map(pinZs.map((z) => [z, 0]));
     let made = 0;
@@ -2053,7 +2245,8 @@ function build(s, metric) {
       rests.push(best + r);
       below = best + r + t;
     });
-    note("Sides", `Shelf pin holes, ${ys.length === 2 ? `rows ${mm(front)} and ${mm(rear)} mm` : `a row ${mm(front)} mm`} from the front, ${2 * PIN_REACH + 1} around each shelf, ${PIN.pitch} mm apart: ${made}${missed ? ` (${missed} left out where a hinge plate, runner or joint is)` : ""}`, `${PIN.dia} mm`, `${PIN.depth} mm`, "CNC");
+    const span = full ? `the full height, the lowest ${LINE_BORE.bottom} mm above the bottom of the box and none nearer the top than ${LINE_BORE.top} mm (Blum Process 32's rule)` : `${2 * PIN_REACH + 1} around each shelf`;
+    note("Sides", `Shelf pin holes, ${ys.length === 2 ? `rows ${mm(front)} and ${mm(rear)} mm` : `a row ${mm(front)} mm`} from the front, ${span}, ${PIN.pitch} mm apart: ${made}${missed ? ` (${missed} left out where a hinge plate, runner or joint is)` : ""}`, `${PIN.dia} mm`, `${PIN.depth} mm`, "CNC");
   }
 
   // --- carcass parts ---------------------------------------------------------------------------
@@ -2065,8 +2258,6 @@ function build(s, metric) {
    * groove (under the top, on the bottom); a shelf stops at the back.
    * @param {number} z @param {string} name @param {string} copyName @param {"top" | "bottom" | "shelf"} kind
    */
-  /** Where the top and the bottom end at the rear: the rear edge when they carry the back's groove. */
-  const railEnd = grooved ? s.depth : innerD;
   /** @param {number} z @param {string} name @param {string} copyName @param {"top" | "bottom" | "shelf"} kind @param {[number, number]} [ys] its front and rear (a stretcher)
    * @param {boolean} [shows] its front edge shows, and takes the carcass's band (the rear stretcher's does not) */
   const addRail = (z, name, copyName, kind, ys, shows = true) => {
@@ -2083,16 +2274,17 @@ function build(s, metric) {
       const [g0, g1] = [backY[0] - ya, backY[1] - ya];
       prisms.push(kind === "top" ? { min: [0, g0, 0], max: [len, g1, bgd] } : { min: [0, g0, t - bgd], max: [len, g1, t] });
     }
-    add(name, MATERIALS.carcass.name, [len, yb - ya, t], prisms, [], { at: [t - tongue, ya, z], name: copyName }, [], shows ? edgesIn(bandCarcass, ["front"]) : []);
+    add(name, MATERIALS.carcass.name, [len, yb - ya, t], prisms, [], { at: [t - tongue, ya, z], name: copyName }, jointBom(copyName), shows ? edgesIn(bandCarcass, ["front"]) : []);
   };
   if (s.top === "stretchers") {
     // Two stretchers under the countertop (open for a sink): the front one notched like a top,
     // the rear one carrying the back's groove.
-    const sw = s.stretcher;
+    const sw = stretcherWidth(s, metric);
     if (grooved && !(backY[0] - (railEnd - sw) >= 6 * MM)) throw new Error(`The rear stretcher is too narrow to carry the back's groove ${both(backInsetOf(s))} in from the rear: make it wider.`);
     addRail(s.height - t, "Front stretcher", "Front stretcher", "top", [0, sw]);
     addRail(s.height - t, "Rear stretcher", "Rear stretcher", "top", [railEnd - sw, railEnd], false);
-    note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ": in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove" : ", butted between the sides"}`, "-", "-", "CNC (profile)");
+    note("Stretchers", `Two ${both(sw)} wide in place of a top, front and rear${s.dados ? ": in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove" : fastener === "dowels" ? ", dowelled between the sides" : fastener === "confirmat" ? ", screwed between the sides with Confirmat screws" : ", butted between the sides"}`, "-", "-", "CNC (profile)");
+    if (sw > s.stretcher + 1e-9) note("Stretchers", `Widened from ${both(s.stretcher)} to ${both(sw)}, the least that takes Häfele's ${DOWEL.upTo[0][1]} ${fastener === "dowels" ? "dowels" : "Confirmat screws"} (${DOWEL.setback} mm from each edge, one between on the ${DOWEL.pitch} mm grid). The Stretcher width setting is kept as you set it.`, "-", "-", "Check");
   } else addRail(s.height - t, "Top", "Top", "top");
   addRail(kick, "Bottom", "Bottom", "bottom");
   if (fixedShelves) shelfZs.forEach((z, i) => addRail(z, "Shelf", `Shelf ${i + 1}`, "shelf"));
@@ -2108,11 +2300,35 @@ function build(s, metric) {
     note("Sides", `Blind dados ${both(t + s.fit)} wide, stop ${both(stop)} from the front`, "-", both(s.dadoDepth), "CNC (pocket)");
     note("Rails", `Tongues ${both(tongue)} long, front corners notched ${both(notchLen)} deep (stop + bit)`, "-", "through", "CNC (profile)");
   }
+  if (joints.length) {
+    const dowels = fastener === "dowels";
+    /** Places along a joint, as a row lists them: "37, 197, 389 and 553.6 mm", with inches in an inch document. @param {number[]} at */
+    const places = (at) => {
+      const list = (/** @type {string[]} */ v) => (v.length > 1 ? `${v.slice(0, -1).join(", ")} and ${v[v.length - 1]}` : v[0]);
+      return `${list(at.map((y) => String(mm(y))))} mm${metric ? "" : ` (${list(at.map((y) => (y / IN).toFixed(3)))} in)`}`;
+    };
+    note(dowels ? "Dowels" : "Confirmat screws", dowels
+      ? `${DOWEL.dia} mm dowels where each rail meets a side, laid out as Häfele's case-dowelling drawing gives: ${DOWEL.setback} mm from the front and back edges, at least ${DOWEL.upTo.map(([inch, n]) => `${n} up to ${inch} in deep`).join(" and ")}; those between on the ${DOWEL.pitch} mm grid (AWS: dowel joints are "often based on" 32 mm spacing). The holes are the depths Häfele gives for its 8 mm assembly dowel: ${DOWEL.face} mm into the side, ${DOWEL.edge} mm into the edge`
+      : `Häfele 7 x ${s.confirmatLength} mm self-countersinking Confirmat screws (${CONFIRMAT.lengths[String(s.confirmatLength)].sku}) where each rail meets a side, at the dowels' places: ${CONFIRMAT_LAYOUT}. A ${CONFIRMAT.through} mm through hole in the side (the nibs under the ${CONFIRMAT.head} mm head cut their own countersink, Häfele: none is cut), a ${CONFIRMAT.pilot} mm pilot in the rail's edge; the heads are on the sides' outer faces`, "-", "-", "Hardware");
+    if (dowels && t < DOWEL.minStock * MM - 1e-9) note("Dowels", `Häfele gives its 8 mm assembly dowel, whose depths these are, "for minimum wood thickness ${DOWEL.minStock} mm"; this stock is ${exactThickness(t, metric)}`, "-", "-", "Check");
+    /** How far the blank's front edge is inside the finished one (a banded front edge). @param {string} copyName */
+    const cutIn = (copyName) => {
+      const part = parts.find((p) => p.copies.some((c) => c.name === copyName));
+      return part?.offset?.[1] ?? 0;
+    };
+    for (const j of joints) {
+      const word = jointWord(j.name);
+      note("Left and right sides", `${dowels ? "Dowel" : "Confirmat through"} holes for the ${word}: ${j.at.length} at ${places(j.at.map((y) => j.ya + y))} from the front, centred ${both(j.z + t / 2)} up`, `${dowels ? DOWEL.dia : CONFIRMAT.through} mm`, dowels ? `${DOWEL.face} mm` : "through", "CNC");
+      const off = cutIn(j.name);
+      const raw = off > 1e-9 ? `; before banding, from the blank's front edge as cut: ${places(j.at.map((y) => y - off))}` : "";
+      note(j.name, `${dowels ? "Dowel" : "Confirmat pilot"} holes in both ends (the edges against the sides), for a ${dowels ? "doweling " : ""}jig: ${j.at.length} at ${places(j.at)} from its front edge${raw}, centred in its thickness${dowels ? ` (Häfele's depth for its 8 mm assembly dowel)` : "; deep as the screw maker's instructions give (no maker's pilot depth was found)"}`, `${dowels ? DOWEL.dia : CONFIRMAT.pilot} mm`, dowels ? `${DOWEL.edge} mm` : "per the screw maker", "Jig");
+    }
+  }
 
   for (const nl of nailers) {
     add(nl.name, MATERIALS.carcass.name, [innerW + 2 * tongue, t, nl.z1 - nl.z0], [], [], { at: [t - tongue, s.depth - t, nl.z0], name: nl.name });
   }
-  if (nailers.length) note(nailers.length === 1 ? "Top nailer" : "Nailers", `${both(s.nailerHeight)} tall at the rear edge, behind the back${s.dados ? ", in dados in the sides" : ""}: screw the cabinet to the wall through ${nailers.length === 1 ? "it" : "them"}`, "-", "-", "CNC (profile)");
+  if (nailers.length) note(nailers.length === 1 ? "Top nailer" : "Nailers", `${both(s.nailerHeight)} tall at the rear edge, behind the back${s.dados ? ", in dados in the sides" : ""}${!s.dados && fastener !== "none" ? ", butted between the sides: no dowels or Confirmat screws are drilled for them, so fasten them yourself" : ""}: screw the cabinet to the wall through ${nailers.length === 1 ? "it" : "them"}`, "-", "-", "CNC (profile)");
   if (s.back) {
     if (grooved) {
       add("Back", MATERIALS.back.name, [innerW + 2 * (bgd - PANEL_GAP), bT, zb1 - zb0 - 2 * PANEL_GAP], [], [], { at: [t - bgd + PANEL_GAP, yb0, zb0 + PANEL_GAP], name: "Back" });
