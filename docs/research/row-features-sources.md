@@ -43,7 +43,7 @@ Where Sawhorse uses a number that no source gives, it says so here and in the pa
 **What Sawhorse does with them**
 - A filler is a strip of the width you type, beside the cabinet: against a wall, or between this cabinet and the next. The row counts its width: the next cabinet stands past it.
 - **Starting width**: 3 in in an inch document (a width KraftMaid sells, BF3, and the filler KraftMaid ships with each blind corner base); 50 mm in a metric document (IKEA's planning guide minimum between a cabinet and a wall). Starting values, not a general standard: IKEA's own Canadian checklist says 1".
-- **Height**: the cabinet's box, above the toe kick (KraftMaid's base fillers have "No toe kick").
+- **Height**: the cabinet's box, above the toe kick (KraftMaid's base fillers have "No toe kick"). Its face is flush with the carcass front, in the end panels' stock (carcass or door plywood).
 - **Scribe filler**: the strip is cut wider by the scribe allowance, on its wall side, for you to scribe by hand (Decor: "The installer will scribe the fillers as needed"; IKEA's method above). The row counts the filler's nominal width, the width after scribing.
 - **Fastening**: screw through the cabinet into the filler (IKEA), attached before installing (Decor). Nothing is drilled.
 - Not banded: its face shows, its edges are against the cabinet and the wall.
@@ -58,7 +58,7 @@ Where Sawhorse uses a number that no source gives, it says so here and in the pa
 | Applied toe-kick skins | NOT FOUND: no maker's source for skins was found. | — | — | — |
 
 **What Sawhorse does with them**
-- A skin is a strip of the stock you choose, in front of the toe kick, as tall as the toe kick (the cabinet's **Kick height**, or the base frame's **Height**).
+- A skin is a strip of the stock you choose (the carcass, door or back plywood), in front of the toe kick, as tall as the toe kick (the cabinet's **Kick height**, or the base frame's **Height**). Its thickness is that stock's, as measured in **4 · Materials**.
 - KCMA's minimums are checks: the panel warns when the toe space is under 3 in (76 mm) high, or under 2 in (51 mm) deep once the skin is in front of the kick. It never refuses.
 
 ## Appliance openings
@@ -113,8 +113,9 @@ Wall ovens go in a tall cabinet, not in a gap in a row, so there is no opening p
 - Picking a preset sets the opening's starting width from that preset's source. Every check is a warning, never a refusal.
 - **Dishwasher**: the width against the preset's (GE at least 24"; Bosch at least 24" (610 mm); Bosch fully integrated 600–616 mm). The height under the countertop, taken as the top of the cabinets beside the opening above the floor: GE approximately 34-1/2" (a warning under it, since "approximately" is not a minimum); Bosch at least 33-7/8" (860 mm); Bosch fully integrated 813–870 mm. GE's 24" depth is shown, not checked: the countertop's front edge, which bounds the opening's depth, is not modelled.
 - **Range**: freestanding, width at least 30"; slide-in, 29-15/16" to 30-1/16". Cabinets of the plugin's above the opening deeper than 13" (Frigidaire's overhead limit) are warned of; GE's slide-in manual allows 16", and the panel says the two disagree.
-- **Refrigerator**: you type the width, the fridge's case width plus its maker's clearances. The panel shows GE's and Whirlpool's clearances, which disagree, and Monogram's note on fillers beside frameless cabinets. Its starting width, 36 in (914.4 mm), is Sawhorse's, not a source's.
-- **Over-the-range microwave** (in a row of wall cabinets): the width against GE's 30". A cabinet of the plugin's above it deeper than 13" (the carcass, without its doors), or with its bottom less than 66" above the floor, is warned of. The floor is the model's ground (z = 0).
+- **Refrigerator**: you type the width, the fridge's case width plus its maker's clearances. The panel shows GE's and Whirlpool's clearances, which disagree, and Monogram's note on fillers beside frameless cabinets. It starts at no width (0), so nothing is assumed: the panel asks you to type it.
+- **Another opening**: the same, for an appliance with no preset.
+- **Over-the-range microwave**: not a gap in a row. The microwave hangs under a wall cabinet, which stands in the wall row like any other. Tick **An over-the-range microwave hangs under it** on that wall cabinet. Its width is checked against GE's 30" (the space between the cabinets, which that cabinet fills), and its depth against 13" (the carcass, without its doors). Its bottom less than 66" above the floor is warned of. The floor is the model's ground (z = 0). GE's 30" from the cooking surface is in the panel's text, not checked: the cooktop's height is not modelled.
 - In a metric document the metric figure is used where the maker prints one (Bosch's 610 mm and 860 mm); in an inch document the inch figure.
 
 ## Sink bases (Kohler)

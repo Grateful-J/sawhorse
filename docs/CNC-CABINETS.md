@@ -14,17 +14,18 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 5. [Edge banding](#edge-banding)
 6. [Build a row of cabinets](#build-a-row-of-cabinets)
 7. [Put a row on a base frame](#put-a-row-on-a-base-frame)
-8. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
-9. [Set up the CAM job](#set-up-the-cam-job)
-10. [Job sheet and part labels](#job-sheet-and-part-labels)
-11. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
-12. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
-13. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
-14. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-15. [Shopping list and pricing](#shopping-list-and-pricing)
-16. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-17. [What is kept with the model](#what-is-kept-with-the-model)
-18. [Limits](#limits)
+8. [End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)
+9. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
+10. [Set up the CAM job](#set-up-the-cam-job)
+11. [Job sheet and part labels](#job-sheet-and-part-labels)
+12. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
+13. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
+14. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
+15. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
+16. [Shopping list and pricing](#shopping-list-and-pricing)
+17. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+18. [What is kept with the model](#what-is-kept-with-the-model)
+19. [Limits](#limits)
 
 ## Why this exists
 
@@ -222,6 +223,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 
 **10 · Edge banding** bands the edges that show: doors and drawer fronts all round, the carcass's front edges, the adjustable shelves' front edges. It starts off ([Edge banding](#edge-banding)).
 
+**11 · Ends, fillers and openings** puts a finished end panel or a filler on either side, an appliance opening beside it, a skin on its toe kick, and checks a sink and an over-the-range microwave. Nothing is on to start ([End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)).
+
 ### Edit a cabinet
 
 - **Change the one you just made:** it is selected and the panel edits it. Every change rebuilds it in place, with one undo step (Ctrl+Z) per change and no button to press.
@@ -285,7 +288,7 @@ Each 0.1 mm the band is thicker than typed makes the part 0.1 mm larger on every
 - **The carcass and the shelves.** The AWS standard (2009) defines a frameless cabinet as one "where the front edge of the cabinet body components are edgebanded", and counts the "visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers" as exposed. It counts "the three non-visible edges of adjustable shelves" as concealed. So the starting choice bands the front edges of the sides, the top, the bottom, the fixed shelves and the front stretcher, and the front edge of each adjustable shelf.
 - **Doors and drawer fronts.** These are banded all round. One owner's spec (the University of Maryland's casework section) asks for banding "on all exposed edges", 3 mm PVC on doors and drawer fronts and 1 mm elsewhere. That is one spec, not a standard. To follow it: **Bands** > **Two bands**, Band 2 at 3 mm, and **Doors and drawer fronts** > Band 2. A 3 mm band on doors needs a **Boring distance** of at least 6 mm (below).
 - **Never banded:** the rear stretcher, the back, the toe kick, the nailers, the drawer boxes and the bin frame. AWS counts nailers' visible front edges as exposed, but the nailers here sit behind the back at the rear edge: no front edge of theirs shows. The others do not show either, or they sit in a joint.
-- **Finished ends:** the plugin makes none yet.
+- **Finished ends:** an applied end panel (**11 · Ends, fillers and openings**) takes the band the carcass front edges take, on its front edge, or its front and bottom, or front, bottom and top ([below](#end-panels-fillers-and-appliance-openings)).
 - A band goes only on an edge that shows. No edge the panel offers can be banded into a joint: every one is a front edge, or a front's edge, that nothing sits against. The planner also checks each banded edge against every other part (and refuses a band that would sit in a dado or groove, or against another part); today that check never fires, and it guards part kinds added later.
 - **Notches at an end.** A side's front edge ends at its toe kick notch, and a fixed rail's at its tongues, which are notched to clear the dado's stop. On an edgebander the band runs across such a notch; trim it off by hand at the notch's inside corner. The band counted for the part is the edge's whole run, notch and all, plus the waste per side. **10 · Edge banding** and **8 · Cuts and holes** say so for each such part.
 
@@ -363,6 +366,7 @@ Select any cabinet in the row. The **Rows and base frames** panel names the row 
 | Dado depth | 1/4 / 6 | At most half the stock. |
 | Sleepers at most | 16 / 400 | Centre to centre. Must be more than two thicknesses. |
 | Longest piece | 47 / 1190 | A 4 x 4 less the CNC trim. Longer rows split into ladders, under whole cabinets where they can. |
+| Toe-kick skin | None | A strip in front of each front rail, as long and as tall, in the row's first cabinet's **Carcass**, **Door** or **Back plywood** (its thickness from that cabinet's **4 · Materials**). A setback no more than the skin's thickness is refused; KCMA's least toe space (3 in (76 mm) high, 2 in (51 mm) deep once skinned) is warned of. |
 
 The setback and back inset must leave at least 2 in between the rails for the sleepers. A row too short for a ladder once its showing ends are set back is refused ("The ends' setback leaves too short a ladder under this row: set the ends back less, or let fewer ends show."), and so is a cabinet too narrow for a ladder of its own ("make the longest piece longer").
 
@@ -393,6 +397,92 @@ On a 4 x 4 bed, a 78 in row becomes ladders of 42 and 36 in (split at a joint be
 2. In Nesting, turn on **Track saw what won't fit** ([below](#parts-too-big-for-the-bed-the-track-saw)). The long rails go to a 4 x 8 on the saw; the sleepers stay on the CNC.
 
 The panel says when a rail is longer than a 4 x 4 bed takes. If you keep dados on with long rails, those dados are listed as hand work.
+
+## End panels, fillers and appliance openings
+
+A row is rarely just boxes. A finished end covers the side that shows, a filler gives the doors room at a wall, and a dishwasher or a range needs a gap. The cabinet panel's **11 · Ends, fillers and openings** group puts each beside a cabinet, and the row makes room for it. Nothing is on to start: a cabinet that uses none of it is built, kept and cut exactly as before, to the byte.
+
+Every number here comes from a maker's or a standard's document, quoted with its address in [research/row-features-sources.md](research/row-features-sources.md), or is labelled as Sawhorse's own. Appliances differ between models: each preset names its maker and model family, and the panel says to check your appliance's installation guide.
+
+### What stands beside a cabinet
+
+Each side (**Left side**, **Right side**) takes one of these. The row counts its width, so the next cabinet stands past it, and a change moves the cabinets right of it as a wider cabinet does (one on the left moves the cabinet itself, and those right of it).
+
+| Choice | What it is | Its width in the row |
+|---|---|---|
+| **Nothing** | The side as it is. | 0 |
+| **Finished end panel** | A panel of its own on the side's outer face, its grain up. | The stock's thickness |
+| **Filler** | A strip beside the side, its face flush with the carcass front. | **Filler width** |
+| **Scribe filler** | A filler cut wider by the **Scribe allowance** on its wall side, to scribe to the wall by hand. | **Filler width** (what it ends at once scribed) |
+
+**End panels**
+
+| Field | Starts at | Notes |
+|---|---|---|
+| End panel stock | Carcass plywood | Or **Door plywood** (for a laminate face that matches the doors). The thickness is the cabinet's **Carcass, doors** stock. Fillers use the same stock. |
+| Panel bottom | To the floor, over the toe kick | Or **Flush with the cabinet's bottom** (the toe kick's top). No source picks one. Shown for a cabinet with a toe kick. |
+| Panel front | Flush with the door faces | Decor's installation guide: applied end panels are "usually flush with the door face". Or **Flush with the carcass front**. Inset fronts and open shelves have no door face to be flush with. |
+| Panel edges banded | Front edge | With **10 · Edge banding** on, in the band the carcass front edges take: the front edge (AWS counts the "visible front edges of ... ends" as exposed), or front and bottom (a wall cabinet's bottom edge shows), or front, bottom and top. Cut short by the band, as every banded part. |
+| Scribe allowance | 0 | Your setting, not a standard: the panel is cut this much deeper at its back edge, to scribe to the wall. The AWS standard allows scribes up to 1-1/2 in (38.1 mm) wide at wall-to-wall installations; wider is warned of. |
+
+Fasten it with screws from inside the cabinet: Decor's guide uses 1-1/8 in screws. It is not drilled, since no source gives a hole pattern. On a base frame the cabinet has no toe kick, so the panel stops at the cabinet's bottom: set the frame's showing end back (**Ends**) so the toe space turns the corner.
+
+**Fillers**
+
+| Field | Starts at | Notes |
+|---|---|---|
+| Filler width | 3 in (50 mm) | Starting values, not a standard. 3 in is a width KraftMaid sells (BF3), and the filler it ships with each blind corner base. 50 mm is IKEA's planning guide's least filler between a cabinet and a wall; IKEA's Canadian checklist says 1 in. No general table of filler widths was found. |
+
+A filler is as tall as the cabinet's box, above the toe kick (KraftMaid's base fillers have "No toe kick"), or the cabinet's full height without one. Screw through the cabinet's side into its edge (IKEA), fixed before the cabinet goes in (Decor). Nothing is drilled, and fillers are not banded: their face shows, and their edges are against the cabinet and the wall.
+
+**A scribe filler** is cut wider than it ends up, by the **Scribe allowance**, on the side away from the cabinet. Hold it against the wall, trace the wall onto it with a small block and a pencil (IKEA's method), and cut to the line. The row counts the width it ends at; the model shows it as cut, past the row's end by the allowance.
+
+### Toe-kick skins
+
+A skin is a strip in front of the toe kick, in the stock you pick: **Carcass**, **Door** (laminate to match the doors) or **Back plywood** (thinner). No maker's source for applied skins was found.
+- **On a cabinet with a toe kick** (**Toe-kick skin** in **11 · Ends, fillers and openings**): as tall as the kick, under the cabinet and its fillers, and under an end panel that is flush with the box's bottom. It stops at an end panel to the floor.
+- **On a base frame** (**Toe-kick skin** in **Rows and base frames**): one strip in front of each ladder's front rail, as long and as tall, in the row's first cabinet's stock.
+
+KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) deep. Those are checks: a lower kick, or less depth once the skin is in front of it, is warned of, never refused. A skin as thick as the setback, or thicker, would stand in front of the cabinets, and is refused. Glue and pin or screw the skin on from behind, and scribe it to the floor as needed (Decor: "Scribe the toe kick as needed").
+
+### Appliance openings
+
+**Left of it** and **Right of it** put an opening beside the cabinet, past its end panel or filler: space in the row where no cabinet goes. Nothing is cut and no appliance is drawn. A base frame stops at an opening, so each side of it is its own ladder. Picking a preset sets the opening's width; change it to what your appliance asks.
+
+| Preset | Starts at | Checked | Source |
+|---|---|---|---|
+| Dishwasher, GE built-in | 24 in | At least 24 in wide; about 34-1/2 in under the countertop | GE installation instructions 31-31546 |
+| Dishwasher, Bosch | 24 in (610 mm) | At least 24 in (610 mm) wide, 33-7/8 in (860 mm) high | Bosch 9002059336 |
+| Dishwasher, Bosch fully integrated | 600 mm (23 5/8 in) | 600 to 616 mm wide, 813 to 870 mm high | Bosch 9001450387 |
+| Range, freestanding 30 in | 30 in | At least 30 in wide; a cabinet of the plugin's over it at most 13 in deep | Frigidaire FFEF3003U |
+| Range, slide-in 30 in | 30 in | 29-15/16 to 30-1/16 in wide; over it at most 13 in deep (GE's JS760 manual allows 16 in: the makers disagree) | Frigidaire FGDS3065P |
+| Refrigerator | No width: type it | Nothing: the panel shows GE's and Whirlpool's clearances, which disagree, and Monogram's note that frameless cabinets may need fillers beside a fridge | GE 49-60792, Whirlpool W10768947A, Monogram 49-60314 |
+| Another opening | No width: type it | Nothing | Your appliance's guide |
+
+A metric document reads the millimetres where the maker prints them (Bosch's 610 and 860 mm) and converts the rest. The **height under the countertop** is the top of the cabinets beside the opening above the floor (the lower one, if they differ), since the countertop is not modelled. GE's 24 in depth is shown, not checked. The floor is the model's ground.
+
+**Over-the-range microwave.** A microwave over a range hangs under a wall cabinet in the wall row, not in a gap. Tick **An over-the-range microwave hangs under it** on that wall cabinet (no toe kick). GE's installation guide asks for the space between the cabinets to be 30 in wide (a filler panel kit if wider), the cabinet over it at most 13 in deep for a standard installation, and 66 in or more from the floor to the microwave's top: each is checked, the last against the cabinet's bottom. GE's 30 in from the cooking surface is in the panel's text only.
+
+### Sinks
+
+Type the sink's width in **Sink width**, or tick **Farmhouse (apron-front) sink**. Kohler's spec sheets give the narrowest base cabinet:
+
+| Sink | Base at least | Kohler |
+|---|---|---|
+| 24 to 25 in | 27 in (686 mm) | Vault K-3894, K-3822-4; Staccato K-3362-4 |
+| 32 to 33 in | 36 in | K-3145-4, K-3346-4, K-3672, and others |
+| 35 in | 36 in, and 36 in "may require cabinet modifications" | Strive K-5283 |
+| Farmhouse | 36 in (914 mm) | Whitehaven K-6489, K-6488 |
+
+A narrower cabinet is warned of. A sink of another width has no rule here, and the panel says so: check your sink's own spec sheet.
+
+### Where it shows
+
+- **The model**: end panels, fillers and skins are parts of the cabinet, beside it; an opening is the gap.
+- **8 · Cuts and holes**: a **Hand** row for each part (how it is fastened, the scribe), an **Edge band** row for a banded end panel, and a **Check** row for each opening and each warning.
+- **11 · Ends, fillers and openings > Checks**: the cabinet's own checks, and, once it is made, those that read the cabinets beside and over its openings.
+- **Rows and base frames**: the row's layout, left to right (each cabinet, end panel, filler and opening, where it starts and how wide), and every check of the row.
+- **The Cut list, the CNC files and the shopping list**: each part, at its size and with its grain; a banded end panel's band by the metre.
 
 ## Nest the parts and save the CNC files
 
@@ -1057,11 +1147,14 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - The clearances of the last joint ladders added are kept in the model, so the ladders' picks name the dados that were cut.
 - The hardware each part takes (its `bom`, [format.md](format.md#part-attributes-cut-list)) is saved on the part in the model, so the shopping list counts copies and deletions. It is not in the plugin's 64 KB store, where it could be dropped.
 - Shopping list prices are kept on this device, not in the model.
+- A cabinet's end panels, fillers, openings, skin, sink and microwave settings are kept with its other settings; a cabinet that uses none of them stores nothing for them. A base frame's skin is kept with the frame.
 - A cabinet's edge banding settings are kept with its other settings. Each banded part's band, by the metre, is in its `bom` in the model, as the hardware is.
 
 ## Limits
 
 - No walls or room outline. A corner is a dead corner with a filler; there is no blind-corner cabinet.
+- Appliance openings are space: no appliance is drawn, and a fridge's or a range's own size is not known. The countertop is not modelled: a dishwasher's height is checked against the tops of the cabinets beside it.
+- End panels, fillers and skins are not drilled for their screws, and a scribe is cut by hand.
 - Hand work is a list, not a drawing.
 - The track saw's sheet is 4 x 8 (1220 x 2440 mm).
 - Only System 32 screw holes are drilled. Blum's chipboard-only holes and the locking devices' pilot holes are listed for drilling by hand.
@@ -1072,5 +1165,5 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
 - A test cut is not rebuilt when the settings change, and is not edited as a cabinet: delete it and add it again. Nesting only the tests, or only the cabinets, takes hiding the others and **Visible only**.
 - The shopping list names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
-- Edge banding: no finished ends; drawer boxes are never banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels name the bands a part carries, not which edges.
+- Edge banding: drawer boxes are never banded; fillers and skins are not banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels name the bands a part carries, not which edges.
 - Hardware is put on parts, never on a whole cabinet: a cabinet is an assembly, and the cut list counts its parts.

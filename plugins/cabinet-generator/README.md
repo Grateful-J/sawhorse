@@ -45,12 +45,37 @@ A ladder: a **front rail** set back for the toes (the toe setback, 3 in or 75 mm
 | Sleepers | in dados in the rails, 1/4 in (6 mm) deep | Each a dado across the rail's inside face, open top and bottom, the stock plus 0.008 in (0.2 mm) wide (fixed: the frame has no clearance field, and the cabinet's Joint clearance does not reach it); the sleeper's tongue 0.5 mm short so the shoulders close, and the ladder comes out square. Or butted between the rails, glued and screwed. |
 | Sleepers at most | 16 in (400 mm) on centre | One at each end of a ladder, one centred under each joint between cabinets (under both sides), and more between. |
 | Longest piece | 47 in (1190 mm) | A 4 x 4 sheet less the CNC preset's trim. A longer row is split into **ladders**, each under whole cabinets where it can (a cabinet longer than a piece is split evenly), set side by side and screwed together through their end sleepers. |
+| Toe-kick skin | none | A strip in front of each front rail, as long and as tall, in the row's first cabinet's carcass, door or back plywood (**Toe kick skin** in the Cut list). Refused when the setback is no more than the skin's thickness; KCMA's least toe space (3 in (76 mm) high, 2 in (51 mm) deep) is a warning. |
 
 **Seeing it first.** Before it is made the panel draws the frame from above, dimensioned: each ladder lettered with its length, the depth rail to rail, each sleeper's centre from its ladder's left end (a table lists every one, for laying it out). **Show it in the model** turns on the plugin's **Base frame** tool: the frame drawn where it will go, each cabinet dashed where it will stand on it (its toe kick off), each ladder labelled; it follows the settings as you change them, and a click makes it. With a frame selected, the tool shows it as its settings now make it.
 
 **Long rails.** Stock **Plywood strips, long rails on the track saw** keeps a ladder in one piece up to 95 in (2420 mm), what a 4 x 8 takes inside the track saw's trim, with butted sleepers: turn on Nesting's **Track saw what won't fit** and the rails go to a 4 x 8 on the saw while the sleepers stay on the CNC. With dados on, a rail too long for the bed has its dados listed as hand work.
 
 The frame follows the shallowest cabinet when depths differ, backs in line. Level it on the floor with shims under the sleepers, screw it down, then set the cabinets on it and screw down through their bottoms; the cut list's last rows say so. The parts are **Base front rail**, **Base back rail** and **Base sleeper** in the Cut list too, so Nesting and **CNC files** cut them with the cabinets: a 78 in row's frame fits one 4 x 4 sheet.
+
+## Ends, fillers and openings
+
+**11 · Ends, fillers and openings** starts with nothing on: a cabinet that uses none of it is planned, kept and cut exactly as before (`trim.js` `planCabinet` returns `plan()`'s own result, and `pack()` stores none of its settings). The guide is [CNC cabinets](../../docs/CNC-CABINETS.md#end-panels-fillers-and-appliance-openings); every number is quoted with its source in [row-features-sources.md](../../docs/research/row-features-sources.md) or labelled as Sawhorse's own.
+
+| Field | Starts at | |
+|---|---|---|
+| Left side, Right side | Nothing | **Finished end panel** (on the side's outer face, the carcass stock's thickness, grain up), **Filler** (a strip of **Filler width**, its face flush with the carcass front, above the toe kick), or **Scribe filler** (a filler cut wider by the scribe allowance on its wall side, scribed by hand). The row counts each one's width (a scribe filler's as scribed). |
+| Filler width | 3 in (50 mm) | Starting values, not a standard: KraftMaid's BF3 and the filler it ships with each blind corner base; IKEA's planning guide's least filler at a wall (its Canadian checklist says 1 in). No table of filler widths was found. |
+| End panel stock | Carcass plywood | Or door plywood. Fillers use it too. |
+| Panel bottom | To the floor | Or flush with the cabinet's bottom (the toe kick's top). |
+| Panel front | Flush with the door faces | Decor: "usually flush with the door face". Or flush with the carcass front. |
+| Panel edges banded | Front edge | Or front and bottom, or front, bottom and top, in the band the carcass front edges take (`bandPart`, its `bom` by the metre); none when banding is off. |
+| Scribe allowance | 0 | Your setting: a scribe filler's extra width, an end panel's extra depth at its back edge. Over AWS's 1-1/2 in is a warning. |
+| Left of it, Right of it | None | An appliance opening: space where no cabinet goes, nothing cut. Presets set the width: dishwasher GE (24 in), Bosch (24 in, 610 mm), Bosch fully integrated (600 mm); range freestanding (30 in) or slide-in (30 in), Frigidaire; refrigerator and another opening (no width: type it). |
+| Toe-kick skin | None | Carcass, door or back plywood, in front of the kick, under the cabinet and its fillers. Refused when the kick's setback is no more than its thickness; KCMA's 3 in (76 mm) and 2 in (51 mm) are warnings. |
+| Sink width, Farmhouse sink | 0, off | Kohler's base widths, as warnings. |
+| An over-the-range microwave hangs under it | Off | Wall cabinets: GE's 30 in space, 13 in deepest cabinet, 66 in floor to the microwave's top, as warnings. |
+
+**How the row makes room.** Each cabinet as a row sees it carries `ends` (`trimEnds`): what stands beside each side, from the side out, with its width. `placeNext`, `touchesRight`, `rowOf` and `lineUp` keep cabinets apart by those widths (`reach`), a corner turns past a filler at the row's end, and widening what stands beside a cabinet moves those right of it, as widening the cabinet does. `rowLayout` lists every cabinet and piece along the row; a base frame runs under the cabinets and fillers (`solidRuns`), stops at an opening and at an end panel.
+
+**The parts.** End panels (`Left end panel`, `Right end panel`), fillers (`Left filler`, `Right filler`) and the skin (`Toe kick skin`) are parts of the cabinet in its own axes, so the Cut list, Nesting, the CNC files and the shopping list take them as they take the rest. Fastening is a **Hand** row in **8 · Cuts and holes**: screws from inside (Decor's 1-1/8 in), nothing drilled.
+
+**The checks** (`trimChecks`, `rowChecks`) warn, and never stop a build: each opening's width against its preset; a dishwasher's height under the countertop (the lower top of the cabinets beside it, the countertop not modelled); a cabinet of the plugin's over a range deeper than Frigidaire's 13 in (GE's slide-in allows 16 in); the scribe; the toe kick; the sink; the microwave.
 
 ## Test cuts
 
