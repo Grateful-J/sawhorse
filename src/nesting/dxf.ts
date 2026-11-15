@@ -233,7 +233,8 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       }
     }
   };
-  const text = (layer: string, x: number, y: number, h: number, s: string) => {
+  /** Centred on (x, y), or with `left` starting at it, so nothing it draws lies left of x. */
+  const text = (layer: string, x: number, y: number, h: number, s: string, left = false) => {
     d.pair(0, "TEXT");
     d.pair(8, layer);
     d.pair(10, dxfNum(x));
@@ -242,6 +243,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
     d.pair(40, dxfNum(h));
     // Plain ASCII: R12 readers vary in what else they take.
     d.pair(1, s.replace(/[^\x20-\x7e]/g, "?"));
+    if (left) return;
     d.pair(72, 1);
     d.pair(11, dxfNum(x));
     d.pair(21, dxfNum(y));
@@ -275,7 +277,10 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       const [x0, y0, x1, y1] = p.usable;
       poly("STOCK", rect(ox + x0 * MM, fy(y1), (x1 - x0) * MM, (y1 - y0) * MM));
     }
-    text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), pieceLabel(p));
+    // The sheet's title, above it and starting at its left edge: centred on the corner, half of it
+    // lay left of 0,0, and a CAM program that sizes the job to everything in the file could move
+    // the origin there, putting every cut half the title's width off the sheet's corner.
+    text("LABELS", ox, oy + W + Math.min(40, W / 12), Math.min(30, W / 16), pieceLabel(p), true);
     const layer = profileLayer(p);
     const over = options.overcut ? pocketOvercut(p) : 0;
     for (const q of p.placements) {

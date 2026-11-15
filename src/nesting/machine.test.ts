@@ -356,6 +356,16 @@ describe("DXF measured cuts", () => {
     // Each part is labelled with its name as well as its tag.
     const labels = (new DxfParser().parseSync(text) as unknown as { entities: { type: string; text?: string }[] }).entities.filter((e) => e.type === "TEXT").map((e) => e.text);
     for (const p of n.pieces[1].placements) expect(labels).toContain(`${p.tag} ${p.name}`);
+    // Nothing lies left of or below the sheet's corner: the sheet's title starts at x = 0 (left
+    // aligned, no alignment point), so a CAM program that sizes its job to the file keeps 0,0.
+    type Text = { type: string; text?: string; startPoint?: { x: number; y: number }; halign?: number };
+    const texts = (new DxfParser().parseSync(text) as unknown as { entities: Text[] }).entities.filter((e) => e.type === "TEXT");
+    const title = texts.find((e) => /Sheet/.test(e.text ?? ""))!;
+    expect(title.startPoint).toMatchObject({ x: 0 });
+    expect(title.halign ?? 0).toBe(0);
+    expect(title.startPoint!.y).toBeGreaterThan(0);
+    // No negative X or Y anywhere in the entities (group codes are written padded, " 10").
+    expect(text.slice(text.indexOf("ENTITIES"))).not.toMatch(/\n *(10|20|11|21)\n-/);
     // R12 layer names take no point.
     expect(nestingDxf(n, "r12", new Map([[q.tag, features(q.dx, q.dy)]]), { piece: 1 })).toContain("POCKET_6MM");
     expect(featureLayers({ ...features(1, 1), pockets: [{ loop: [], depth: 0.00635 }] }, true).pockets).toEqual(["POCKET_6P35MM"]);

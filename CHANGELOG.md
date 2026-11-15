@@ -4,6 +4,14 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added (CNC cabinets, CAM guides, 2026-11-14)
+
+- **Guides for Carbide Create and VCarve.** [docs/CAM-CARBIDE-CREATE.md](docs/CAM-CARBIDE-CREATE.md) and [docs/CAM-VCARVE.md](docs/CAM-VCARVE.md) take the **CNC files** from import to G-code for a Shapeoko with Carbide Motion: a template made once, the checks for each sheet (the scale against `STOCK`, a toolpath for every layer), holding parts down without tabs, the holes, `FLIP_` layers, the post-processor and the `LABELS` layer. The VCarve guide opens with which edition fits a 4 x 4 bed (Pro; Desktop stops at 25 in square, or 24 x 24 in on Vectric's Compare page) and what that means on a Mac. The Carbide Create guide says how to save Carbide's G-code for a test DXF as a local comparison file; `cam-fixtures/` is ignored so those are never committed.
+  - Every program behaviour, menu name, version and limit comes from a research report of 2026-11-14, now in [docs/research/cam-programs-sources.md](docs/research/cam-programs-sources.md). Statements from a staff post, a changelog line or a forum say "Check on your screen" and what to look for; what the report did not find says "Not known".
+  - **Templates and layer names: the safety rule**, in both guides and in brief in [Set up the CAM job](docs/CNC-CABINETS.md#set-up-the-cam-job): a layer's name holds its depth, so a template's toolpaths take only the names they were made with, and a new depth makes a new name no toolpath takes. Check after every import that every layer but `STOCK` and `LABELS` has a toolpath. The guides list the names the starting cabinets produce in an inch and in a metric document.
+
+  How: documentation only. Tests: `src/nesting/cam-layers.wasm.test.ts` (new: each starting cabinet in both unit systems through the CNC files path; the layer names are pinned, and a change fails naming the guides to update; no shape on a cut layer lies inside or overlaps another).
+
 ### Added (shopping list, 2026-11-14)
 
 - **A shopping list with your own prices.** **Shopping list ›**, beside **Nesting ›** under the cut list, lists what to buy:
@@ -18,6 +26,8 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
   How: `crates/kernel/src/cutlist.rs` (`BomItem`, `bom_problem`), `model.rs` (`Op::SetBom`), `snapshot.rs`; `plugins/cabinet-generator/cabinet.js` (`HARDWARE`, `build`), `main.js`, `keep.js`; `src/cutlist/shopping.ts`, `shop-store.ts`, `src/components/ShoppingSection.tsx`, `src/nesting/booklet.ts`, `src/App.tsx`. Tests: `crates/kernel/tests/cutlist.rs` (hardware counted per copy, refused when it cannot be kept, through the snapshot), `crates/kernel/src/cutlist.rs` (validation, written only when present, hashes), `crates/shz/src/lib.rs` (saved and opened), `src/cutlist/shopping.wasm.test.ts` (through the real kernel: a copied cabinet doubles its hardware, a deleted one removes it, undo brings it back), `src/cutlist/shopping.test.ts` (aggregation, rounding to whole sheets, pairs and packs, unpriced rows left out and named, overage, CSV, booklet), `src/components/ShoppingSection.test.tsx`, `src/plugins/cabinet-bom.test.ts` (only Blum's printed part numbers, the planner's hinge count on each door), e2e `shopping-list.spec.ts`.
 
 ### Fixed (CNC cabinets, 2026-11-14)
+
+- **Nothing in a sheet's CNC file lies left of the sheet's corner.** The sheet's title on `LABELS` was centred on the corner, so half of it lay left of 0,0. A CAM program that sizes the job to everything in the file could move the origin there, half the title's width from the sheet's real corner. The title now starts at the sheet's left edge, above it. How: `src/nesting/dxf.ts`. Tests: `src/nesting/machine.test.ts`.
 
 - **Blum part numbers and hinge counts checked against Blum's current catalogues.**
   - Blum Europe's MOVENTO 760H runners were listed as 760H…1S, as Blum's TD-132/1 sheet (06.22) prints them. Blum's 2024/2025 and 2027/2028 catalogues list them as 760H…0S (760H4500S), the numbers to order; the table now says those.
