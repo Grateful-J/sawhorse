@@ -3,9 +3,9 @@ import { expect, test, type Download, type Page } from "@playwright/test";
 
 // A sheet's job sheet (src/nesting/jobsheet.ts), driven as a person would: a Base cabinet from
 // the Cabinet generator, nested on 4 x 4 plywood with CNC spacing; the Nesting section's Job
-// sheet for a router sheet, with a box ticked; then CNC files, which saves each sheet's DXF
-// followed by its job sheet under the same name ending in " job.txt", listing exactly the
-// DXF's layers.
+// sheet for a router sheet, with a box ticked; then CNC files, which saves each sheet's DXF and
+// then one file of job sheets for them all, each naming its DXF and listing exactly its cut
+// layers.
 
 const CABINET = "com.sawhorse3d.cabinet-generator";
 const requireKernel = !!process.env.REQUIRE_KERNEL;
@@ -48,7 +48,7 @@ async function downloads(page: Page, count: number, click: () => Promise<void>):
 /** The layer table of a DXF, but layer 0. */
 const layerNames = (text: string) => [...text.matchAll(/\n {2}0\nLAYER\n {2}2\n([^\n]+)/g)].map((m) => m[1]).filter((l) => l !== "0");
 
-test("a router sheet's job sheet in the Nesting section, and one beside each DXF that CNC files saves", async ({ page }) => {
+test("a router sheet's job sheet in the Nesting section, and one file of job sheets after the DXFs that CNC files saves", async ({ page }) => {
   test.setTimeout(120_000);
   await start(page);
   await enableCabinet(page);
@@ -95,23 +95,30 @@ test("a router sheet's job sheet in the Nesting section, and one beside each DXF
   const profile = js.locator('li[data-layer="PROFILE_THRU"]');
   await profile.getByRole("checkbox").check();
   await expect(js.getByRole("heading", { name: /Layers: 1 of \d+ with a toolpath/ })).toBeVisible();
-  await expect(js.locator('li[data-layer="STOCK"]').getByRole("checkbox")).toBeDisabled();
+  // STOCK and LABELS are reference: no box to tick.
+  await expect(js.locator('li[data-layer="STOCK"]').getByRole("checkbox")).toHaveCount(0);
+  await expect(js.locator('li[data-layer="STOCK"]')).toContainText("reference: no toolpath");
 
-  // CNC files: each DXF, then its job sheet.
+  // CNC files: the DXFs, then one file of job sheets for them all.
   const n = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { saw?: boolean }[] };
   const sheets = n.pieces.filter((p) => !p.saw).length;
-  const files = await downloads(page, sheets * 2, () => row.getByRole("button", { name: "CNC files" }).click());
-  for (let i = 0; i < sheets; i++) {
-    const dxf = files[2 * i];
-    const job = files[2 * i + 1];
-    expect(dxf.name).toMatch(/ CNC\.dxf$/);
-    expect(job.name).toBe(dxf.name.replace(/\.dxf$/, " job.txt"));
-    expect(job.text).toContain(dxf.name);
-    // A tick box for each of the DXF's layers, and no other.
-    const ticks = [...job.text.matchAll(/^\[ \] (\S+)/gm)].map((m) => m[1]);
-    expect(ticks).toEqual(layerNames(dxf.text));
-    expect(job.text).toMatch(/is\s+only\s+what\s+was\s+entered\s+for\s+the\s+stock,\s+not\s+a\s+measurement/);
-    expect(job.text).not.toContain("Not in the order");
-  }
-  await expect(page.locator("#hint")).toContainText("job sheet beside it");
+  const files = await downloads(page, sheets + 1, () => row.getByRole("button", { name: "CNC files" }).click());
+  const dxfs = files.slice(0, sheets);
+  const jobs = files[sheets];
+  expect(dxfs.every((f) => / CNC\.dxf$/.test(f.name))).toBe(true);
+  expect(jobs.name).toMatch(/ job sheets \d{4}-\d\d-\d\d\.txt$/);
+  expect(jobs.text).toMatch(/default\s+name/);
+  // One job sheet per DXF, in order, each naming its DXF and with a box for each cut layer.
+  const each = jobs.text.split("\n\f\n").slice(1);
+  expect(each).toHaveLength(sheets);
+  dxfs.forEach((dxf, i) => {
+    const job = each[i];
+    expect(job).toContain(`DXF            ${dxf.name}\n`);
+    const ticks = [...job.matchAll(/^\[ \] (\S+)/gm)].map((m) => m[1]);
+    expect(ticks).toEqual(layerNames(dxf.text).filter((l) => l !== "STOCK" && l !== "LABELS"));
+    expect(job).toContain("STOCK (reference: no toolpath)");
+    expect(job).toMatch(/is\s+only\s+what\s+was\s+entered\s+for\s+the\s+stock,\s+not\s+a\s+measurement/);
+    expect(job).not.toContain("CHOOSE A BIT");
+  });
+  await expect(page.locator("#hint")).toContainText(`Saved the job sheets for ${sheets} sheets as`);
 });

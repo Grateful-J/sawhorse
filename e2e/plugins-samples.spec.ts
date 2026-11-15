@@ -306,9 +306,10 @@ test("mixed CNC and track saw: a pantry too tall for a 4 x 4 goes to the saw, th
   expect(sawn.flatMap((p) => p.placements.map((q) => q.name))).toEqual(expect.arrayContaining(["Left side", "Right side"]));
   // The sides' shelf-pin and hinge-plate holes and back groove: hand work.
   await expect(page.getByTestId("nest-handwork")).toContainText("Left side");
-  // CNC files: one per router sheet, and the hand work list.
+  // CNC files: one per router sheet, the hand work list, then one file of job sheets.
   const router = n.pieces.filter((p) => !p.saw).length;
-  const files = await downloads(page, router + 1, () => section.getByRole("button", { name: "CNC files" }).click());
+  const files = await downloads(page, router + 2, () => section.getByRole("button", { name: "CNC files" }).click());
+  expect(files.filter((f) => / job sheets \d{4}-\d\d-\d\d\.txt$/.test(f.name))).toHaveLength(1);
   const dxfs = files.filter((f) => f.name.endsWith(".dxf"));
   expect(dxfs).toHaveLength(router);
   expect(dxfs.every((f) => !/Left side|Right side/.test(f.name))).toBe(true);
@@ -473,11 +474,14 @@ test("CNC files are not saved from a nesting the model has moved on from: an und
   const after = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { saw?: boolean; placements: { name: string }[] }[] };
   expect(drawerParts(after)).toBe(0);
   expect(after.pieces.length).toBeLessThan(before.pieces.length);
-  const files = await downloads(page, after.pieces.length, () => section.getByRole("button", { name: "CNC files" }).click());
-  expect(files).toHaveLength(after.pieces.length);
-  expect(files.every((f) => f.name.endsWith(".dxf") && !/Drawer base/.test(f.name))).toBe(true);
+  // The DXFs, then one file of job sheets.
+  const files = await downloads(page, after.pieces.length + 1, () => section.getByRole("button", { name: "CNC files" }).click());
+  const dxfs = files.filter((f) => f.name.endsWith(".dxf"));
+  expect(dxfs).toHaveLength(after.pieces.length);
+  expect(dxfs.every((f) => !/Drawer base/.test(f.name))).toBe(true);
+  expect(files[files.length - 1].name).toMatch(/ job sheets \d{4}-\d\d-\d\d\.txt$/);
   await expect(page.locator("#hint")).toContainText(`Saved ${after.pieces.length} CNC files`);
-  expect(got).toHaveLength(after.pieces.length);
+  expect(got).toHaveLength(after.pieces.length + 1);
 });
 
 test("a cabinet drawn at a thickness its sheets are not is asked about before any CNC file is written; saving anyway is not an error; a material keeps its own stock and the status says so", async ({ page }) => {
@@ -515,11 +519,12 @@ test("a cabinet drawn at a thickness its sheets are not is asked about before an
   expect(got).toHaveLength(0);
   // Saving anyway writes the files, and the status line does not call that a mistake.
   const n = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: unknown[] };
-  const files = await downloads(page, n.pieces.length, async () => {
+  const files = await downloads(page, n.pieces.length + 1, async () => {
     await section.getByRole("button", { name: "CNC files" }).click();
     await ask.getByRole("button", { name: "Save the CNC files anyway" }).click();
   });
-  expect(files).toHaveLength(n.pieces.length);
+  expect(files.filter((f) => f.name.endsWith(".dxf"))).toHaveLength(n.pieces.length);
+  expect(files.filter((f) => f.name.endsWith(".txt"))).toHaveLength(1);
   await expect(page.locator("#hint")).toContainText(`Saved ${n.pieces.length} CNC files`);
   await expect(page.locator("#hint")).toContainText("3/4 in thick");
   await expect(page.locator("#hint")).not.toContainText("Can't do that");
