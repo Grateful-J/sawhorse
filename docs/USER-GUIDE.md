@@ -370,7 +370,7 @@ The Cut list then reads: Side 2, 3/4 x 11 1/4 x 71 1/4; Top 1, 3/4 x 11 1/4 x 36
 
 ## Nesting (cutting diagrams)
 
-**Cutting cabinets on a CNC router?** [CNC cabinets](CNC-CABINETS.md) walks through it from the Cabinet generator to the CAM job, with every setting that changes the files.
+**Cutting cabinets on a CNC router?** [CNC cabinets](CNC-CABINETS.md) walks through it from the Cabinet generator to the CAM job, with every setting that changes the files. For the CAM program itself, [Carbide Create](CAM-CARBIDE-CREATE.md) and [VCarve](CAM-VCARVE.md) take the CNC files from import to G-code.
 
 **Nesting ›** at the bottom of the Cut list opens the Nesting section under the list: every piece of every part laid out on real sheets and boards, the cuts that free them, and what to buy. It works itself out again a moment after every change you make, and it is the same in the browser and on the desktop: the same model always gives the same layout.
 

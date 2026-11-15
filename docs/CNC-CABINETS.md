@@ -350,6 +350,10 @@ The other exports in the Nesting section:
 
 The DXF holds shapes, not toolpaths. Each kind of cut is on its own layer, so you give each layer one toolpath. Go through these seven steps for every sheet.
 
+Step by step in your CAM program: [Carbide Create](CAM-CARBIDE-CREATE.md) and [VCarve](CAM-VCARVE.md). Each guide says where these steps are done in that program, and which of its statements to check on your screen.
+
+**Templates and layer names.** A layer's name holds its depth (`POCKET_6.35MM`), so a CAM template's toolpaths pick up only the layer names they were made with. A metric document, a new dado or groove depth, another drawer-box stock or another pull hole makes a new name that no template toolpath takes, so a depth meant for another layer is never applied without you seeing it. After every import, check that every layer except `STOCK` and `LABELS` has a toolpath. The guides list the names the starting cabinets produce.
+
 ### 1. Check the scale
 
 The file is in millimetres and says so in its header, but not every CAM program reads that header. Choose millimetres if the program asks. Then measure the outer rectangle on the `STOCK` layer. It is your sheet, so for a 48 x 48 in sheet it must measure 1219.2 x 1219.2 mm, and for a metric document's 1220 x 1220 sheet, 1220 x 1220 mm. If it is 25.4 times too big or too small, the program has the units wrong: fix the import before you make a toolpath.
