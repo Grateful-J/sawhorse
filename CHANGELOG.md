@@ -6,6 +6,8 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ### Fixed (CNC cabinets, 2026-11-14)
 
+- **Nothing in a sheet's CNC file lies left of the sheet's corner.** The sheet's title on `LABELS` was centred on the corner, so half of it lay left of 0,0. A CAM program that sizes the job to everything in the file could move the origin there, half the title's width from the sheet's real corner. The title now starts at the sheet's left edge, above it. How: `src/nesting/dxf.ts`. Tests: `src/nesting/machine.test.ts`.
+
 - **Blum part numbers and hinge counts checked against Blum's current catalogues.**
   - Blum Europe's MOVENTO 760H runners were listed as 760H…1S, as Blum's TD-132/1 sheet (06.22) prints them. Blum's 2024/2025 and 2027/2028 catalogues list them as 760H…0S (760H4500S), the numbers to order; the table now says those.
   - With Blum Europe's catalogue, a door between about 750 and 900 mm tall got two hinges, the US chart's count; Blum's European chart asks for three. The European chart's height bands now apply with that catalogue, and the larger of the two counts wins, so a misread of a chart drawn without printed numbers can only add a hinge. Blum Inc. (US) doors are unchanged.
