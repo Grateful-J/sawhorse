@@ -12,7 +12,7 @@ const IN = 0.0254;
 const KNOWN = new Set([
   ...[RUNNERS, RUNNERS_EU].flatMap((t) => Object.values(t).flatMap((r) => r.lengths.map((l) => l.part))),
   ...["T51.1901 R", "T51.1901 L", "T51.7601 R", "T51.7601 L", "T51.1700.04", "T51.7601"],
-  ...["71B3550", "71B3750", "71T3550", "71T3750", "173L8100", "175L8100", "662.1150.HG", "606N", "T65.1600.01", "T65.1000.02", "T65.9000"],
+  ...["71B3550", "71B3750", "71T3550", "71T3750", "173L8100", "175L8100", "662.1150.HG", "606N", "609.1700", "T65.1600.01", "DB-2.5mm", "DB-6mm", "T65.1000.02", "T65.9000"],
 ]);
 
 const built = (s: Sizes, metric = false) => {
@@ -61,22 +61,28 @@ describe("the generator's hardware", () => {
         const bom = door.bom!;
         expect(bom.find((b) => b.sku === "71B3550")!.qty).toBe(n);
         expect(bom.find((b) => b.sku === "173L8100")!.qty).toBe(n);
-        expect(find(bom, /3\.5 x 17 mm/)[0].qty).toBe(2 * n);
+        expect(bom.find((b) => b.sku === "606N")!.qty).toBe(2 * n);
       }
     }
     expect(bomOf(built(applyPreset(defaults(false), "tall", false)).parts, "Door").find((b) => b.sku === "71B3550")!.qty).toBe(5);
   });
 
-  it("the hinges follow the door: inset is full-cranked, self-closing on request; Blum Europe's plate is 175L8100", () => {
+  it("the hinges follow the door: inset is full-cranked, self-closing on request; Blum Europe's plate is 175L8100 and its cup screw 609.1700", () => {
     const inset = built(normalize({ ...applyPreset(defaults(false), "base", false), front: "inset" }, false));
-    expect(bomOf(inset.parts, "Door").map((b) => b.sku)).toEqual(expect.arrayContaining(["71B3750", "173L8100"]));
+    expect(bomOf(inset.parts, "Door").map((b) => b.sku)).toContain("71B3750");
+    // Review minor 3: the plate's holes are not drilled for an inset door, so it is named in words.
+    expect(bomOf(inset.parts, "Door").some((b) => b.sku === "173L8100")).toBe(false);
+    expect(find(bomOf(inset.parts, "Door"), /^Blum CLIP mounting plate for an inset door/)[0].qty).toBe(2);
     const self = built(normalize({ ...applyPreset(defaults(false), "base", false), hingeClose: "self" }, false));
     expect(bomOf(self.parts, "Door").map((b) => b.sku)).toContain("71T3550");
     const eu = built(applyPreset(defaults(true), "base", true), true);
-    expect(bomOf(eu.parts, "Door").map((b) => b.sku)).toEqual(expect.arrayContaining(["71B3550", "175L8100"]));
+    expect(bomOf(eu.parts, "Door").map((b) => b.sku)).toEqual(expect.arrayContaining(["71B3550", "175L8100", "609.1700"]));
     // With hardware holes off the door still needs its hinges.
     const off = built(normalize({ ...applyPreset(defaults(false), "base", false), hardware: false }, false));
     expect(bomOf(off.parts, "Door").find((b) => b.sku === "71B3550")!.qty).toBe(2);
+    // ... but its plate holes are drilled by hand, so the plate is in words.
+    expect(bomOf(off.parts, "Door").some((b) => b.sku === "173L8100")).toBe(false);
+    expect(find(bomOf(off.parts, "Door"), /fixing to suit the holes you drill$/)[0].qty).toBe(2);
   });
 
   it("each drawer front carries its runner pair, a right and a left locking device and their screws; the template is bought once", () => {
@@ -91,7 +97,7 @@ describe("the generator's hardware", () => {
       expect(bom.find((b) => b.sku === "606N")!.qty).toBe(4);
       // One system screw per drilled runner hole: three a side.
       expect(bom.find((b) => b.sku === "662.1150.HG")!.qty).toBe(2 * p.runner!.screws.length);
-      expect(bom.filter((b) => b.once).map((b) => b.sku)).toEqual(["T65.1600.01", "T65.9000"]);
+      expect(bom.filter((b) => b.once).map((b) => b.sku)).toEqual(["T65.1600.01", "DB-2.5mm", "DB-6mm", "T65.9000"]);
     }
     // MOVENTO's own locking devices.
     const mov = built(normalize({ ...applyPreset(defaults(false), "drawers", false), slides: "movento" }, false));
@@ -100,7 +106,7 @@ describe("the generator's hardware", () => {
     const eu = built(applyPreset(defaults(true), "drawers", true), true);
     const bom = bomOf(eu.parts, "Drawer front");
     expect(bom.find((b) => b.sku === "T51.1700.04")).toMatchObject({ qty: 1, unit: "pair" });
-    expect(bom.some((b) => b.sku === "662.1150.HG" || b.sku === "606N")).toBe(false);
+    expect(bom.some((b) => b.sku === "662.1150.HG" || b.sku === "606N" || b.sku === "661.1450.HG")).toBe(false);
     expect(find(bom, /^Runner screw for a drilled 5 mm/)[0].qty).toBe(2 * eu.runner!.screws.length);
     expect(bom.filter((b) => b.once).map((b) => b.sku)).toEqual(["T65.1000.02", "T65.9000"]);
     // Inset drawers: the runner holes are not drilled here, so no count of system screws.
@@ -128,5 +134,18 @@ describe("the generator's hardware", () => {
     expect(bomOf(p.parts, "Left side")).toEqual([]);
     expect(p.parts.find((x) => x.name === "Left side")!.bom).toBeUndefined();
     expect(IN).toBeGreaterThan(0);
+  });
+
+  it("a trash pull-out's bins ride on its front, in words with their sizes", () => {
+    const one = built(applyPreset(defaults(false), "trash", false));
+    expect(find(bomOf(one.parts, "Drawer front"), /^Waste bin/)).toEqual([{ item: "Waste bin, Rev-A-Shelf 50 qt (RV-50): rim 14.75 x 10.67 in, 21.75 in tall", qty: 1, unit: "each" }]);
+    expect(bomOf(one.parts, "Drawer front").filter((b) => /^Waste bin/.test(b.item) && b.sku)).toEqual([]);
+    const custom = built(normalize({ ...applyPreset(defaults(true), "trash", true), bin: "custom", trashBins: "deep" }, true), true);
+    const bins = find(bomOf(custom.parts, "Drawer front"), /^Waste bin/);
+    expect(bins.length).toBe(1);
+    expect(bins[0].qty).toBe(2);
+    expect(bins[0].item).toMatch(/cutout \(as measured\)$/);
+    // No bins on an ordinary drawer.
+    expect(find(bomOf(built(applyPreset(defaults(false), "drawers", false)).parts, "Drawer front"), /^Waste bin/)).toEqual([]);
   });
 });

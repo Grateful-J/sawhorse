@@ -292,15 +292,22 @@ const PIN_REACH = 2;
  *   173L8100 (Concealed hinges (c) 2025 p. 48; Blum Inc. lists no 175L8100) and 175L8100 (Blum
  *   catalogue 2024/2025 p. 155, 2027/2028 p. 149). Blum's inset table is for a 0 mm plate too
  *   (Concealed hinges (c) 2025 p. 10).
- * - A screw-on hinge's cup is held to the door with 3.5 x 17 mm screws (Blum MD-029/3, 11.24).
+ * - A screw-on hinge's cup is held to the door with screws: Blum Inc.'s 606N, #6 x 5/8 in
+ *   (Concealed hinges (c) 2025 p. 86), or Blum Europe's 609.1700, 3.5 x 17 mm (catalogue
+ *   2024/2025 p. 76; MD-029/3 gives the same size).
  * - Blum Inc.'s runner system screw 662.1150.HG, #6 x 11.5 mm, for 5 mm holes (TANDEM plus
  *   BLUMOTION (c) 2025 pp. 14, 34; MOVENTO (c) 2026 p. 12), and its locking-device screw 606N,
  *   #6 x 5/8 in, two per device (TANDEM plus BLUMOTION (c) 2025 p. 11).
- * - Drilling templates, one per shop: T65.1600.01 (TANDEM plus BLUMOTION (c) 2025 pp. 11, 35) and
- *   T65.1000.02 (Blum catalogue 2024/2025 p. 682, 2027/2028 p. 698), each with tool set T65.9000.
+ * - Drilling templates, one per shop: T65.1600.01 with its drill bits DB-2.5mm and DB-6mm
+ *   (TANDEM plus BLUMOTION (c) 2025 pp. 11, 35) and T65.1000.02 (Blum catalogue 2024/2025 p. 682,
+ *   2027/2028 p. 698; Blum Europe's page names no bits), each with tool set T65.9000.
  * - Blum sells no shelf pins.
- * Blum Europe's screws for runners and locking devices are not named in the pages read, so they
- * are left in words. Blum gives no pack sizes: everything is each or pair.
+ * The plate's part number is given only where this plugin drills its holes (overlay doors with
+ * hardware holes on): for holes drilled by hand, or an inset door, the plate is named in words.
+ * Blum Europe's runner screw: TD-127/3 p. 24 names system screw 661.1450.HG (6 x 14.5 mm) for
+ * the 560H, but Blum gives no hole depth for it through a runner, and this plugin drills 5 x 13
+ * mm holes, so it is left in words; so are Blum Europe's locking-device screws, which the pages
+ * read do not name. Blum gives no pack sizes: everything is each or pair.
  */
 const HARDWARE = {
   hinge: {
@@ -316,12 +323,19 @@ const HARDWARE = {
   plate: { item: "Blum CLIP mounting plate, 0 mm, pre-mounted system screws", us: "173L8100", eu: "175L8100" },
   // Two per hinge, one through each screw hole of the cup; Blum's pages read give the screw's
   // size, not the count.
-  hingeScrew: { item: "Screw, 3.5 x 17 mm, hinge cup to door (Blum MD-029/3)", perHinge: 2 },
+  hingeScrew: {
+    us: { item: "Blum wood screw, #6 x 5/8 in", sku: "606N" },
+    eu: { item: "Blum chipboard screw, 3.5 x 17 mm, hinge cup to door", sku: "609.1700" },
+    perHinge: 2,
+  },
   runnerScrewUs: { item: "Blum system screw, #6 x 11.5 mm, runner to a 5 mm hole", sku: "662.1150.HG" },
-  lockScrewUs: { item: "Blum wood screw, #6 x 5/8 in, locking device to drawer", sku: "606N" },
+  // The same 606N as the hinge screws: one row on the shopping list, with both parts named.
+  lockScrewUs: { item: "Blum wood screw, #6 x 5/8 in", sku: "606N" },
   templates: {
     us: [
       { item: "Blum concealed runner template", sku: "T65.1600.01" },
+      { item: "Blum drill bit, 2.5 mm, for the runner template", sku: "DB-2.5mm" },
+      { item: "Blum drill bit, 6 mm, for the runner template", sku: "DB-6mm" },
       { item: "Blum tool set for the runner template", sku: "T65.9000" },
     ],
     eu: [
@@ -1032,12 +1046,26 @@ function build(s, metric) {
    */
   const hingeBom = (count) => {
     const hinge = HARDWARE.hinge[s.hingeClose][overlay ? "overlay" : "inset"];
-    const plate = overlay ? overlayPlate() : 0;
+    const screw = HARDWARE.hingeScrew[s.catalog];
     return [
       { item: hinge.item, sku: hinge.sku, qty: count, unit: "each" },
-      plate === 0 ? { item: HARDWARE.plate.item, sku: HARDWARE.plate[s.catalog], qty: count, unit: "each" } : { item: plate === null ? "Blum CLIP mounting plate, frameless, system screws, height to match the overlay" : `Blum CLIP mounting plate, frameless, ${plate} mm, system screws`, qty: count, unit: "each" },
-      { item: HARDWARE.hingeScrew.item, qty: HARDWARE.hingeScrew.perHinge * count, unit: "each" },
+      plateBom(count),
+      { item: screw.item, sku: screw.sku, qty: HARDWARE.hingeScrew.perHinge * count, unit: "each" },
     ];
+  };
+  /**
+   * One mounting plate per hinge. Its part number only where this plugin drills its two 5 x 11.5
+   * mm holes (an overlay door, hardware holes on) and the Overlay row settles on a 0 mm plate;
+   * otherwise in words, as the runner screws are when their holes are not drilled here.
+   * @param {number} count @returns {BomItem}
+   */
+  const plateBom = (count) => {
+    if (!overlay) return { item: "Blum CLIP mounting plate for an inset door, as Blum's inset table gives", qty: count, unit: "each" };
+    const plate = overlayPlate();
+    const height = plate === null ? "height to match the overlay" : `${plate} mm`;
+    if (!s.hardware) return { item: `Blum CLIP mounting plate, frameless, ${height}, fixing to suit the holes you drill`, qty: count, unit: "each" };
+    if (plate === 0) return { item: HARDWARE.plate.item, sku: HARDWARE.plate[s.catalog], qty: count, unit: "each" };
+    return { item: `Blum CLIP mounting plate, frameless, ${height}, system screws`, qty: count, unit: "each" };
   };
   /**
    * The plate height an overlay door's hinges go on (mm), as the Overlay row works it out
@@ -1327,6 +1355,20 @@ function build(s, metric) {
     const drilled = s.hardware && overlay;
     const us = s.catalog === "us";
     const holes = 2 * rl.screws.length;
+    // A trash pull-out's bins ride on its front, in words: BINS has the sizes from each maker's
+    // drawing, not an order number.
+    const binSpec = s.bin === "custom" ? null : BINS[s.bin];
+    /** @type {BomItem[]} */
+    const binBom =
+      s.layout !== "trash"
+        ? []
+        : [
+            {
+              item: binSpec ? `Waste bin, ${binSpec.label}: rim ${binSpec.rim[0]} x ${binSpec.rim[1]} in, ${binSpec.height} in tall` : `Waste bin hung by its rim in a ${both(s.binWidth)} x ${both(s.binLength)} cutout (as measured)`,
+              qty: s.trashBins === "one" ? 1 : 2,
+              unit: "each",
+            },
+          ];
     /** @type {BomItem[]} */
     const drawerBom = [
       { item: `${R.name} runners, ${rl.nl} mm${us ? ` (${(rl.nl / 25.4).toFixed(0)} in)` : ""}, left and right`, sku: rl.part, qty: 1, unit: "pair" },
@@ -1403,7 +1445,7 @@ function build(s, metric) {
         }
         note("Drawer front", `Pull, 2 holes ${both(s.pullSpacing)} apart, ${s.drawerPull === "center" ? "centred" : `${both(s.drawerPullFromTop)} down from the top`}`, fmtMm(s.pullHole), "through", "CNC");
       }
-      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` }, [...drawerBom, ...pullBom(s.drawerPull === "center" || s.drawerPull === "top", s.pullSpacing, tf)]);
+      add("Drawer front", MATERIALS.drawerFronts.name, fSize, fPrisms, fHoles, { at: [fb.x0, fb.y, fb.z0], name: `Drawer ${n} front` }, [...drawerBom, ...binBom, ...pullBom(s.drawerPull === "center" || s.drawerPull === "top", s.pullSpacing, tf)]);
 
       // Box: sides run the full length; the sub-front and back sit between them. The bottom
       // slides in under the back, in grooves in the sides and the sub-front.
