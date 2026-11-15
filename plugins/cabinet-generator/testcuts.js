@@ -15,7 +15,7 @@
 //
 // Edge banding: the mini drawer and the mini door are banded as the cabinet is, since they are
 // planned by `plan()`: each banded edge's blank a band short, every hole where it is in the
-// finished part. Band them before measuring. The machine check and the joint ladders are never
+// finished part. The scale is checked on a side's blank, before banding; the rest after. The machine check and the joint ladders are never
 // banded: they test the machine and the joints, and have no edge that shows.
 //
 // Lengths are metres inside. The guide's numbers are for calipers: inches to 0.001 with
@@ -517,12 +517,18 @@ export function testCut(kind, s, metric, steps) {
       const outside = Math.max(...sides) + side.blank[0] - Math.min(...sides);
       const sub = of("Drawer sub-front")[0];
       const innerW = ms.width - 2 * ms.thickness;
+      // The cabinet's side as the router cut it: a banded front edge makes its blank shorter than
+      // the cabinet's depth (by the band, less any pre-mill). The scale is checked on the blank,
+      // before banding: a banded side measured against the depth would rescale a good machine.
+      const cSide = of("Left side")[0];
+      const sideCut = cSide ? cSide.blank[1] : ms.depth;
+      const sideBanded = !!cSide?.bands;
       out.rows = [
         ["The runner", `${R.name} ${runner.part}, ${runner.nl} mm${ms.catalog === "us" ? ` (${Math.round(runner.nl / 25.4)} in)` : ""}: the one your cabinet takes`, "Buy that one: a different length has other screw holes and another box."],
         ["Drawer box, outside width", L(outside), `The opening (${L(innerW)}) less ${BLUM.insideDeduct} mm inside, Blum's rule, plus the two sides. Tight or loose on the runners: measure the drawer box stock again (4 · Materials).`],
         ["Drawer box length", L(side.blank[1]), `${R.boxShort ? `The runner less ${R.boxShort} mm` : "The runner's length"} (Blum). Off: the CAM job's scale (Machine check).`],
         ["Drawer box height", L(sub.blank[2]), `The opening less ${R.heightDeduct} mm (Blum), rounded down.`],
-        ["Each side's length (a long cut: the machine's scale)", L(ms.depth), "Your cabinet's depth. Off by more than you can measure: the CAM job's units or scale, or the machine (its belts or drive): check them with your machine maker's support documents."],
+        ["Each side's length (a long cut: the machine's scale)", sideBanded ? `${L(sideCut)}, as cut: measure it before banding (${L(ms.depth)}, your cabinet's depth, once banded)` : L(sideCut), `${sideBanded ? "The side's blank, a band short at its front edge" : "Your cabinet's depth"}. Off by more than you can measure: the CAM job's units or scale, or the machine (its belts or drive): check them with your machine maker's support documents.`],
         ...(!ms.hardware
           ? [["Hardware holes", "Off in 6 · Hardware: no runner screw or rear hook holes are drilled", "Turn Drill hinge, runner and pull holes on to test them."]]
           : drilled
@@ -541,14 +547,20 @@ export function testCut(kind, s, metric, steps) {
       // door is banded all round with one band.
       const x0 = door ? door.copies[0].at[0] - (door.offset?.[0] ?? 0) : ms.gap / 2;
       const band = door?.bands?.[0];
-      const sideBand = planned.parts.find((p) => p.name === "Left side")?.bands?.[0];
+      const side = planned.parts.find((p) => p.name === "Left side");
+      const sideBand = side?.bands?.[0];
+      // How much came off each edge as cut: the band less any pre-mill, read from the blank itself.
+      const doorTrim = door?.finished && door.offset ? (ms.hingeSide === "right" && door.copies[0].name === "Door" ? door.finished[0] - door.blank[0] - door.offset[0] : door.offset[0]) : 0;
+      const sideTrim = side?.offset ? side.offset[1] : 0;
+      const raw = ms.bandPremill > 0 ? "from the blank's edge as cut, before the pre-mill and the band" : "from the raw edge, before banding";
+      const cupAt = CUP.radius * MM + ms.cupDistance;
       const moved = planned.rows.filter((r) => /^Hinge cup, .*\(moved /.test(r[1]));
       out.rows = [
-        ["Hinge cup centre, from the door's hinge edge", band ? `${L(CUP.radius * MM + ms.cupDistance)} from the banded edge (${L(CUP.radius * MM + ms.cupDistance - band.thickness)} from the raw edge, before banding)` : L(CUP.radius * MM + ms.cupDistance), `${CUP.radius} mm plus the boring distance${band ? ", from the finished edge, as Blum measures it" : ""}. Off: the door turned or mirrored in the CAM program, or X and Y zero.${band ? " Off by about the band's thickness once banded: the band is not the thickness typed in Edge banding (measure it with calipers)." : ""}`],
+        ["Hinge cup centre, from the door's hinge edge", band ? `${L(cupAt)} from the banded edge (${L(cupAt - doorTrim)} ${raw})` : L(cupAt), `${CUP.radius} mm plus the boring distance${band ? ": Blum gives the boring distance from the door's edge, and with a band on, that edge is the band's face" : ""}. Off: the door turned or mirrored in the CAM program, or X and Y zero.${band ? " Off by about the band's thickness once banded: the band is not the thickness typed in Edge banding (measure it with calipers)." : ""}`],
         ["Hinge cup depth", `${CUP.depth} mm`, "Off: Z zero or the CAM job's thickness (Machine check)."],
         ["Hinge cup centres, from the door's ends", moved.length ? `${L(ms.hingeInset)} (From top, bottom), but ${moved.length === 1 ? "one cup moved" : `${moved.length} cups moved`}: see the rows below that say moved` : `${L(ms.hingeInset)} (From top, bottom)`, "Off at both ends the same way: the door turned end for end."],
         ...(ms.front === "overlay"
-          ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's ${sideBand ? `finished front edge (${L(CUP.plateSetback * MM - sideBand.thickness)} from the raw edge, before banding)` : "front edge"}`, "Off: X and Y zero."]]
+          ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's ${sideBand ? `banded front edge (${L(CUP.plateSetback * MM - sideTrim)} ${raw})` : "front edge"}`, "Off: X and Y zero."]]
           : [["Mounting plates", "Not drilled with inset fronts (listed below)", "Place them by Blum's inset tables, by hand."]]),
         // The door as planned: where its edge is (half the gap, or less of the side where the
         // hinge cannot reach that far), not what the gap alone would give.
@@ -567,7 +579,7 @@ export function testCut(kind, s, metric, steps) {
     // Banding on: the test is banded as the cabinet is (the same planner), so band it before
     // measuring or fitting: its holes are placed from the finished edges.
     if (planned.parts.some((p) => p.bands)) {
-      out.rows.unshift(["Edge banding", `Band the parts the rows below say (Edge band) with the bands you will use, before you measure or fit anything: they are cut as your cabinet's are, each banded edge a band short, every hole placed from the finished edge`, "Measure a banded part across its bands: it should be its finished size. Off by a band or two: the band is not the thickness typed in Edge banding (measure it with calipers)."]);
+      out.rows.unshift(["Edge banding", `The parts the rows below say (Edge band) are cut as your cabinet's are, each banded edge a band short, every hole placed from the finished edge. Measure the cut sizes first, where a row says before banding; then band them with the bands you will use, then measure across the bands and fit the hardware`, "Measure a banded part across its bands: it should be its finished size. Off by a band or two: the band is not the thickness typed in Edge banding (measure it with calipers)."]);
       out.holes = [...out.holes, ...planned.rows.filter((r) => r[0] === "Edge banding")];
     }
   }
