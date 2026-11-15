@@ -1708,14 +1708,15 @@ async function explainRows() {
   }
   {
     const warn = row.length ? rowChecks(row, (await placed()).list, metric()) : [];
-    // KCMA's least toe space, against a frame with a skin (and no frame for this row yet, or this frame).
-    const skin = !(v.kind === "row" && v.base) ? skinOf(row, baseSizes) : undefined;
+    // KCMA's least toe space, against a frame with a skin: the draft frame, or the row's existing frame.
+    const bs = v.kind === "row" && v.base ? v.base.sizes : baseSizes;
+    const skin = skinOf(row, bs);
     if (skin) {
       const m = metric();
       const h = m ? KCMA.height.mm * MM : KCMA.height.in * IN;
       const d = m ? KCMA.depth.mm * MM : KCMA.depth.in * IN;
-      if (baseSizes.height < h - 1e-6) warn.push(`The frame is ${f(baseSizes.height)} tall: KCMA A161.1 asks a toe kick to be at least ${m ? `${KCMA.height.mm} mm` : `${KCMA.height.in} in`} high.`);
-      if (baseSizes.setback - skin.thickness < d - 1e-6 && baseSizes.setback - skin.thickness > 0) warn.push(`With the skin on, the toe space is ${f(baseSizes.setback - skin.thickness)} deep: KCMA A161.1 asks for at least ${m ? `${KCMA.depth.mm} mm` : `${KCMA.depth.in} in`}.`);
+      if (bs.height < h - 1e-6) warn.push(`The frame is ${f(bs.height)} tall: KCMA A161.1 asks a toe kick to be at least ${m ? `${KCMA.height.mm} mm` : `${KCMA.height.in} in`} high.`);
+      if (bs.setback - skin.thickness < d - 1e-6 && bs.setback - skin.thickness > 0) warn.push(`With the skin on, the toe space is ${f(bs.setback - skin.thickness)} deep: KCMA A161.1 asks for at least ${m ? `${KCMA.depth.mm} mm` : `${KCMA.depth.in} in`}.`);
     }
     fields.rowChecks = warn.length ? { text: warn.join(" "), tone: "warning" } : { text: "" };
   }
