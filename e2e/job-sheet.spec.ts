@@ -102,9 +102,17 @@ test("a router sheet's job sheet in the Nesting section, and one file of job she
   // CNC files: the DXFs, then one file of job sheets for them all.
   const n = (await page.evaluate(async () => (await (window as unknown as { __sawhorse: { nest(): Promise<unknown> } }).__sawhorse.nest()) as never)) as { pieces: { saw?: boolean }[] };
   const sheets = n.pieces.filter((p) => !p.saw).length;
-  const files = await downloads(page, sheets + 1, () => row.getByRole("button", { name: "CNC files" }).click());
+  const files = await downloads(page, sheets + 1, async () => {
+    await row.getByRole("button", { name: "CNC files" }).click();
+    const warning = page.getByRole("dialog", { name: "The nesting has problems" });
+    await expect(warning).toContainText("confirm you own");
+    await expect(warning).toContainText("cutting length");
+    await expect(warning.getByRole("button", { name: "Open CNC setup..." })).toBeVisible();
+    await warning.getByRole("button", { name: "Save the CNC files anyway" }).click();
+  });
   const dxfs = files.slice(0, sheets);
   const jobs = files[sheets];
+  expect(dxfs.some((f) => f.text.includes("__POCKET_WITH_1_8_IN_END_MILL_D3P175MM_OWNERSHIP_UNCONFIRMED"))).toBe(true);
   expect(dxfs.every((f) => / CNC\.dxf$/.test(f.name))).toBe(true);
   expect(jobs.name).toMatch(/ job sheets \d{4}-\d\d-\d\d\.txt$/);
   expect(jobs.text).toMatch(/default\s+name/);

@@ -245,11 +245,11 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
             {l.cut ? (
               <label className="check">
                 <input type="checkbox" checked={ticked.has(l.name)} onChange={() => toggle(l.name)} aria-label={`${l.name} has its toolpath`} />
-                <b>{l.name}</b> <small>{`${l.shapes} shape${l.shapes === 1 ? "" : "s"}`}</small>
+                <b>{l.exportName ?? l.name}</b> <small>{`${l.shapes} shape${l.shapes === 1 ? "" : "s"}`}</small>
               </label>
             ) : (
               <div className="check">
-                <b>{l.name}</b> <small>reference: no toolpath</small>
+                <b>{l.exportName ?? l.name}</b> <small>reference: no toolpath</small>
               </div>
             )}
             <div className="job-what">{l.toolpath}</div>

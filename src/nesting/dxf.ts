@@ -88,6 +88,8 @@ export function featureLayers(f: BlankFeatures, r12 = false): { pockets: string[
 }
 
 export interface DxfOptions {
+  /** Optional explicit cut-layer labels, used by CNC files. Legacy DXF names stay the default. */
+  layerNames?: ReadonlyMap<string, string>;
   /** Only this piece (its index in `n.pieces`), with the sheet's lower-left corner at the
    * origin and part outlines on PROFILE_THRU: one file per sheet, ready for a CAM job. */
   piece?: number;
@@ -131,7 +133,7 @@ export function overcutLoop(loop: [number, number][], dx: number, dy: number, e:
 /** Every layer a DXF of the nesting (or, with `piece`, of one sheet) holds, in the file's
  * order: STOCK, LABELS, the outlines' layers, CUTOUT_THRU when a part has an opening, then the
  * pocket and drill layers sorted by name. A sheet's job sheet lists exactly these. */
-export function dxfLayers(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>, options: Pick<DxfOptions, "piece"> = {}): string[] {
+export function dxfLayers(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>, options: Pick<DxfOptions, "piece" | "layerNames"> = {}): string[] {
   const r12 = flavour === "r12";
   const sheet = options.piece;
   const pieces = sheet === undefined ? n.pieces : [n.pieces[sheet]];
@@ -147,7 +149,7 @@ export function dxfLayers(n: Nesting, flavour: DxfFlavour = "lwpolyline", featur
     }
   }
   const profiles = sheet === undefined ? n.pieces.map(pieceLayer) : ["PROFILE_THRU"];
-  return ["STOCK", "LABELS", ...profiles, ...(cutouts ? ["CUTOUT_THRU"] : []), ...[...featureNames].sort()];
+  return ["STOCK", "LABELS", ...profiles, ...(cutouts ? ["CUTOUT_THRU"] : []), ...[...featureNames].sort()].map((name) => options.layerNames?.get(name) ?? name);
 }
 
 /** The whole nesting as one DXF. Without `features` the file is the rectangles only.
@@ -155,7 +157,9 @@ export function dxfLayers(n: Nesting, flavour: DxfFlavour = "lwpolyline", featur
  * layer per operation (see `featureLayers`), and holes are circles. */
 export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>, options: DxfOptions = {}): string {
   const r12 = flavour === "r12";
+  if (r12 && options.layerNames?.size) throw new Error("Tool-labelled layers require modern DXF; use legacy names for R12.");
   const d = new Dxf();
+  const layerName = (name: string) => options.layerNames?.get(name) ?? name;
   const feat = (tag: string) => features?.get(tag);
   const sheet = options.piece;
   const pieces = sheet === undefined ? n.pieces.map((p, i) => ({ p, i })) : [{ p: n.pieces[sheet], i: sheet }];
@@ -214,7 +218,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   const poly = (layer: string, pts: [number, number][]) => {
     if (r12) {
       d.pair(0, "POLYLINE");
-      d.pair(8, layer);
+      d.pair(8, layerName(layer));
       d.pair(66, 1);
       d.pair(10, "0");
       d.pair(20, "0");
@@ -222,17 +226,17 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
       d.pair(70, 1);
       for (const [x, y] of pts) {
         d.pair(0, "VERTEX");
-        d.pair(8, layer);
+        d.pair(8, layerName(layer));
         d.pair(10, dxfNum(x));
         d.pair(20, dxfNum(y));
         d.pair(30, "0");
       }
       d.pair(0, "SEQEND");
-      d.pair(8, layer);
+      d.pair(8, layerName(layer));
     } else {
       d.pair(0, "LWPOLYLINE");
       d.pair(100, "AcDbEntity");
-      d.pair(8, layer);
+      d.pair(8, layerName(layer));
       d.pair(100, "AcDbPolyline");
       d.pair(90, pts.length);
       d.pair(70, 1);
@@ -245,7 +249,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   /** Centred on (x, y), or with `left` starting at it, so nothing it draws lies left of x. */
   const text = (layer: string, x: number, y: number, h: number, s: string, left = false) => {
     d.pair(0, "TEXT");
-    d.pair(8, layer);
+    d.pair(8, layerName(layer));
     d.pair(10, dxfNum(x));
     d.pair(20, dxfNum(y));
     d.pair(30, "0");
@@ -261,7 +265,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   const circle = (layer: string, x: number, y: number, r: number) => {
     d.pair(0, "CIRCLE");
     if (!r12) d.pair(100, "AcDbEntity");
-    d.pair(8, layer);
+    d.pair(8, layerName(layer));
     if (!r12) d.pair(100, "AcDbCircle");
     d.pair(10, dxfNum(x));
     d.pair(20, dxfNum(y));

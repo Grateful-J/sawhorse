@@ -20,6 +20,7 @@ import { confidenceOf, CHART_DEPTH, COMMUNITY, type Sourced } from "../cam/data"
 import { bothUnits, chiploadText, ipmToMmMin, lowest, type FeedsResult, type Warning } from "../cam/feeds";
 import { holdDownOf, JOB_KINDS, materialFor, type JobKind } from "../cam/jobs";
 import { layerJob } from "../cam/layers";
+import { labelJobSheet } from "./tool-layers";
 import { SOURCES, type Confidence, type Source, type SourceId } from "../cam/sources";
 import { feedsForLayer, machineOf, profileTool, routerOf, tableOf, toolById, type Shop } from "../cam/shop";
 import { seedField, type Tool } from "../cam/tools";
@@ -175,6 +176,8 @@ export interface FeedLine {
 export type LayerKind = "profile" | JobKind;
 
 export interface JobLayer {
+  /** Actual name in a tool-labelled CNC file; name remains the canonical operation key. */
+  exportName?: string;
   name: string;
   /** False for STOCK and LABELS: reference only, no toolpath. */
   cut: boolean;
@@ -806,7 +809,7 @@ export function jobSheetText(js: JobSheet, title: string): string {
       out.push(...field("What", l.toolpath.replace(/^Reference: no toolpath\. /, "")));
       continue;
     }
-    out.push("", `[ ] ${l.name} (${plural(l.shapes, "shape")})`);
+    out.push("", `[ ] ${l.exportName ?? l.name} (${plural(l.shapes, "shape")})`);
     out.push(...field("Toolpath", l.toolpath));
     if (l.depth) out.push(...field("Depth", l.depth));
     out.push(...field("Bit", l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : `CHOOSE A BIT: ${l.toolWhy}`));
@@ -874,5 +877,5 @@ export function jobSheetsText(sheets: JobSheet[], title: string): string {
  * `all` is the whole nesting; `measured`, its router share's cuts (null: not measured). */
 export function jobSheets(all: Nesting, measured: MeasuredNest | null, shop: Shop, units: Units, title: string, ownerOf: (q: Placement) => string | null, banding?: (q: Placement) => string | null): JobSheet[] {
   const n = routerShare(all);
-  return n.pieces.map((_, i) => jobSheet({ n, index: i, measured, shop, units, file: cncFileName(title, n, i, measured?.features, ownerOf), ownerOf, all, banding }));
+  return n.pieces.map((_, i) => labelJobSheet(jobSheet({ n, index: i, measured, shop, units, file: cncFileName(title, n, i, measured?.features, ownerOf), ownerOf, all, banding }), shop));
 }

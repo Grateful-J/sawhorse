@@ -17,9 +17,11 @@ import { JOB_SHEETS_TYPE, jobSheets, jobSheetsFileName, jobSheetsText, type JobS
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
-import { CNC_BIT, cncFileName, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, toolFitProblems, type HandWork, type NestProblem } from "./nesting/cnc";
-import { loadShop, profileBit } from "./cam/shop";
+import { CNC_BIT, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { loadShop, profileBit, type Shop } from "./cam/shop";
 import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, sameStamp, shopExportBlock, stampOf, type NestStamp } from "./nesting/exportGuard";
+import { cncToolProblems } from "./nesting/tool-preflight";
+import { toolLayerNames } from "./nesting/tool-layers";
 import { assemblyIndex } from "./lib/assembly";
 import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
 import { NestProblemDialog, type NestProblemRequest } from "./components/NestProblemDialog";
@@ -332,6 +334,7 @@ function stepKey(st: DocState | null | undefined): string {
 /** The cuts measured for a file of the nesting, once: the cuts in the file's own parts (the
  * router's share for the CNC files), and the track saw's share when it has one. */
 interface NestCuts {
+  shop: Shop;
   cuts: MeasuredNest | null;
   saw: { measured: MeasuredNest | null } | null;
 }
@@ -2532,6 +2535,7 @@ export function App() {
           kind === "plain"
             ? undefined
             : async (n) => ({
+                shop: loadShop(),
                 cuts: await measureNesting(kind === "cnc" ? routerShare(n) : n),
                 saw: kind === "cnc" && n.pieces.some((p) => p.saw) ? { measured: await measureNesting(sawShare(n)) } : null,
               }),
@@ -2540,11 +2544,11 @@ export function App() {
           // For the router too: a sheet among its files that is not the size it is set to (a
           // material kept on its own stock), which "nest on 4 x 4" did not move.
           const problems = [...nestProblems(n, nestUnits, reasonText), ...(kind === "cnc" ? routerSheetProblems(n, nestUnits) : []), ...(m ? cutProblems(share, m.cuts, nestUnits) : [])];
-          if (m) problems.push(...toolFitProblems(share, m.cuts, nestUnits));
+          if (m) problems.push(...cncToolProblems(share, m.cuts, m.shop, nestUnits, { profiles: kind === "cnc" }));
           // For the router: parts too close for the bit cut as one blob in the CAM program.
           // The profile bit chosen in CNC setup (1/4 in when none is). CNC spacing's gap follows
           // the document's units, as its button does.
-          const spacing = kind === "cnc" ? spacingProblem(n, nestUnits, profileBit(), units === "mm" || units === "cm" || units === "m") : null;
+          const spacing = kind === "cnc" ? spacingProblem(n, nestUnits, profileBit(m?.shop), units === "mm" || units === "cm" || units === "m") : null;
           if (spacing) problems.unshift(spacing);
           return problems;
         },
@@ -2553,7 +2557,7 @@ export function App() {
           // CNC spacing is offered only when its gap is enough for the profile bit.
           const enough = cncSpacingFits(profileBit()?.diameter ?? CNC_BIT, metric);
           const fix = enough && problems.some((x) => x.kind === "spacing") ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
-          setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), fix });
+          setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), onCnc: () => setCncSetupOpen(true), fix });
         },
         refuse: (why) => setMessage({ text: why, error: true }),
         save,
@@ -2674,7 +2678,9 @@ export function App() {
         const ownerOf = (q: Placement) => ownerOfItem(q.item);
         // Every file's text and the hand work list are made before the first save dialog, from
         // the one nesting and the one measurement the questions were asked about.
-        const files = n.pieces.map((_, i) => ({ name: cncFileName(cutTitle, n, i, features?.features, ownerOf), text: nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true }) }));
+        const sheets = jobSheets(all, features, prepared.shop, nestUnits, cutTitle, ownerOf, bandingOfPlacement);
+        const files = n.pieces.map((_, i) => ({ name: sheets[i].file, text: nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true, layerNames: toolLayerNames(sheets[i]) }) }));
+        const sheetsText = jobSheetsText(sheets, cutTitle);
         const sawSheets = all.pieces.filter((p) => p.saw).length;
         const items = prepared.saw ? handWork(sawShare(all), prepared.saw.measured?.features, nestUnits) : [];
         const hand = prepared.saw ? { parts: items.length, saved: false, note: handWorkNote(prepared.saw.measured) } : null;
@@ -2699,9 +2705,8 @@ export function App() {
         // measurement. Its own save: cancelling it leaves the CNC files as they are.
         let jobs: { name: string; saved: boolean; sheets: number } | null = null;
         if (stoppedAt === null && files.length) {
-          const sheets = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf, bandingOfPlacement);
           const name = safeName(jobSheetsFileName(cutTitle, new Date()).replace(/\.txt$/, "")) + ".txt";
-          const res = await saveFile(name, new TextEncoder().encode(jobSheetsText(sheets, cutTitle)), JOB_SHEETS_TYPE);
+          const res = await saveFile(name, new TextEncoder().encode(sheetsText), JOB_SHEETS_TYPE);
           jobs = { name: res?.name ?? name, saved: !!res, sheets: sheets.length };
         }
         const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets, jobSheets: jobs }, cncNotes(all, features, nestUnits));
@@ -3553,7 +3558,7 @@ export function App() {
               onGrain={grainPlacement}
               onSvg={(piece) => void saveNestSvg(piece)}
               onDxf={(f) => guardNest("the DXF", "dxf", (n, m) => void saveNestDxf(f, n, m?.cuts ?? null))}
-              onCnc={() => guardNest("the CNC files", "cnc", (n, m) => void saveNestCnc(n, m ?? { cuts: null, saw: null }))}
+              onCnc={() => guardNest("the CNC files", "cnc", (n, m) => void saveNestCnc(n, m ?? { cuts: null, saw: null, shop: loadShop() }))}
               onPdf={() => guardNest("the PDF", "plain", (n) => void saveNestPdf(n))}
               lit={nestLit}
               onOverflow={(on) => void setOverflow(on)}

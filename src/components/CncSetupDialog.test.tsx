@@ -256,6 +256,33 @@ describe("CNC setup: the review's findings", () => {
 });
 
 describe("the Nesting section opens CNC setup", () => {
+  it("keeps ownership and compatible collets explicitly, and clears ownership after editing a bit", () => {
+    render(<CncSetupDialog units="frac-in" onClose={vi.fn()} tab="tools" />);
+    const owned = screen.getByRole("checkbox", { name: "I own: Amana 46170, 1/4 in compression" });
+    expect((owned as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(owned);
+    const collets = screen.getByLabelText("Confirmed collet sizes (mm, comma-separated)");
+    fireEvent.change(collets, { target: { value: "3.175, 6.35" } });
+    fireEvent.blur(collets);
+    expect(loadShop().collets).toEqual([.003175, .00635]);
+    expect(loadShop().tools[0].confirmedOwned).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Amana 46170, 1/4 in compression" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save bit" }));
+    expect(loadShop().tools[0].confirmedOwned).toBe(false);
+  });
+
+  it("rejects invalid collet sizes and offers legacy CNC layer names", () => {
+    render(<CncSetupDialog units="mm" onClose={vi.fn()} tab="tools" />);
+    const collets = screen.getByLabelText("Confirmed collet sizes (mm, comma-separated)");
+    fireEvent.change(collets, { target: { value: "0, NaN" } });
+    fireEvent.blur(collets);
+    expect(screen.getByRole("alert").textContent).toContain("collet sizes");
+    expect(loadShop().collets).toEqual([]);
+    fireEvent.click(screen.getByRole("tab", { name: "Job sheet" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Tool details in CNC layer names" }));
+    expect(loadShop().jobs.toolLayers).toBe(false);
+  });
+
   it("has a CNC setup… button beside Stock…", () => {
     const onCncSetup = vi.fn();
     render(<NestingSection nesting={smallNesting()} rounding="sixteenth" units="frac-in" onSettings={vi.fn()} onStock={vi.fn()} onHover={vi.fn()} onSelect={vi.fn()} onCncSetup={onCncSetup} />);

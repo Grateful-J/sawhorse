@@ -308,7 +308,10 @@ test("mixed CNC and track saw: a pantry too tall for a 4 x 4 goes to the saw, th
   await expect(page.getByTestId("nest-handwork")).toContainText("Left side");
   // CNC files: one per router sheet, the hand work list, then one file of job sheets.
   const router = n.pieces.filter((p) => !p.saw).length;
-  const files = await downloads(page, router + 2, () => section.getByRole("button", { name: "CNC files" }).click());
+  const files = await downloads(page, router + 2, async () => {
+    await section.getByRole("button", { name: "CNC files" }).click();
+    await page.getByRole("dialog", { name: "The nesting has problems" }).getByRole("button", { name: "Save the CNC files anyway" }).click();
+  });
   expect(files.filter((f) => / job sheets \d{4}-\d\d-\d\d\.txt$/.test(f.name))).toHaveLength(1);
   const dxfs = files.filter((f) => f.name.endsWith(".dxf"));
   expect(dxfs).toHaveLength(router);
@@ -475,7 +478,10 @@ test("CNC files are not saved from a nesting the model has moved on from: an und
   expect(drawerParts(after)).toBe(0);
   expect(after.pieces.length).toBeLessThan(before.pieces.length);
   // The DXFs, then one file of job sheets.
-  const files = await downloads(page, after.pieces.length + 1, () => section.getByRole("button", { name: "CNC files" }).click());
+  const files = await downloads(page, after.pieces.length + 1, async () => {
+    await section.getByRole("button", { name: "CNC files" }).click();
+    await page.getByRole("dialog", { name: "The nesting has problems" }).getByRole("button", { name: "Save the CNC files anyway" }).click();
+  });
   const dxfs = files.filter((f) => f.name.endsWith(".dxf"));
   expect(dxfs).toHaveLength(after.pieces.length);
   expect(dxfs.every((f) => !/Drawer base/.test(f.name))).toBe(true);

@@ -10,6 +10,7 @@ export interface NestProblemRequest {
   problems: NestProblem[];
   onSave: () => void;
   onStock: () => void;
+  onCnc?: () => void;
   /** A one-click fix, offered first (e.g. space the parts for the router). */
   fix?: { label: string; run: () => void };
 }
@@ -32,7 +33,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "toolfit") ? "Check cutter sizes in CAM" : countable ? `${n} part${n === 1 ? "" : "s"} will not be cut as drawn` : req.problems.some((p) => p.kind === "toolfit") ? "Some parts may not be cut as drawn" : "Some parts will not be cut as drawn"}</b>
+        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "toolfit") ? "Check cutter sizes in CAM" : countable ? `${n} part${n === 1 ? "" : "s"} will not be cut as drawn` : "Some parts will not be cut as drawn"}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (
@@ -42,6 +43,7 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
         ))}
       </ul>
       <div className="btnrow">
+        {req.onCnc && req.problems.some((p) => p.kind === "toolfit") ? <button type="button" className="btn" onClick={() => { onClose(); req.onCnc?.(); }}>Open CNC setup...</button> : null}
         {req.fix ? (
           <button
             type="button"

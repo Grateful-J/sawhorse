@@ -1,0 +1,445 @@
+{
+  "netAreaSquareFeet": 5.813,
+  "stockSheets": [
+    {
+      "thickness": 0.019049999999999997,
+      "width": 0.5715,
+      "length": 0.762,
+      "name": "Demo 3-4 plywood",
+      "sizeInches": [
+        0.75,
+        22.5,
+        30
+      ]
+    },
+    {
+      "thickness": 0.0127,
+      "width": 0.2794,
+      "length": 0.4826,
+      "name": "Demo 1-2 plywood",
+      "sizeInches": [
+        0.5,
+        11,
+        19
+      ]
+    },
+    {
+      "thickness": 0.00635,
+      "width": 0.21589999999999998,
+      "length": 0.4699,
+      "name": "Demo 1-4 plywood",
+      "sizeInches": [
+        0.25,
+        8.5,
+        18.5
+      ]
+    }
+  ],
+  "hardware": [
+    {
+      "item": "Blum TANDEM 563H runners, 457 mm (18 in), left and right",
+      "sku": "563H4570B",
+      "qty": 1,
+      "unit": "pair"
+    },
+    {
+      "item": "Blum TANDEM 563H locking device, right",
+      "sku": "T51.1901 R",
+      "qty": 1,
+      "unit": "each"
+    },
+    {
+      "item": "Blum TANDEM 563H locking device, left",
+      "sku": "T51.1901 L",
+      "qty": 1,
+      "unit": "each"
+    },
+    {
+      "item": "Blum wood screw, #6 x 5/8 in",
+      "sku": "606N",
+      "qty": 8,
+      "unit": "each"
+    },
+    {
+      "item": "Blum system screw, #6 x 11.5 mm, runner to a 5 mm hole",
+      "sku": "662.1150.HG",
+      "qty": 6,
+      "unit": "each"
+    },
+    {
+      "item": "Blum concealed runner template",
+      "sku": "T65.1600.01",
+      "qty": 1,
+      "unit": "each",
+      "once": true
+    },
+    {
+      "item": "Blum drill bit, 2.5 mm, for the runner template",
+      "sku": "DB-2.5mm",
+      "qty": 1,
+      "unit": "each",
+      "once": true
+    },
+    {
+      "item": "Blum drill bit, 6 mm, for the runner template",
+      "sku": "DB-6mm",
+      "qty": 1,
+      "unit": "each",
+      "once": true
+    },
+    {
+      "item": "Blum tool set for the runner template",
+      "sku": "T65.9000",
+      "qty": 1,
+      "unit": "each",
+      "once": true
+    },
+    {
+      "item": "Blum CLIP top BLUMOTION 110° hinge, full overlay, straight arm, screw-on",
+      "sku": "71B3550",
+      "qty": 2,
+      "unit": "each"
+    },
+    {
+      "item": "Blum CLIP mounting plate, 0 mm, pre-mounted system screws",
+      "sku": "173L8100",
+      "qty": 2,
+      "unit": "each"
+    }
+  ],
+  "rigs": [
+    {
+      "name": "18 inch TANDEM slide test",
+      "sizeInches": [
+        10,
+        19,
+        4.75
+      ],
+      "settings": {
+        "name": "18 inch TANDEM slide test",
+        "width": 0.254,
+        "height": 0.12065,
+        "depth": 0.4826,
+        "thickness": 0.019049999999999997,
+        "frontThickness": 0.0127,
+        "drawerThickness": 0.0127,
+        "backThickness": 0.00635,
+        "layout": "drawers",
+        "shelves": 1,
+        "shelfType": "adjustable",
+        "drawers": 1,
+        "drawerFronts": "equal",
+        "drawerFront": 0.15239999999999998,
+        "top": "stretchers",
+        "stretcher": 0.0508,
+        "grainDoors": "vertical",
+        "grainFronts": "horizontal",
+        "grainSides": "vertical",
+        "grainHidden": "any",
+        "base": "none",
+        "toeKick": 0.1016,
+        "toeSetback": 0.07619999999999999,
+        "back": false,
+        "backMount": "groove",
+        "backInset": 0.0127,
+        "backGrooveDepth": 0.0079375,
+        "front": "overlay",
+        "gap": 0.003175,
+        "dados": true,
+        "dadoDepth": 0.00635,
+        "dadoStop": 0.0127,
+        "fit": 0.0002032,
+        "bit": 0.00635,
+        "slides": "tandem",
+        "catalog": "us",
+        "runner": 457,
+        "hardware": true,
+        "hingeInset": 0.08889999999999999,
+        "cupDistance": 0.0065,
+        "hingeClose": "soft",
+        "drawerPull": "none",
+        "drawerPullFromTop": 0.038099999999999995,
+        "pullSpacing": 0.07619999999999999,
+        "notchWidth": 0.1016,
+        "notchDepth": 0.0254,
+        "doorPull": "none",
+        "doorPullFrom": "top",
+        "doorPullEnd": 0.0635,
+        "doorPullEdge": 0.038099999999999995,
+        "doorPullSpacing": 0.07619999999999999,
+        "pullHole": 0.004762499999999999,
+        "doors": "auto",
+        "hingeSide": "left",
+        "nailers": "none",
+        "nailerHeight": 0.07619999999999999,
+        "trashBins": "deep",
+        "bin": "rv35",
+        "binWidth": 0.2794,
+        "binLength": 0.21589999999999998,
+        "binHeight": 0.43179999999999996,
+        "trayHeight": 0.15239999999999998,
+        "band": false,
+        "bandCount": 1,
+        "band1Size": "1",
+        "band1Thick": 0.001,
+        "band1Name": "",
+        "band1Width": 0.0238125,
+        "band2Size": "3",
+        "band2Thick": 0.003,
+        "band2Name": "",
+        "band2Width": 0.0238125,
+        "band3Size": "2",
+        "band3Thick": 0.002,
+        "band3Name": "",
+        "band3Width": 0.0238125,
+        "bandFronts": "1",
+        "bandCarcass": "1",
+        "bandShelves": "1",
+        "bandPremill": 0,
+        "bandWasteEnd": 0.0254
+      },
+      "operations": [
+        [
+          "Drawer",
+          "Blum TANDEM 563H 563H4570B, 457 mm (18 in) runners; the box is 457 mm long",
+          "-",
+          "-",
+          "Hardware"
+        ],
+        [
+          "Drawer",
+          "T51.1901 R/L locking devices: two 2.5 mm pilot holes each, 10 mm deep at 75 degrees, with the T65.1600.01 template",
+          "-",
+          "-",
+          "Hand"
+        ],
+        [
+          "Drawer box",
+          "Bottom slides in from the back in grooves 6.6 mm (0.258 in) wide, 13 mm (0.512 in) up; the back sits on it, so the runner passes under the back (no notch)",
+          "-",
+          "6.4 mm (0.250 in)",
+          "CNC (pocket)"
+        ],
+        [
+          "Left and right sides",
+          "Drawer 1 runner screws at 37, 261, 453 mm from front, 37 mm above the opening",
+          "5 mm",
+          "13 mm",
+          "CNC"
+        ],
+        [
+          "Drawer back",
+          "Runner rear hook holes, rear face, 7 mm in from each end (the sides' inside faces), 24 mm above the bottom of the box: thin wood, 1.4 mm (0.057 in) under each and 2.7 mm (0.106 in) at its floor",
+          "6 mm",
+          "10 mm",
+          "CNC"
+        ],
+        [
+          "Stretchers",
+          "Two 50.8 mm (2.000 in) wide in place of a top, front and rear: in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove",
+          "-",
+          "-",
+          "CNC (profile)"
+        ],
+        [
+          "Sides",
+          "Blind dados 19.3 mm (0.758 in) wide, stop 12.7 mm (0.500 in) from the front",
+          "-",
+          "6.4 mm (0.250 in)",
+          "CNC (pocket)"
+        ],
+        [
+          "Rails",
+          "Tongues 5.8 mm (0.230 in) long, front corners notched 19 mm (0.750 in) deep (stop + bit)",
+          "-",
+          "through",
+          "CNC (profile)"
+        ],
+        [
+          "Assembly",
+          "The bottom in its dados hold the box square; the stretchers add little on their own. Glue it up with the back in place and check the diagonals (equal within 1/32 in, 1 mm) before the glue sets.",
+          "-",
+          "-",
+          "Hand"
+        ],
+        [
+          "Holes",
+          "The 5 mm and 6 mm holes are smaller than the 6.4 mm (0.250 in) bit: drill their DRILL_ layers with 5 mm and 6 mm drill bits (or bore them with a 1/8 in or 3 mm bit)",
+          "-",
+          "-",
+          "Change bit"
+        ]
+      ]
+    },
+    {
+      "name": "3-4 inch Blum hinge test",
+      "sizeInches": [
+        4,
+        4.25,
+        11.25
+      ],
+      "settings": {
+        "name": "3-4 inch Blum hinge test",
+        "width": 0.1016,
+        "height": 0.28575,
+        "depth": 0.10794999999999999,
+        "thickness": 0.019049999999999997,
+        "frontThickness": 0.019049999999999997,
+        "drawerThickness": 0.0127,
+        "backThickness": 0.00635,
+        "layout": "doors",
+        "shelves": 0,
+        "shelfType": "adjustable",
+        "drawers": 3,
+        "drawerFronts": "equal",
+        "drawerFront": 0.15239999999999998,
+        "top": "stretchers",
+        "stretcher": 0.0508,
+        "grainDoors": "vertical",
+        "grainFronts": "horizontal",
+        "grainSides": "vertical",
+        "grainHidden": "any",
+        "base": "none",
+        "toeKick": 0.1016,
+        "toeSetback": 0.07619999999999999,
+        "back": false,
+        "backMount": "groove",
+        "backInset": 0.0127,
+        "backGrooveDepth": 0.0079375,
+        "front": "overlay",
+        "gap": 0.003175,
+        "dados": true,
+        "dadoDepth": 0.00635,
+        "dadoStop": 0.0127,
+        "fit": 0.0002032,
+        "bit": 0.00635,
+        "slides": "tandem",
+        "catalog": "us",
+        "runner": 457,
+        "hardware": true,
+        "hingeInset": 0.08889999999999999,
+        "cupDistance": 0.0065,
+        "hingeClose": "soft",
+        "drawerPull": "none",
+        "drawerPullFromTop": 0.038099999999999995,
+        "pullSpacing": 0.07619999999999999,
+        "notchWidth": 0.1016,
+        "notchDepth": 0.0254,
+        "doorPull": "none",
+        "doorPullFrom": "top",
+        "doorPullEnd": 0.0635,
+        "doorPullEdge": 0.038099999999999995,
+        "doorPullSpacing": 0.07619999999999999,
+        "pullHole": 0.004762499999999999,
+        "doors": "one",
+        "hingeSide": "left",
+        "nailers": "none",
+        "nailerHeight": 0.07619999999999999,
+        "trashBins": "deep",
+        "bin": "rv35",
+        "binWidth": 0.2794,
+        "binLength": 0.21589999999999998,
+        "binHeight": 0.43179999999999996,
+        "trayHeight": 0.15239999999999998,
+        "band": false,
+        "bandCount": 1,
+        "band1Size": "1",
+        "band1Thick": 0.001,
+        "band1Name": "",
+        "band1Width": 0.0238125,
+        "band2Size": "3",
+        "band2Thick": 0.003,
+        "band2Name": "",
+        "band2Width": 0.0238125,
+        "band3Size": "2",
+        "band3Thick": 0.002,
+        "band3Name": "",
+        "band3Width": 0.0238125,
+        "bandFronts": "1",
+        "bandCarcass": "1",
+        "bandShelves": "1",
+        "bandPremill": 0,
+        "bandWasteEnd": 0.0254
+      },
+      "operations": [
+        [
+          "Door",
+          "Hinge cup, 88.9 mm (3.500 in) up, centre 24 mm (0.945 in) from the hinge edge, back face",
+          "35 mm",
+          "13 mm",
+          "CNC"
+        ],
+        [
+          "Left side",
+          "Hinge plate, 2 holes 32 mm apart, 37 mm from front, centred 90.5 mm (3.563 in) up",
+          "5 mm",
+          "11.5 mm",
+          "CNC"
+        ],
+        [
+          "Door",
+          "Hinge cup, 193.7 mm (7.625 in) up, centre 24 mm (0.945 in) from the hinge edge, back face",
+          "35 mm",
+          "13 mm",
+          "CNC"
+        ],
+        [
+          "Left side",
+          "Hinge plate, 2 holes 32 mm apart, 37 mm from front, centred 195.3 mm (7.687 in) up",
+          "5 mm",
+          "11.5 mm",
+          "CNC"
+        ],
+        [
+          "Door",
+          "2 hinges (282.6 mm (11.125 in) tall, about 0.6 kg; Blum's chart by height and weight)",
+          "-",
+          "-",
+          "Hardware"
+        ],
+        [
+          "Doors",
+          "Overlay: this door covers 17.5 mm (0.688 in) of the side; a 0 mm plate with this boring distance gives 17.5 mm (Blum: 11 + boring distance). Matched.",
+          "-",
+          "-",
+          "Hardware"
+        ],
+        [
+          "Stretchers",
+          "Two 50.8 mm (2.000 in) wide in place of a top, front and rear: in the rabbet along each side's top (a dado open at the top), stopped at the front like the others; the front one notched to the stop, the rear one held by the back's groove",
+          "-",
+          "-",
+          "CNC (profile)"
+        ],
+        [
+          "Sides",
+          "Blind dados 19.3 mm (0.758 in) wide, stop 12.7 mm (0.500 in) from the front",
+          "-",
+          "6.4 mm (0.250 in)",
+          "CNC (pocket)"
+        ],
+        [
+          "Rails",
+          "Tongues 5.8 mm (0.230 in) long, front corners notched 19 mm (0.750 in) deep (stop + bit)",
+          "-",
+          "through",
+          "CNC (profile)"
+        ],
+        [
+          "Assembly",
+          "The bottom in its dados hold the box square; the stretchers add little on their own. Glue it up with the back in place and check the diagonals (equal within 1/32 in, 1 mm) before the glue sets.",
+          "-",
+          "-",
+          "Hand"
+        ],
+        [
+          "Holes",
+          "The 5 mm holes are smaller than the 6.4 mm (0.250 in) bit: drill their DRILL_ layers with a 5 mm drill bit (or bore them with a 1/8 in or 3 mm bit)",
+          "-",
+          "-",
+          "Change bit"
+        ]
+      ]
+    }
+  ]
+}

@@ -26,6 +26,8 @@ export interface CustomMachine {
 }
 
 export interface Shop {
+  /** Collets the user has checked, in metres. An absent list is unconfirmed. */
+  collets?: number[];
   version: 1;
   /** SHAPEOKO_5_PRO_4X4.id or CUSTOM_MACHINE. */
   machine: string;
@@ -50,6 +52,7 @@ export function defaultShop(): Shop {
   const tools = seedTools();
   return {
     version: 1,
+    collets: [],
     machine: SHAPEOKO_5_PRO_4X4.id,
     custom: { name: "My machine", travelX: null, travelY: null, travelZ: null, feedWarnIpm: null, maxShank: null },
     router: ROUTERS[0].id,
@@ -81,6 +84,7 @@ export function readShop(x: unknown): Shop {
   const toolId = (v: unknown) => (typeof v === "string" && unique.some((t) => t.id === v) ? v : null);
   return {
     version: 1,
+    collets: Array.isArray(o.collets) && o.collets.length <= 20 && o.collets.every((v) => num(v, 0, 0.0254) !== null) ? [...new Set(o.collets as number[])] : [],
     machine: o.machine === CUSTOM_MACHINE || o.machine === SHAPEOKO_5_PRO_4X4.id ? o.machine : d.machine,
     custom: {
       name: typeof c.name === "string" && c.name.trim() ? c.name.slice(0, 60) : d.custom.name,

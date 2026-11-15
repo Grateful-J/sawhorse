@@ -39,6 +39,8 @@ export const LABEL_SIZES: LabelSize[] = [
 ];
 
 export interface JobPrefs {
+  /** Include the assigned cutter in CNC DXF layer names. False keeps legacy CAM templates. */
+  toolLayers?: boolean;
   /** The bit for each kind of layer, by tool id (null: none). A null cutout bit is the
    * profile bit. */
   tools: Record<JobKind, string | null>;
@@ -69,6 +71,7 @@ export function holdDownOf(p: JobPrefs, metric: boolean): number {
 export function defaultJobs(tools: Tool[]): JobPrefs {
   const has = (id: string) => (tools.some((t) => t.id === id) ? id : null);
   return {
+    toolLayers: true,
     tools: { cutout: null, pocket: has("seed-downcut"), narrow: has("seed-endmill"), hole: has("seed-endmill") },
     // The most cautious of the materials: a laminate face, so the warnings for it show until
     // the material is set.
@@ -90,6 +93,7 @@ export function readJobs(x: unknown, tools: Tool[]): JobPrefs {
   const hd = o.holdDown;
   return {
     tools: { cutout: id(t.cutout, d.tools.cutout), pocket: id(t.pocket, d.tools.pocket), narrow: id(t.narrow, d.tools.narrow), hole: id(t.hole, d.tools.hole) },
+    toolLayers: o.toolLayers !== false,
     material: MATERIALS.some((m) => m.id === o.material) ? (o.material as MaterialId) : d.material,
     materials: Object.fromEntries(
       Object.entries(o.materials && typeof o.materials === "object" ? (o.materials as Record<string, unknown>) : {})

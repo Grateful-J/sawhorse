@@ -283,7 +283,7 @@ function jobPages(doc: PdfDoc, js: JobSheet, title: string, size: [number, numbe
     const x = left + 15;
     // A box to tick for each cut layer; STOCK and LABELS are reference, with none.
     if (l.cut) p.rect(left, y - 2, 9, 9, { stroke: 0, width: 0.8 });
-    p.text(x, y, l.cut ? `${l.name}  (${l.shapes} shape${l.shapes === 1 ? "" : "s"})` : `${l.name}  (reference: no toolpath)`, 10, { bold: true });
+    p.text(x, y, l.cut ? `${l.exportName ?? l.name}  (${l.shapes} shape${l.shapes === 1 ? "" : "s"})` : `${l.name}  (reference: no toolpath)`, 10, { bold: true });
     y -= 14;
     if (!l.cut) {
       field("What", l.toolpath.replace(/^Reference: no toolpath\. /, ""), x);

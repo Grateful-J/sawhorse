@@ -8,6 +8,8 @@ import type { SourceId } from "./sources";
 export type ToolField = "diameter" | "flutes" | "shank" | "cuttingLength" | "upcut" | "upcutTol";
 
 export interface Tool {
+  /** Explicitly checked by the owner; catalog entries alone are not inventory. */
+  confirmedOwned?: boolean;
   id: string;
   name: string;
   type: BitType;
@@ -86,7 +88,7 @@ const LENGTHS: ToolField[] = ["diameter", "shank", "cuttingLength", "upcut", "up
 /** The seeded bits as tools. */
 export function seedTools(): Tool[] {
   return SEED_TOOLS.map((s) => {
-    const t: Tool = { id: s.id, name: s.name, type: s.type, maker: s.maker, diameter: null, flutes: null, shank: null, cuttingLength: null, upcut: null, upcutTol: null, from: {}, note: s.note };
+    const t: Tool = { confirmedOwned: false, id: s.id, name: s.name, type: s.type, maker: s.maker, diameter: null, flutes: null, shank: null, cuttingLength: null, upcut: null, upcutTol: null, from: {}, note: s.note };
     for (const [k, v] of Object.entries(s.fields) as [ToolField, Sourced][]) {
       t[k] = LENGTHS.includes(k) ? metres(v) : v.value;
       t.from![k] = v.src;
@@ -115,6 +117,7 @@ export function readTool(x: unknown): Tool | null {
   const fl = o.flutes ?? null;
   if (fl !== null && !(typeof fl === "number" && Number.isInteger(fl) && fl >= 1 && fl <= 8)) return null;
   const t: Tool = {
+    confirmedOwned: o.confirmedOwned === true,
     id: o.id,
     name: o.name.slice(0, 80),
     type: o.type as BitType,

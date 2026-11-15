@@ -33,6 +33,10 @@ class DrillInspection(unittest.TestCase):
         self.db.commit()
         return check.inspect(self.path)
 
+    def test_tool_labelled_reverse_face_layer_still_checks_hole_intent(self):
+        findings = self.run_check("FLIP_DRILL_D4P76MM_THRU__POCKET_WITH_MY_BIT_D3P175MM")
+        self.assertEqual(len(findings), 2)
+
     def test_supplied_example_reports_both_mismatches(self):
         findings = self.run_check()
         self.assertEqual(len(findings), 2)

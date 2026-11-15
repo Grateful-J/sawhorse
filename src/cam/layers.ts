@@ -33,6 +33,7 @@ const MM = (s: string) => Number(s.replace("P", ".")) / 1000;
 
 /** The job a layer asks for, or null for a layer that is not cut (STOCK, LABELS) or not known. */
 export function layerJob(name: string): LayerJob | null {
+  name = name.replace(/__(?:POCKET|PROFILE)_(?:WITH_[A-Z0-9_]+|TOOL_UNSET)$/, "");
   const flip = name.startsWith("FLIP_");
   const n = flip ? name.slice(5) : name;
   if (n === "PROFILE_THRU" || n === "CUTOUT_THRU") return { op: "profile", depth: null, hole: null, flip };

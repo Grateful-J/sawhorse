@@ -276,7 +276,7 @@ function MachineTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; 
           onChange={(e) => {
             const id = e.currentTarget.value;
             const nr = ROUTERS.find((x) => x.id === id);
-            set({ ...shop, router: id, table: nr?.tables[0].id ?? "" });
+            set({ ...shop, router: id, table: nr?.tables[0].id ?? "", collets: [] });
           }}
         >
           {ROUTERS.map((x) => (
@@ -379,6 +379,17 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
   const metric = isMetric(units);
   const [draft, setDraft] = useState<Draft>(() => draftOf(null, metric));
   const [err, setErr] = useState<string | null>(null);
+  const [collets, setCollets] = useState(() => (shop.collets ?? []).map((s) => Number((s * 1000).toFixed(4))).join(", "));
+  const [colletError, setColletError] = useState<string | null>(null);
+  const keepCollets = () => {
+    const sizes = collets.trim() ? collets.split(",").map((s) => Number(s.trim())) : [];
+    if (sizes.length > 20 || sizes.some((s) => !Number.isFinite(s) || s <= 0 || s > 25.4)) {
+      setColletError("Enter collet sizes in mm, separated by commas, each more than 0 and at most 25.4.");
+      return;
+    }
+    setColletError(null);
+    set({ ...shop, collets: [...new Set(sizes.map((s) => s / 1000))] });
+  };
   const editing = draft.id ? toolById(shop, draft.id) : null;
   const start = useMemo(() => (editing ? draftOf(editing, metric) : null), [editing, metric]);
   const save = () => {
@@ -442,6 +453,12 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
   };
   return (
     <div role="tabpanel" aria-label="Tools" className="cam-panel">
+      <p className="note">Starter bits are catalog examples. Check the bits and collets you own before exporting; editing a bit clears its ownership confirmation.</p>
+      <label>
+        <span>Confirmed collet sizes (mm, comma-separated)</span>
+        <input aria-label="Confirmed collet sizes (mm, comma-separated)" value={collets} placeholder="e.g. 3.175, 6.35" onChange={(e) => setCollets(e.currentTarget.value)} onBlur={keepCollets} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+      </label>
+      {colletError ? <p role="alert">{colletError}</p> : null}
       <table className="cam-table cam-tools" aria-label="Bits">
         <thead>
           <tr>
@@ -457,6 +474,7 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
                 {t.name}
                 <small>{toolLine(t, metric)}</small>
                 {t.note ? <small className="cam-from">{t.note}</small> : null}
+                <label className="check"><input type="checkbox" aria-label={`I own: ${t.name}`} checked={t.confirmedOwned === true} onChange={(e) => set({ ...shop, tools: shop.tools.map((tool) => tool.id === t.id ? { ...tool, confirmedOwned: e.currentTarget.checked } : tool) })} /> I own this bit</label>
               </td>
               <td>
                 <input type="radio" name="profile-bit" aria-label={`Profile bit: ${t.name}`} checked={shop.profileTool === t.id} onChange={() => set({ ...shop, profileTool: t.id })} disabled={t.diameter === null} />
@@ -862,6 +880,7 @@ function JobsTab({ shop, set, units, stocks = [] }: { shop: Shop; set: (s: Shop)
   const profile = toolById(shop, shop.profileTool);
   return (
     <div role="tabpanel" aria-label="Job sheet" className="cam-panel">
+      <label className="check"><input type="checkbox" aria-label="Tool details in CNC layer names" checked={j.toolLayers !== false} onChange={(e) => setJ({ toolLayers: e.currentTarget.checked })} /> Tool details in CNC layer names (turn off for existing CAM layer templates)</label>
       <p className="note">
         Each router sheet's job sheet (the Nesting section's Job sheet, the PDF, and the text file CNC files saves beside each DXF) gives every layer a bit from here, and checks that the bit is narrower than the narrowest shape on that layer in that sheet. Profiles take the Profile bit (Tools): {profile ? profile.name : "none is chosen"}.
       </p>

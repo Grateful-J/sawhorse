@@ -12,11 +12,11 @@ import zlib
 from contextlib import closing
 from pathlib import Path
 
-LAYER = re.compile(r"^DRILL_D(\d+(?:\.\d+)?)MM_(THRU|\d+(?:\.\d+)?MM)$")
+LAYER = re.compile(r"^(?:FLIP_)?DRILL_D(\d+(?:[.P]\d+)?)MM_(THRU|\d+(?:[.P]\d+)?MM)(?:__POCKET_(?:WITH_[A-Z0-9_]+|TOOL_UNSET))?$")
 
 
 def number(value, name):
-    value = float(value)
+    value = float(value.replace("P", ".") if isinstance(value, str) else value)
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"invalid {name}")
     return value
