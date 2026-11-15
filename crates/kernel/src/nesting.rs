@@ -1293,6 +1293,13 @@ fn find_cut(reg: Rect, parts: &[Put], dir: CutDir, kerf: f64) -> Option<f64> {
     let mut hi = iv[0].1;
     for &(lo, h) in &iv[1..] {
         if lo >= hi + kerf - EPS && hi < r1 - EPS {
+            // A gap wider than one kerf and narrower than two: cut against the far part, so
+            // the sliver stays on the near side, where a cut after the last part takes it off.
+            // Cut against the near part, it was left before the far part, narrower than a
+            // kerf, and no cut freed that part.
+            if lo - kerf > hi + EPS && lo < hi + 2.0 * kerf - EPS {
+                return Some(lo - kerf);
+            }
             return Some(hi);
         }
         hi = hi.max(h);
@@ -1881,5 +1888,33 @@ mod tests {
             h: 4.0,
         };
         assert!(!decompose(u, &pin, 0.1, StockKind::Sheet).1);
+    }
+
+    /// Two parts more than a kerf apart and less than two: the cut goes against the far
+    /// part and the sliver is taken off the near one, so both are freed. (Cut against the
+    /// near part, a sliver narrower than the kerf was left before the far part.)
+    #[test]
+    fn a_gap_between_one_kerf_and_two_leaves_no_sliver() {
+        let u = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 4.0,
+            h: 10.0,
+        };
+        let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.15, 4.0, 3.0)];
+        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+        assert!(ok);
+        let at: Vec<(CutDir, f64)> = cuts.iter().map(|c| (c.dir, c.at)).collect();
+        assert_eq!(at.len(), 3, "{at:?}");
+        assert!((at[0].1 - 3.05).abs() < 1e-12, "{at:?}");
+        assert!((at[1].1 - 3.0).abs() < 1e-12, "{at:?}");
+        assert!((at[2].1 - 6.15).abs() < 1e-12, "{at:?}");
+        // Exactly a kerf, or two or more: as ever, against the near part.
+        for gap in [0.1, 0.2, 0.5] {
+            let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.0 + gap, 4.0, 3.0)];
+            let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+            assert!(ok);
+            assert!((cuts[0].at - 3.0).abs() < 1e-12, "{gap}: {cuts:?}");
+        }
     }
 }
