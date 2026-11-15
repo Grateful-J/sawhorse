@@ -16,6 +16,8 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
   How: `plugins/cabinet-generator/cabinet.js` (`DOWEL`, `CONFIRMAT`, `CONFIRMAT_LAYOUT`, `LINE_BORE`, `dowelLayout`; `build()` drills each rail's joint holes in the sides before any hardware, lists the rails' end holes for a jig, and puts the fasteners on the rails' `bom`), `main.js` (the two fields), `testcuts.js`, `cabinet.d.ts`. Tests: `src/plugins/cabinet-joinery.test.ts` (Blum's 775 mm / 22-hole case and other heights; line boring skipping hinge plates, runner screws and joints; dowel and Confirmat counts and places at 18 in, 18 in and a millimetre, 24 in and past it; CNC against jig rows; 3 mm of wood to edges, cuts and holes; least stock; the shopping list; banding; kept settings; test cuts; every starting cabinet's plan hashed against the commit before), `src/nesting/cabinet-joinery.wasm.test.ts` (through the kernel: each joinery's DXF layers and depths, the job sheet's layers exactly the DXF's, every full-height pin in the file), `e2e/cabinet-joinery.spec.ts`.
 
+  Review fixes: Confirmat needs 13 mm stock; a clearer message when a joint hole meets the back's groove; dowel length wording; nailers say they're not fastened.
+
 ### Added (CNC cabinets, edge banding, 2026-11-15)
 
 - **Edge banding in the cabinet generator** (cabinet generator 1.10.0). The cabinet panel's new **10 · Edge banding** group starts off, so every cabinet is cut as before until **Band the edges** is ticked.

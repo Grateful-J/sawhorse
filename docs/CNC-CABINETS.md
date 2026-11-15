@@ -240,8 +240,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | In the sides (router) | 8 mm, 11 mm deep, inner face: `DRILL_D8MM_11MM` | 7 mm, through: `DRILL_D7MM_THRU`. No countersink is cut: the screw is Häfele's self-countersinking connector ("Countersink is not necessary as the nibs countersink hole") |
 | In each rail's two ends (jig) | 8 mm, 25 mm deep, centred in the thickness | 5 mm pilot, centred in the thickness, as deep as the screw maker's instructions give |
 | Where the numbers come from | The depths are **Häfele's for its 8 mm permanent assembly dowel** (UK catalogue 2023, p. 7.96), one product: 11 mm into the side, 25 mm into the edge. No maker's depth table for a plain 8 mm wood dowel was found. | Häfele America FC 11.161: Ø5 drill hole, Ø7 through hole, Ø10 head. **The pilot's depth, the distance from the edges and the spacing were not found in any maker's document.** The screws go where Häfele's dowels go, and the panel and the rows say: "Häfele's dowel layout; no confirmat spacing was found in a maker's document". |
-| Least stock | 14 mm (11 mm deep with 3 mm of wood behind). Häfele gives its assembly dowel "for minimum wood thickness 18 mm": thinner stock builds, with a **Check** row quoting it. | 11 mm (the 5 mm pilot with 3 mm of wood each side) |
-| Shopping list, on each rail | "Dowel, 8 mm, no longer than 36 mm (an 11 mm hole in the side and a 25 mm hole in the edge)", two joints' worth, in words | Häfele self-countersinking Confirmat connector, 7 x 50 mm **264.44.190** or 7 x 70 mm **264.44.194** (pointed tip, Pozi drive size 3, zinc-plated), two joints' worth. Häfele supplies them in 1000s. |
+| Least stock | 14 mm (11 mm deep with 3 mm of wood behind). Häfele gives its assembly dowel "for minimum wood thickness 18 mm": thinner stock builds, with a **Check** row quoting it. | 13 mm: the 7 mm through hole in the side is centred in the thickness, so flush with the side's end it needs 3 mm of wood each side (the 5 mm pilot needs 11 mm) |
+| Shopping list, on each rail | "Dowel, 8 x 35 mm or shorter (the holes are 11 mm in the side and 25 mm in the edge, 36 mm together)", two joints' worth, in words | Häfele self-countersinking Confirmat connector, 7 x 50 mm **264.44.190** or 7 x 70 mm **264.44.194** (pointed tip, Pozi drive size 3, zinc-plated), two joints' worth. Häfele supplies them in 1000s. |
 
 **The rails' end holes are for a jig.** A 3-axis router cannot drill into a panel's edge, so **8 · Cuts and holes** lists them as **Jig** rows: for each rail, how many holes in each end and their distances from its front edge, in millimetres and, in an inch document, inches. With edge banding on, the row also gives the distances from the blank's front edge as cut, before banding, for drilling before the band goes on. Line the jig up from the rail's front edge, the edge the side's holes are measured from too.
 
@@ -251,6 +251,10 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 - A Confirmat's head is on the side's outer face. In a run of cabinets it is hidden; on an exposed end it shows. Sawhorse has no finished-end option.
 - The face holes are drilled from the face the router cuts, the side's inner face, so nothing needs a second setup. Pocket each circle with an end mill smaller than the hole, as the other holes ([the layer table](#2-give-each-layer-its-toolpath)); the job sheet gives hole layers the 1/8 in end mill to start. For `DRILL_D7MM_THRU`, check the bit's flutes reach through the sheet, as for the pull holes.
 - **Test cuts:** there is no dado ladder; the panel says a ladder proves a dado's clearance and does not apply to dowel or Confirmat holes.
+- **Stock:** Confirmat needs stock at least 13 mm thick; 1/2 in (12.7 mm) is refused.
+- **Back inset:** with dowels or Confirmat screws and a grooved back, a back inset of roughly 25 to 36 mm is refused, because the rear hole lands in the back's groove. 12 mm and 45 mm build.
+- **Dowel hole fit:** the dowel hole is drawn at 8.0 mm, the dowel's own size, as Häfele's hole is. A plain 8 mm dowel in a milled 8 mm hole is a tight fit: check the fit on a test cut before the job.
+- **Nailers:** with dowels or Confirmat screws, the nailers are butted between the sides and Sawhorse drills nothing for them: fasten them yourself.
 
 ### Full-height line boring
 
