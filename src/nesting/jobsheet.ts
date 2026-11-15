@@ -17,7 +17,7 @@
 // the docs, the sizes from the nesting and the measured cuts.
 import type { Grain, Nesting, Placement, StockPiece } from "../kernel/types";
 import { confidenceOf, CHART_DEPTH, COMMUNITY, type Sourced } from "../cam/data";
-import { bothUnits, chiploadText, ipmToMmMin, type FeedsResult, type Warning } from "../cam/feeds";
+import { bothUnits, chiploadText, ipmToMmMin, lowest, type FeedsResult, type Warning } from "../cam/feeds";
 import { holdDownOf, JOB_KINDS, type JobKind } from "../cam/jobs";
 import { layerJob } from "../cam/layers";
 import { SOURCES, type Confidence, type Source, type SourceId } from "../cam/sources";
@@ -277,8 +277,6 @@ export interface JobSheetInput {
 }
 
 const src = (id: SourceId) => SOURCES[id] as Source;
-const RANK: Confidence[] = ["low", "medium", "high"];
-const lower = (...cs: (Confidence | null)[]): Confidence | null => (cs.some((c) => c === null) ? null : cs.reduce((a, b) => (RANK.indexOf(a!) <= RANK.indexOf(b!) ? a : b), "high" as Confidence));
 const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 const num = (v: number) => Math.round(v).toLocaleString("en-US");
 
@@ -392,10 +390,11 @@ function feedLines(res: FeedsResult, tool: Tool, shop: Shop, metric: boolean): F
   else out.push({ label: "RPM", value: "not known: type your router's RPM in CNC setup > Machine", conf: null, from: "" });
   const clConf = res.start ? confidenceOf(res.start.from) : null;
   if (res.start) out.push({ label: "Chipload", value: chiploadText(res.chipload ?? res.start.chipload, metric), conf: clConf, from: fromText(res.start.from) });
-  if (res.feedIpm !== null) {
-    out.push({ label: "Feed", value: ipm(res.feedIpm), conf: lower(clConf, rpmConf), from: `RPM × ${tool.flutes} flutes × chipload (Amana, Onsrud, Freud)` });
-  } else out.push({ label: "Feed", value: "not worked out: see the warnings", conf: null, from: "" });
-  if (res.rampIpm !== null) out.push({ label: "Ramp", value: `${ipm(res.rampIpm)}, the feed ÷ ${tool.flutes} flutes`, conf: lower(clConf, rpmConf, src("amana-a1").confidence), from: `${src("amana-a1").maker}'s ramp feed; ramp in rather than plunge` });
+  // The feed's and the ramp's inputs and confidence, as the calculator gives them.
+  const inputs = (fs: FeedsResult["feedFrom"]) => fs.map((f) => `${f.what}${f.src ? ` (${src(f.src).maker})` : ""}`).join("; ");
+  if (res.feedIpm !== null) out.push({ label: "Feed", value: ipm(res.feedIpm), conf: res.feedConfidence, from: inputs(res.feedFrom) });
+  else out.push({ label: "Feed", value: "not worked out: see the warnings", conf: null, from: "" });
+  if (res.rampIpm !== null) out.push({ label: "Ramp", value: ipm(res.rampIpm), conf: lowest(res.rampFrom.map((f) => f.confidence)), from: `${inputs(res.rampFrom.slice(-1))}; ramp in rather than plunge` });
   if (res.firstPass) {
     const seed = seedField(tool, "upcut");
     out.push({
