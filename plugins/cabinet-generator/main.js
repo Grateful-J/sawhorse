@@ -558,7 +558,8 @@ function explainTests(fields, planned) {
   const cab = planned ? partArea(planned.parts) : 0;
   const size = t.sizes ? ` (${f(t.sizes.width)} × ${f(t.sizes.height)} × ${f(t.sizes.depth)})` : "";
   const pieces = t.parts.reduce((n, p) => n + p.copies.length, 0);
-  fields.testArea = { text: t.error ? "" : `${t.name}${size}: ${pieces} ${pieces === 1 ? "part" : "parts"}, ${areaText(t.area, m)} of plywood${cab ? `, ${Math.max(1, Math.round((t.area / cab) * 100))}% of the ${areaText(cab, m)} in ${sizes.name}` : ""}.` };
+  const pct = cab ? (t.area / cab) * 100 : 0;
+  fields.testArea = { text: t.error ? "" : `${t.name}${size}: ${pieces} ${pieces === 1 ? "part" : "parts"}, ${areaText(t.area, m)} of plywood${cab ? `, ${pct < 1 ? pct.toFixed(1) : Math.round(pct)}% of the ${areaText(cab, m)} in ${sizes.name}` : ""}.` };
   fields.makeTest = { label: `Add the ${TEST_TITLES[testKind].toLowerCase()} to the model`, disabled: !!t.error };
   fields.testStatus = t.error
     ? { text: t.error, tone: "warning" }

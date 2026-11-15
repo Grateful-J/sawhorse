@@ -346,7 +346,7 @@ export function testCut(kind, s, metric, steps) {
     out.columns = ["Ladder", "Dado", "Clearance", "Width"];
     out.steps = lad.steps;
     out.skipped = lad.skipped;
-    out.proves = "Which joint clearance slides together with hand pressure in the sheets you will cut. Sheets vary in thickness by sheet and lot, so this also catches a sheet thicker or thinner than you typed. Cut these in the real sheet goods: the strip a 4 × 8 leaves after a 4 × 4 is cut from it is free test material.";
+    out.proves = "Which joint clearance slides together with hand pressure in the sheets you will cut. Sheets vary in thickness by sheet and lot, so this also catches a sheet thicker or thinner than you typed. Cut these in the real sheet goods: the strip left after breaking a sheet down for the bed is free test material.";
     if (lad.error) return { ...out, error: lad.error };
     out.stock = lad.coupons.map((c) => `${c.name}: cut from the ${c.host} sheet (${L(c.stock)}), tried with ${c.mating}.`).join(" ");
     out.parts = lad.coupons.map((c) => c.part);
@@ -387,9 +387,10 @@ export function testCut(kind, s, metric, steps) {
         ["Drawer box, outside width", L(outside), `The opening (${L(innerW)}) less ${BLUM.insideDeduct} mm inside, Blum's rule, plus the two sides. Tight or loose on the runners: measure the drawer box stock again (4 · Materials).`],
         ["Drawer box length", L(side.blank[1]), `${R.boxShort ? `The runner less ${R.boxShort} mm` : "The runner's length"} (Blum). Off: the CAM job's scale (Machine check).`],
         ["Drawer box height", L(sub.blank[2]), `The opening less ${R.heightDeduct} mm (Blum), rounded down.`],
-        ["Runner screw holes and rear hook holes", "As listed below (Cuts and holes)", "Off: X and Y zero, or the scale (Machine check). A runner that will not sit on its holes: the side was cut face down."],
+        ["Runner screw holes and rear hook holes", "As listed below (Cuts and holes)", "Off: X and Y zero, or the scale (Machine check)."],
         ["The drawer in its runners", "Runs in and out freely, closes fully, the front's gaps even", "Fit the locking devices (listed below) and adjust them as Blum's instructions say. Rubbing: the box's width, above."],
       ];
+      if (!ms.hardware) out.rows.splice(4, 1, ["Hardware holes", "Off in 6 · Hardware: no runner screw or rear hook holes are drilled", "Turn Drill hinge, runner and pull holes on to test them."]);
       const ours = new Set(["Drawer", "Drawer box", "Drawer back", "Drawer front", "Left and right sides"]);
       out.holes = planned.rows.filter((r) => ours.has(r[0])).map((r) => r.slice(0, 4));
     } else {
@@ -398,10 +399,12 @@ export function testCut(kind, s, metric, steps) {
         ["Hinge cup depth", `${CUP.depth} mm`, "Off: Z zero or the CAM job's thickness (Machine check)."],
         ["Hinge cup centres, from the door's ends", `${L(ms.hingeInset)} (From top, bottom), unless Cuts and holes says one moved`, "Off at both ends the same way: the door turned end for end."],
         ...(ms.front === "overlay" ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's front edge`, "Off: the side cut face down, or X and Y zero."]] : []),
-        ["The gap round the door, closed", ms.front === "overlay" ? `${L(ms.gap / 2)} at each edge of the cabinet; the door covers ${L(ms.thickness - ms.gap / 2)} of each side` : `${L(ms.gap / 2)} all round, inside the opening`, "Even but wrong: the boring distance (the Overlay row below says which matches). Uneven: the hinges' adjusting screws."],
+        ms.front === "overlay"
+          ? ["The gap round the door, closed", `${L(ms.gap / 2)} at each edge of the cabinet; the door covers ${L(ms.thickness - ms.gap / 2)} of each side`, "Even but wrong: the boring distance (the Overlay row below says which matches). Uneven: the hinges' adjusting screws."]
+          : ["The gap round the door, closed", `${L(ms.gap / 2)} all round, inside the opening`, "Uneven: the hinges' adjusting screws. Even but wrong: the door's size (Machine check: the square)."],
         ["Shelf pins", `${PIN.dia} mm holes, ${PIN.depth} deep: a pin pushes in by hand and the shelf sits flat on four`, "Tight or loose: the end mill that bores the 5 mm holes is not the size the CAM program thinks."],
       ];
-      if (!ms.hardware) out.rows.splice(0, 4, ["Hardware holes", "Off in 6 · Hardware: no cups or plate holes are drilled", "Turn Drill hinge, runner and pull holes on to test the hinges."]);
+      if (!ms.hardware) out.rows = [["Hardware holes", "Off in 6 · Hardware: no cups or plate holes are drilled", "Turn Drill hinge, runner and pull holes on to test the hinges."], ...out.rows.filter((r) => !/^(Hinge cup|Mounting plate)/.test(r[0]))];
       const ours = new Set(["Door", "Doors", "Left side", "Right side", "Sides"]);
       out.holes = planned.rows.filter((r) => ours.has(r[0])).map((r) => r.slice(0, 4));
     }

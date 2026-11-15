@@ -442,6 +442,18 @@ describe("every test", () => {
     }
   });
 
+  it("with hardware holes off, the mini door and drawer say so, and keep the rows that still apply", () => {
+    for (const front of ["overlay", "inset"] as const) {
+      const door = testCut("door", { ...applyPreset(defaults(false), "base", false), hardware: false, front }, false);
+      expect(door.error).toBeNull();
+      expect(door.rows.map((r) => r[0])).toEqual(["Hardware holes", "The gap round the door, closed", "Shelf pins"]);
+    }
+    const drawer = testCut("drawer", { ...applyPreset(defaults(false), "drawers", false), hardware: false }, false);
+    expect(drawer.error).toBeNull();
+    expect(drawer.rows[4][0]).toBe("Hardware holes");
+    expect(drawer.rows).toHaveLength(6);
+  });
+
   it("the machine check says what to measure in the document's units", () => {
     const mm = testCut("machine", defaults(true), true);
     expect(mm.rows.map((r) => r[1])).toEqual(["6 mm", "100 mm", "141.42 mm, the two equal", "6 mm", "3 mm"]);
