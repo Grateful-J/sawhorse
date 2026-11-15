@@ -671,7 +671,8 @@ export function jobSheetText(js: JobSheet, title: string): string {
   const rule = "-".repeat(92);
   const head = (s: string) => out.push("", s.toUpperCase(), rule);
   out.push(`${title}: job sheet for ${js.number}`, "=".repeat(92));
-  out.push(...field("DXF", js.file, 0));
+  // The file's name on one line, never wrapped: it is what a search for the DXF finds.
+  out.push(`${"DXF".padEnd(15)}${js.file}`);
   out.push(...field("Label in file", js.label, 0));
   out.push(...field("Stock", js.stock, 0));
   out.push(...field("Thickness", js.thickness, 0));

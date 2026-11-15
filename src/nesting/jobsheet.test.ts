@@ -389,7 +389,9 @@ describe("the text file beside each DXF", () => {
     expect(text).toContain("12 mm is only what was entered for the stock, not a measurement");
     expect(text).toContain("1220 x 1220 mm (X by Y)");
     for (const l of js.layers) expect(text).toContain(`[ ] ${l.name}`);
-    expect(text.split("\n").every((l) => l.length <= 92 || !l.includes(" "))).toBe(true);
+    // Wrapped at 92 characters, but for the DXF's name, which stays whole on its line.
+    expect(text.split("\n").filter((l) => !l.startsWith("DXF ")).every((l) => l.length <= 92 || !l.includes(" "))).toBe(true);
+    expect(text).toContain(`DXF            ${js.file}\n`);
   });
 
   it("the status line says each file has its job sheet, or how many do", () => {
