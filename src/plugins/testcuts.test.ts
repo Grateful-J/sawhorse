@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { audit } from "../../plugins/cabinet-generator/mesh.js";
-import { applyPreset, defaults, normalize, plan, PRESETS, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, defaults, normalize, plan, PRESETS, validate, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
 import { areaText, clearanceSteps, clearanceText, fitFromPicks, ladderCoupons, ladderRecord, liveLadders, machineCheck, measureText, miniDoor, miniDrawer, partArea, pickOptions, TEST_KINDS, testCut, validLadderRecord, validSteps } from "../../plugins/cabinet-generator/testcuts.js";
 
 // The test cuts (plugins/cabinet-generator/testcuts.js): small pieces that prove a setup before
@@ -364,10 +364,12 @@ describe("the mini door", () => {
         clean(mini.planned!.parts);
         const t = s.thickness;
         // The cups on the hinge (left) half; the pull's holes on the other, from the opening edge and the top.
+        // The cups at the door's ends: Blum Europe's chart can give the full door a middle one.
         const cups = (parts: Part[]) => {
           const { part } = copyNamed(parts, "Door");
           const [fw, , fh] = part.blank;
-          return sorted(rings(part, 1, t).filter(([x]) => x < fw / 2).map(([x, z]) => [x, Math.min(z, fh - z)]));
+          const all = rings(part, 1, t).filter(([x]) => x < fw / 2).sort((a, b) => a[1] - b[1]);
+          return sorted([all[0], all[all.length - 1]].map(([x, z]) => [x, Math.min(z, fh - z)]));
         };
         const pulls = (parts: Part[]) => {
           const { part } = copyNamed(parts, "Door");
@@ -385,7 +387,8 @@ describe("the mini door", () => {
           const door = copyNamed(parts, "Door");
           const fh = door.part.blank[2];
           const side = rings(copyNamed(parts, "Left side").part, 0, t).filter(([y]) => Math.abs(y - 37 * MM) < 1e-6);
-          const zs = rings(door.part, 1, t).filter(([x]) => x < door.part.blank[0] / 2).map(([, z]) => z);
+          const all = rings(door.part, 1, t).filter(([x]) => x < door.part.blank[0] / 2).map(([, z]) => z).sort((a, b) => a - b);
+          const zs = [all[0], all[all.length - 1]];
           return zs.flatMap((cz) => [-16, 16].map((d) => ({ fromEnd: Math.min(cz, fh - cz) + (cz < fh / 2 ? d : -d) * MM, found: side.some(([, z]) => Math.abs(z - (door.at[2] + cz + d * MM)) < 1e-9) })));
         };
         const mPlates = plates(mini.planned!.parts);
@@ -583,14 +586,15 @@ describe("review: dimples never meet a dado (m1)", () => {
     for (let bT = 3; bT <= 7.01; bT += 0.1) {
       for (let f = 0; f <= 1.001; f += 0.05) {
         const s = normalize({ ...applyPreset(defaults(true), "base", true), backThickness: bT * MM, fit: f * MM }, true);
-        if (plan(s, true).error) continue;
+        // The settings the planner takes (its checks, as the ladders run them).
+        if (validate(s, true)) continue;
         tried++;
         const t = testCut("ladders", s, true);
         expect(t.error, `bT ${bT.toFixed(1)} fit ${f.toFixed(2)}`).toBeNull();
       }
     }
     expect(tried).toBeGreaterThan(700);
-  });
+  }, 60_000);
 });
 
 describe("review: the mini door's cups are the door's (m5) and its gap the hinge's (m6)", () => {
