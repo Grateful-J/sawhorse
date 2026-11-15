@@ -22,7 +22,10 @@ describe("kept cabinets", () => {
     const s = applyPreset(defaults(false), "drawers", false);
     const packed = pack(s, false);
     // Exactly the settings that differ from the baseline, each with its value: none missing, none extra.
-    const differ = Object.fromEntries(Object.entries(s).filter(([k, v]) => (BASELINE.in as Record<string, unknown>)[k] !== v));
+    // (A setting newer than the baseline counts only when it is not its default.)
+    const base = BASELINE.in as Record<string, unknown>;
+    const filled = normalize({ ...base }, false) as unknown as Record<string, unknown>;
+    const differ = Object.fromEntries(Object.entries(s).filter(([k, v]) => base[k] !== v && !(!(k in base) && filled[k] === v)));
     expect(packed.d).toEqual(differ);
     expect(Object.keys(differ).length).toBeGreaterThan(0);
     expect(Object.keys(differ).length).toBeLessThan(Object.keys(s).length / 3);

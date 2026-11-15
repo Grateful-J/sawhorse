@@ -609,6 +609,35 @@ mod tests {
     }
 
     #[test]
+    fn a_parts_hardware_list_is_saved_and_opened() {
+        let mut d = sample();
+        d.apply(
+            &serde_json::from_str::<Op>(
+                r#"{"op":"set_bom","part":{"object":1},"bom":[{"item":"Blum CLIP top 110° hinge, full overlay, straight arm","qty":2,"unit":"each"},{"item":"Blum TANDEM 563H runners","sku":"563H5330B","qty":1,"unit":"pair"}]}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let bytes = write(d.model(), &SaveOptions::default()).unwrap();
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+        let scene = String::from_utf8(entry(&mut zip, "scene.json").unwrap().unwrap()).unwrap();
+        assert!(scene.contains("\"sku\": \"563H5330B\""), "{scene}");
+        let o = read(&bytes).unwrap();
+        assert_eq!(o.document.hash(), d.hash(), "same model, same hash");
+        let bom = &o.document.model().object(1).unwrap().part().bom;
+        assert_eq!(bom.len(), 2);
+        assert_eq!(
+            bom[0].item,
+            "Blum CLIP top 110° hinge, full overlay, straight arm"
+        );
+        // A file with no list has none in scene.json.
+        let plain = write(sample().model(), &SaveOptions::default()).unwrap();
+        let mut zip = zip::ZipArchive::new(Cursor::new(plain.as_slice())).unwrap();
+        let scene = String::from_utf8(entry(&mut zip, "scene.json").unwrap().unwrap()).unwrap();
+        assert!(!scene.contains("\"bom\""));
+    }
+
+    #[test]
     fn geometry_glb_rebuilds_objects_without_a_brep() {
         let d = sample();
         let bytes = write(d.model(), &SaveOptions::default()).unwrap();

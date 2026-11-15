@@ -192,7 +192,7 @@ const sel = await model.selection(); // [{ kind: "solid", id } | { kind: "instan
 await model.select([{ kind: "instance", id: nodes[0].id }]);
 const box = await model.bounds(); // { min, max } round everything, or round given items; null when empty
 const mats = await model.materials(); // [{ name, color: [r, g, b, a], texture, ... }]
-const cut = await model.cutList({ rounding: "sixteenth", visibleOnly: false }); // { rows: [{ name, qty, thickness, width, length, material, grain, sheet, boardFeet, area, shaped, handed, hidden }], totals, hash }
+const cut = await model.cutList({ rounding: "sixteenth", visibleOnly: false }); // { rows: [{ name, qty, thickness, width, length, material, grain, sheet, boardFeet, area, shaped, handed, hidden, bom }], totals, hash }
 ```
 
 `editable` says whether an edit may change a solid now: it is directly in the open group or component and not locked. A solid inside a closed group or component is not editable until the person opens it (double-click), exactly as for the built-in tools.
@@ -266,6 +266,7 @@ Any op of the kernel's op log ([`src/kernel/types.ts`](../src/kernel/types.ts) `
 | `set_hidden`, `set_locked`, `tag_items`, `create_tag` | `items`, ... | |
 | `define_material`, `set_material` | `name`, `color` / `object`, `material` | |
 | `set_grain`, `set_stock` | `part`, `grain` / `stock`, `sheet` | (the cut list) |
+| `set_bom` | `part`, `bom`: `[{ item, sku?, qty, unit: "each" \| "pair" \| "m", once? }]` | (the shopping list: what is bought for each piece of a part; it replaces the part's list, `[]` clears it; at most 32 items, no control characters. Set on a **part** component (one that holds solids, no nested group or component), it is counted once per copy. On an assembly (a component or group that holds other parts, such as a whole cabinet) it is refused: put it on the part it goes on. See [format.md](format.md#part-attributes-cut-list)) |
 | `offset`, `follow_me`, `imprint`, `split_face`, `erase_face` ... | as the built-in tools send them | |
 
 A batch holds at most 2,000 ops, and at most 10 batches a second are applied. Both are checked as the batch is built: `b.op(...)` throws a `PluginApiError` with `code: "too_large"` at the op past 2,000, or at the op that would take the batch past the 4 MB a message may hold, so a runaway loop stops at once instead of building a batch the app would refuse. A batch also has a work budget: each op costs about the size of the model it is applied to, so ops times things in the model (solids, meshes, groups, instances, sketches) must stay under 20,000,000; split bigger work into several batches (each its own undo step). The batch as sent is at most 4 MB (about 150,000 points of geometry). A batch is also held to the model's count limits (lane 16b: 50,000 guides, 50,000 dimensions, 10,000 tags, 4,096 materials, 1,000 scenes, 1,000 section planes, 200 sheets; [LIMITS.md](LIMITS.md)): what it would add is counted before it is sent, and a batch that would take the model past one is refused with `code: "too_large"` and changes nothing. So is a batch the kernel refuses for a limit of its own (the 100,000 solids, say).

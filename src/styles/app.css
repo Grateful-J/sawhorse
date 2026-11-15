@@ -395,6 +395,38 @@ button.chip:hover{border-color:var(--accent)}
 .nest-cuts li{margin:1px 0}
 .nest-parts{list-style:none;margin:4px 0;padding:0;font-family:var(--mono);font-size:11px}
 .linkish{border:0;background:none;padding:0 2px;color:var(--accent);font:inherit;font-size:11.5px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+/* ---- The Shopping list section: a list, not a table, so it reads in a 360 px pane ---- */
+.shopping{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.shop-controls input,.shopping .shop-price input,.shop-cat-head input{font:12px var(--mono);padding:2px 4px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);text-align:right;min-width:0}
+.shopping input.err,.shop-controls label.err input{border-color:var(--warn);outline:1px solid var(--warn)}
+.shop-cat{margin-top:10px}
+.shop-cat-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;border-bottom:1px solid var(--fg);padding-bottom:3px;font-size:12px}
+.shop-cat-head label{display:flex;align-items:baseline;gap:4px;font-size:11px;color:var(--muted)}
+.shop-rows{list-style:none;margin:0;padding:0}
+.shop-rows li{padding:5px 0;border-bottom:1px solid var(--line);font-size:11.5px}
+.shop-name{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.shop-name .name{font-weight:600;overflow-wrap:anywhere}
+.shop-name code{font:11px var(--mono);color:var(--accent)}
+.shop-name small{color:var(--muted);font-size:10.5px}
+.shop-name .via{display:inline-block;padding:0 5px;border:1px solid var(--warn);border-radius:3px;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+.shop-qty{color:var(--fg);margin-top:1px}
+.shopping .shop-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;margin-top:3px}
+.shopping .shop-price .per,.shopping .pack span{color:var(--muted);font-size:11px}
+.shopping .pack{display:flex;align-items:baseline;gap:3px}
+.shopping .shop-price .cost{margin-left:auto;font-family:var(--mono);font-size:12px}
+.shopping li[data-unpriced] .cost{font-family:var(--body);font-weight:400;color:var(--warn);font-size:11px}
+.shopping small.on{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
+.shop-total{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
+.shop-total div{border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.shop-total b{display:block;font-family:var(--mono);font-size:15px}
+.shop-total span{color:var(--muted);font-size:11px}
+.shopping .note.warn{color:var(--fg);border-left:3px solid var(--warn);padding-left:6px}
+.shop-labour{margin-top:12px;font-size:12px}
+.shopping .amount-err{flex-basis:100%;color:var(--warn);font-size:10.5px}
+.shopping small.warn{color:var(--warn);font-size:10.5px}
+.shopping li[data-stale] .shop-qty,.shopping li[data-stale] .cost{opacity:.55}
+.shopping .shop-leftout{display:flex;gap:6px;align-items:baseline;margin-top:10px;font-size:11.5px}
+.shop-labour small{color:var(--muted)}
 .stock-dialog{width:min(560px,calc(100vw - 32px));top:50%;max-height:calc(100vh - 48px);overflow:auto}
 .stock-dialog header small{color:var(--muted)}
 .stock-dialog h5{margin:10px 0 4px;font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
