@@ -404,6 +404,9 @@ export function testCut(kind, s, metric, steps) {
           : ["The gap round the door, closed", `${L(ms.gap / 2)} all round, inside the opening`, "Uneven: the hinges' adjusting screws. Even but wrong: the door's size (Machine check: the square)."],
         ["Shelf pins", `${PIN.dia} mm holes, ${PIN.depth} deep: a pin pushes in by hand and the shelf sits flat on four`, "Tight or loose: the end mill that bores the 5 mm holes is not the size the CAM program thinks."],
       ];
+      // Blum asks for the top and bottom hinges to be farther apart than the door is wide; a short
+      // test door cannot be, and the planner says so. The cups and plates are placed the same.
+      if (planned.rows.some((r) => r[4] === "Check" && /less than the door is wide/.test(r[1]))) out.rows.push(["Hinge spacing", "Blum asks for the top and bottom hinges to be farther apart than the door is wide (the Check row below)", "This short test door cannot be. It moves no cup or plate: they are placed from the door's hinge edge and ends, as on your doors."]);
       if (!ms.hardware) out.rows = [["Hardware holes", "Off in 6 · Hardware: no cups or plate holes are drilled", "Turn Drill hinge, runner and pull holes on to test the hinges."], ...out.rows.filter((r) => !/^(Hinge cup|Mounting plate)/.test(r[0]))];
       const ours = new Set(["Door", "Doors", "Left side", "Right side", "Sides"]);
       out.holes = planned.rows.filter((r) => ours.has(r[0])).map((r) => r.slice(0, 4));
