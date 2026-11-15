@@ -107,6 +107,7 @@ function clashes(solids: Solid[], limit: number): string[] {
 const NOISE = 40;
 
 type Settings = ReturnType<typeof defaults>;
+const MM = 0.001;
 const VARIANTS: [string, (s: Settings) => Settings][] = [
   ["as the preset", (s) => s],
   ["butt joints", (s) => ({ ...s, dados: false })],
@@ -128,6 +129,17 @@ const VARIANTS: [string, (s: Settings) => Settings][] = [
   ["a tight fit and a deep dado", (s) => ({ ...s, fit: 0, dadoDepth: s.thickness * 0.5, backGrooveDepth: s.thickness * 0.4 })],
   ["wide and shallow", (s) => ({ ...s, width: s.width * 1.5, depth: s.depth * 0.8 })],
   ["narrow", (s) => ({ ...s, width: s.width * 0.6 })],
+  // The hardware review's fixes, each where it used to go wrong.
+  ["back in a rabbet (inset 0)", (s) => ({ ...s, backInset: 0, nailers: "none" })],
+  ["toe kick setback on the 37 mm line", (s) => ({ ...s, toeSetback: 38.1 * MM })],
+  ["Blum Europe, toe kick setback on the 69 mm line", (s) => ({ ...s, catalog: "eu", toeSetback: 70 * MM })],
+  ["dado stop on the 37 mm line, fixed shelves", (s) => ({ ...s, dadoStop: 35 * MM, shelfType: "fixed" })],
+  ["nailers 2 in, their edge on a plate hole", (s) => ({ ...s, nailers: "both", nailerHeight: 2 * 25.4 * MM })],
+  ["nailers 65 mm, their edge on a plate hole", (s) => ({ ...s, nailers: "both", nailerHeight: 65 * MM })],
+  ["22 mm sides: the door covers what the hinge reaches", (s) => ({ ...s, thickness: 22 * MM, frontThickness: 22 * MM })],
+  ["boring distance 3 mm", (s) => ({ ...s, cupDistance: 3 * MM })],
+  ["taller, three adjustable shelves among the hinges", (s) => ({ ...s, shelfType: "adjustable", shelves: 3, height: s.height * 1.4 })],
+  ["taller, inset, fixed shelves among the hinges", (s) => ({ ...s, front: "inset", shelfType: "fixed", shelves: 3, height: s.height * 1.4 })],
 ];
 
 describe("the generated cabinet goes together", () => {

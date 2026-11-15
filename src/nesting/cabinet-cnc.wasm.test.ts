@@ -86,11 +86,16 @@ run("a cabinet to the CNC router", () => {
     const drills = (name: string) => (byName.get(name) ?? []).flatMap((f) => f?.drills ?? []);
     const mm = (m: number) => Math.round(m * 1e4) / 10;
 
-    // The door: two 35 x 13 cups from the face the router cuts, and the pull through.
-    const door = drills("Door");
-    expect(door.filter((h) => mm(h.diameter) === 35 && mm(h.depth) === 13)).toHaveLength(2);
-    // Pull holes 3/16 in (4.8 mm), for 8-32 screws.
-    expect(door.filter((h) => h.through && Math.abs(h.diameter - (3 / 16) * 0.0254) < 1e-6)).toHaveLength(2);
+    // The drawer-over-door base has a pair of doors (one door that wide breaks Blum's rule that
+    // the hinges be farther apart than the door is wide). Each: two 35 x 13 cups from the face
+    // the router cuts, and the pull through.
+    expect(byName.get("Door")).toBeUndefined();
+    for (const name of ["Left door", "Right door"]) {
+      const door = drills(name);
+      expect(door.filter((h) => mm(h.diameter) === 35 && mm(h.depth) === 13)).toHaveLength(2);
+      // Pull holes 3/16 in (4.8 mm), for 8-32 screws.
+      expect(door.filter((h) => h.through && Math.abs(h.diameter - (3 / 16) * 0.0254) < 1e-6)).toHaveLength(2);
+    }
     // The hinge side: two plates, 5 x 11.5, on the up face with the dados.
     const left = drills("Left side");
     expect(left.filter((h) => mm(h.diameter) === 5 && mm(h.depth) === 11.5).length).toBeGreaterThanOrEqual(4);
@@ -296,7 +301,8 @@ run("a cabinet to the CNC router", () => {
     const cab = made.outcomes[made.outcomes.length - 1].instance as number;
     const rows = () => (JSON.parse(d.cut_list("{}")) as { rows: { name: string; grain: string }[] }).rows;
     const grain = (name: string) => rows().find((r) => r.name === name)?.grain;
-    expect(grain("Door")).toBe("length");
+    expect(grain("Left door")).toBe("length");
+    expect(grain("Right door")).toBe("length");
     expect(grain("Drawer front")).toBe("length");
     expect(grain("Left side")).toBe("length");
     for (const n of ["Bottom", "Toe kick", "Back", "Front stretcher", "Rear stretcher", "Drawer side", "Drawer bottom"]) expect(grain(n)).toBe("none");

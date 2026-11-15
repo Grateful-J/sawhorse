@@ -153,6 +153,10 @@ export interface Preset {
   top?: Top;
   trashBins?: TrashBins;
   bin?: Bin;
+  /** The doors, when not the defaults' (automatic). */
+  doors?: DoorCount;
+  /** The hinges' inset from the door's ends, inches then millimetres, when not the defaults'. */
+  hingeInset?: [number, number];
 }
 export const PRESETS: Preset[];
 export function applyPreset(s: Sizes, id: string, metric: boolean): Sizes;
