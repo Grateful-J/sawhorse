@@ -4,6 +4,16 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added (CNC cabinets, job sheets, 2026-11-14)
+
+- **A job sheet for each router sheet, and part labels.** What goes into the CAM job besides the file and its layer names, for one sheet, from the nesting, the parts' measured cuts and CNC setup:
+  - the sheet as its DXF's name and its label in the file name it; its stock; the thickness to type (measure the sheet: the stock's number is only what was entered); the XY datum (the lower-left corner at 0,0) and Z zero on top;
+  - a box to tick for every layer in the file, exactly the DXF's layers: its toolpath, its depth, its bit, the narrowest shape on it in that sheet measured from the parts and whether the bit fits, and the dial, RPM, chipload, feed, ramp and depth per pass that CNC setup works out, each with its confidence, and every warning. A pocket layer narrower than the pocket bit goes to the narrow-groove bit, and the sheet says so: the metric back and drawer-bottom grooves, 6.2 mm wide, against a 1/4 in bit. A bit that fits nothing names the smallest in the library that does, or says none does;
+  - the cut order (drills and pockets, then cutouts, then profiles, `FLIP_` layers as a second setup), the layers that share a bit together, ordered for the fewest bit changes, and how many;
+  - the parts, smallest first, with which face is up (read from their cuts: a door's back, where its hinge cups are; a carcass part's inside, where its dados are; either face for a part with no blind cuts) and those narrow enough to need hold-down; `FLIP_` notes; the track saw's sheets, named; the compression bit's first pass.
+
+  **CNC files** saves each sheet's job sheet beside its DXF, the same name ending in ` job.txt`. Each router sheet in the Nesting section has a **Job sheet** link that shows it. The PDF puts each router sheet's job sheet after its page, then one label per part (tag, name, cabinet, sheet, size, grain arrow, the face up on the router, a line for edge banding) on letter or A4, and says on its first page which pages the labels are. **CNC setup > Job sheet** (new) sets the bit for each kind of layer (pockets the down-cut, holes and narrow grooves the 1/8 in end mill, cutouts the profile bit), the material for the feeds, the hold-down width (4 in, 100 mm metric: Sawhorse's default, not a standard, since none was found) and the label paper and size; no label product is named. In full: [Job sheet and part labels](docs/CNC-CABINETS.md#job-sheet-and-part-labels). How: `src/nesting/jobsheet.ts`, `partlabels.ts`, `booklet.ts`, `dxf.ts` (`dxfLayers`), `exportGuard.ts`, `src/cam/jobs.ts`, `store.ts`, `src/components/NestingSection.tsx`, `CncSetupDialog.tsx`, `src/App.tsx`. Tests: `src/nesting/jobsheet.wasm.test.ts` (the starting cabinets through the kernel, inch and metric: every sheet's job sheet lists exactly its DXF's layers; the metric 6.2 mm grooves are flagged against the 1/4 in bit), `src/nesting/jobsheet.test.ts` (widths, bit fit, cut order and tool changes, hold-down, face up, labels, the booklet, the text file), `src/cam/store.test.ts`, `e2e/job-sheet.spec.ts`.
+
 ### Added (CNC cabinets, 2026-11-14)
 
 - **CNC setup: your machine, your bits, and where to start the feeds and speeds.** **CNC setup…**, beside **Stock…** in the Nesting section, opens three tabs:
