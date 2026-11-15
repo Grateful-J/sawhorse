@@ -128,6 +128,28 @@ export function overcutLoop(loop: [number, number][], dx: number, dy: number, e:
   return loop.map(([u, v]) => [u <= ON_EDGE ? -e : u >= dx - ON_EDGE ? dx + e : u, v <= ON_EDGE ? -e : v >= dy - ON_EDGE ? dy + e : v]);
 }
 
+/** Every layer a DXF of the nesting (or, with `piece`, of one sheet) holds, in the file's
+ * order: STOCK, LABELS, the outlines' layers, CUTOUT_THRU when a part has an opening, then the
+ * pocket and drill layers sorted by name. A sheet's job sheet lists exactly these. */
+export function dxfLayers(n: Nesting, flavour: DxfFlavour = "lwpolyline", features?: ReadonlyMap<string, BlankFeatures>, options: Pick<DxfOptions, "piece"> = {}): string[] {
+  const r12 = flavour === "r12";
+  const sheet = options.piece;
+  const pieces = sheet === undefined ? n.pieces : [n.pieces[sheet]];
+  const featureNames = new Set<string>();
+  let cutouts = false;
+  for (const p of pieces) {
+    for (const q of p.placements) {
+      const f = features?.get(q.tag);
+      if (!f) continue;
+      const l = featureLayers(f, r12);
+      for (const name of [...l.pockets, ...l.drills, ...l.flipPockets, ...l.flipDrills]) featureNames.add(name);
+      if (f.cutouts.length) cutouts = true;
+    }
+  }
+  const profiles = sheet === undefined ? n.pieces.map(pieceLayer) : ["PROFILE_THRU"];
+  return ["STOCK", "LABELS", ...profiles, ...(cutouts ? ["CUTOUT_THRU"] : []), ...[...featureNames].sort()];
+}
+
 /** The whole nesting as one DXF. Without `features` the file is the rectangles only.
  * A measured profile replaces that part's rectangle. Pockets, drills and cutouts go on a
  * layer per operation (see `featureLayers`), and holes are circles. */
@@ -139,20 +161,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   const pieces = sheet === undefined ? n.pieces.map((p, i) => ({ p, i })) : [{ p: n.pieces[sheet], i: sheet }];
   if (sheet !== undefined && !n.pieces[sheet]) throw new Error(`no piece ${sheet}`);
   const profileLayer = (p: StockPiece) => (sheet === undefined ? pieceLayer(p) : "PROFILE_THRU");
-  // Every layer the file uses, in a steady order.
-  const featureNames = new Set<string>();
-  let cutouts = false;
-  for (const { p } of pieces) {
-    for (const q of p.placements) {
-      const f = feat(q.tag);
-      if (!f) continue;
-      const l = featureLayers(f, r12);
-      for (const name of [...l.pockets, ...l.drills, ...l.flipPockets, ...l.flipDrills]) featureNames.add(name);
-      if (f.cutouts.length) cutouts = true;
-    }
-  }
-  const profiles = sheet === undefined ? n.pieces.map(pieceLayer) : ["PROFILE_THRU"];
-  const layers = ["STOCK", "LABELS", ...profiles, ...(cutouts ? ["CUTOUT_THRU"] : []), ...[...featureNames].sort()];
+  const layers = dxfLayers(n, flavour, features, options);
   // Colours: stock grey (8), labels yellow (2), profiles through the ACI wheel, cutouts red,
   // pockets cyan, drills blue, the other face magenta.
   const colour = (name: string, i: number) => {

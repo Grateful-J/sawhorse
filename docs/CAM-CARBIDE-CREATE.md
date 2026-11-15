@@ -132,7 +132,7 @@ Do not try to make a `.c2d` any other way: its format is not published and has c
 
 ## Each sheet
 
-Do this for every DXF, every time.
+Do this for every DXF, every time. Print the sheet's **job sheet** first: **CNC files** saves every sheet's job sheet in one text file after the DXFs, each named by its DXF, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
 
 1. **Open the template**, then save it at once under the sheet's name (the DXF's name with `.c2d`), so the template stays empty.
 2. **Set the stock thickness** to this sheet's measured thickness. A carcass sheet, a drawer-box sheet and a back sheet are not the same thickness.
@@ -140,11 +140,11 @@ Do this for every DXF, every time.
 4. **Check the scale.** Measure the outer rectangle on `STOCK`: 1219.2 x 1219.2 mm for a 48 x 48 in sheet, 1220 x 1220 mm for a 1220 x 1220 sheet. If it is 25.4 times too big or too small, stop and fix the import. A user reported in 2022 that Carbide Create read every DXF as inches whatever the design's units, and build 810 says "Tweak DXF import scaling" (§ 1b). Sawhorse writes millimetres in the file's header (`$INSUNITS` 4), but the report found nothing on whether Carbide Create reads it. **Not known:** how today's build reads a DXF's units, so measure every time. **Check on your screen** where Carbide Create shows a selected shape's size.
 5. **Check the position.** The `STOCK` rectangle's lower-left corner must be on the design's origin, the stock's lower-left corner.
 6. **Check for open shapes.** Since build 760 the Info panel counts open vectors and offers to select, join and close them (§ 1b; Carbide's blog). Sawhorse writes every outline and pocket as a closed polyline and every hole as a circle, so the count should be 0. If it is not, do not join or close them by guesswork: find out which shape it is.
-7. **Check every layer has a toolpath** ([the safety rule](#templates-and-layer-names-the-safety-rule)). Go down the layer list. Every layer except `STOCK` and `LABELS` must have a toolpath linked to it. A layer the template did not know has none: make one, at the depth in its name. A template toolpath whose layer is empty on this sheet cuts nothing.
+7. **Check every layer has a toolpath** ([the safety rule](#templates-and-layer-names-the-safety-rule)). Go down the layer list, and tick each layer on the job sheet as it gets one. Every layer except `STOCK` and `LABELS` must have a toolpath linked to it. A layer the template did not know has none: make one, at the depth in its name. A template toolpath whose layer is empty on this sheet cuts nothing.
 8. **Recalculate.** The V7 blog says a linked toolpath "will recalculate any time the contents of that layer change". **Check on your screen** that each toolpath now shows paths over its layer's shapes, and over every one of them: a shape narrower than the bit gets no path.
 9. **Check the dados that run past the outline.** Some pockets cross `PROFILE_THRU` on purpose ([Leave the dados that cross the outline as they are](CNC-CABINETS.md#3-leave-the-dados-that-cross-the-outline-as-they-are)). Their paths must run past the part's edge into the gap. Do not trim those shapes. **Not known:** how Carbide Create pockets a shape that crosses another layer's outline (§ 5). It is a closed shape on its own layer.
 10. **Add the hold-down** the template cannot hold: tabs, if you use them ([Hold the parts down](#hold-the-parts-down)).
-11. **Check the order**: drills and pockets, then `CUTOUT_THRU`, then `PROFILE_THRU`.
+11. **Check the order**: drills and pockets, then `CUTOUT_THRU`, then `PROFILE_THRU`. The job sheet's cut order groups the layers that share a bit within that, and counts the bit changes.
 12. **Save.** The G-code is kept in the `.c2d` (§ 8b). Then [save the G-code](#save-the-g-code).
 
 ## Hold the parts down
