@@ -11,21 +11,22 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 2. [Quick start: one cabinet to CNC files](#quick-start-one-cabinet-to-cnc-files)
 3. [Set up your shop once](#set-up-your-shop-once)
 4. [Make and edit a cabinet](#make-and-edit-a-cabinet)
-5. [Edge banding](#edge-banding)
-6. [Build a row of cabinets](#build-a-row-of-cabinets)
-7. [Put a row on a base frame](#put-a-row-on-a-base-frame)
-8. [End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)
-9. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
-10. [Set up the CAM job](#set-up-the-cam-job)
-11. [Job sheet and part labels](#job-sheet-and-part-labels)
-12. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
-13. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
-14. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
-15. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-16. [Shopping list and pricing](#shopping-list-and-pricing)
-17. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-18. [What is kept with the model](#what-is-kept-with-the-model)
-19. [Limits](#limits)
+5. [Grain-matched fronts](#grain-matched-fronts)
+6. [Edge banding](#edge-banding)
+7. [Build a row of cabinets](#build-a-row-of-cabinets)
+8. [Put a row on a base frame](#put-a-row-on-a-base-frame)
+9. [End panels, fillers and appliance openings](#end-panels-fillers-and-appliance-openings)
+10. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
+11. [Set up the CAM job](#set-up-the-cam-job)
+12. [Job sheet and part labels](#job-sheet-and-part-labels)
+13. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
+14. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
+15. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
+16. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
+17. [Shopping list and pricing](#shopping-list-and-pricing)
+18. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+19. [What is kept with the model](#what-is-kept-with-the-model)
+20. [Limits](#limits)
 
 ## Why this exists
 
@@ -184,6 +185,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | From the top/bottom, From the edge, Hole spacing | 2 1/2 in, 1 1/2 in, 3 in (64, 38, 96 mm) | A pull that would land on a hinge cup is refused, and so is one whose screw head would land on a side, the bottom, the top, a stretcher or a fixed shelf behind an overlay front: the message says how far from the edge to keep it. |
 | Drawer **Pull** | Centred | **Near the top** (with **From the top**), **Finger notch** (with **Notch width** and **Notch depth**: the sub-front behind it is cut 25 mm lower for your fingers), or none. |
 | Pull hole | 3/16 in (5 mm) | Up to 12 mm. 3/16 in suits US 8-32 pull screws. |
+| Grain-matched fronts | Off | The doors and drawer fronts cut from one panel in the order they stand, a kerf apart ([Grain-matched fronts](#grain-matched-fronts)). |
 
 **4 · Materials:** the thicknesses (above), then **Grain**: **Doors** (vertical or across), **Drawer faces** (across or vertical), **Sides** (vertical, or **Free to turn** when they never show), and **Inside parts** (**Free to turn**, or **Along their length**). A part that is free to turn lets the nester rotate it to save plywood. A grain you set by hand in the Cut list is replaced when the cabinet is rebuilt.
 
@@ -290,6 +292,30 @@ Some cabinets are not rebuilt by a change, and the panel says why and what to do
 - **A new cabinet or base frame while a cabinet or frame is open:** leave it first (Esc). A new one is never made inside another.
 
 When a change is refused, the panel goes back to what the cabinet is.
+
+## Grain-matched fronts
+
+A cabinet maker cuts a stack of drawer fronts (and a drawer front over a door) from one panel in sequence, so the grain runs on up the stack. Turn it on in **3 · Fronts and pulls** with **Grain-matched fronts**. It starts off: until it is ticked every front is nested on its own, as before.
+
+### What it does
+
+The cabinet's doors and drawer fronts become one block for the nesting ([format.md, Kept together](format.md#kept-together-nesting)). The fronts are laid out on one sheet in the order they stand, their grain lined up, each a **kerf** apart (Nesting's **Kerf**, the gap the router leaves between parts; on the track saw's sheet the saw's kerf). Each front is still its own part: its own row in the cut list, its own outline, holes and label in the DXF, its own line on the job sheet. The block is never split between sheets.
+
+- **Grain vertical** (running up the cabinet): the fronts are cut **end to end along the grain**, each crosscut off the next, so the grain runs on from one front into the one above.
+- **Grain across:** the fronts are cut **side by side across the grain**, each ripped off the next. The figure carries on from one front's top edge into the bottom edge of the front above it. That works only because the fronts are one width, at one place, lined up on the sheet, which the rule below makes sure of.
+- **The order:** each front's edge lies on the sheet against the edge it meets in the cabinet: its bottom edge against the top of the front below. Sawhorse decides which edge is the top from the part's own frame (its thickness, width and length directions, as the cut list measures them), not from the pull holes, so the order is the same for a front with no holes or a finger notch. Vertical grain runs from the top front down from the block's corner, and grain across from the bottom front up.
+- **The gap:** the grain jumps by the kerf between fronts, 3/8 in with **CNC spacing** for a 1/4 in bit. That is not the cabinet's **Reveal gap**, which is the space between the fronts as they hang. We found no published allowance for either in grain matching, so Sawhorse adds none: the fronts are cut at their sizes, a kerf apart.
+- With a door in the stack, the drawer fronts are cut from the doors' plywood (**Door plywood**), so both come off the same sheet. Off, a drawer front keeps **Drawer front plywood**.
+
+### The rule, and what it refuses
+
+- **One column of fronts.** Every front spans the same width at the same place across the cabinet. A pair of doors stands side by side, so a drawer over a pair is refused: pick a **Single** door (**2 · Layout › Doors**), or turn matching off.
+- **The grain one way up the stack.** A new cabinet has doors vertical and drawer faces across, which cannot be one stack: a drawer over a door is refused until **4 · Materials › Grain** gives both the same direction. A drawer base has only drawer faces, so it matches either way (across to start).
+- **One thickness.** The doors (the carcass stock) and the drawer faces must be one thickness, being one panel.
+- **Fewer than two fronts:** nothing to match, nothing changes.
+- **Larger than the sheet:** the nesting reports every front of the stack under **Parts on no stock** ("kept together with the 3 other parts of “Grain-matched fronts”..."), never splitting it. Tick **Track saw what won't fit** and the whole stack goes to the saw's 4 x 8, or use larger stock. A stack of vertical-grain fronts is as long as the cabinet's fronts are tall plus a kerf between each: a 34 1/2 in base fits a 4 x 4 sheet; a tall pantry does not.
+
+On stock set to no grain (MDF), the nesting may turn the whole block; there is no grain to match then.
 
 ## Edge banding
 
@@ -532,7 +558,7 @@ A narrower cabinet is warned of. A sink of another width has no rule here, and t
 ### Nest
 
 1. Open the **Cut list** tab and click **Nesting ›**.
-2. Check the tiles (sheets, boards, yield) and the **Parts on no stock** list. Nothing is ever dropped silently: each part that has no stock says why (too large, no sheet of that thickness, grain).
+2. Check the tiles (sheets, boards, yield) and the **Parts on no stock** list. Nothing is ever dropped silently: each part that has no stock says why (too large, no sheet of that thickness, grain, or kept together with grain-matched fronts that cannot be cut whole).
 3. Hover a part in a diagram to light it up in the model; click it to select it. Under a diagram you can set a part's grain (**Along its length**, **Across its width**, **Free to turn**).
 4. Count the sheets before you buy. Each of the cabinet's materials nests on sheets of its own: carcass, doors, drawer faces, drawer boxes and backs never share a sheet, even at the same thickness. With the starting sizes, one Base · door and shelf takes four 4 x 4 sheets (the door alone on one, two of carcass parts, one for the back), and one Drawer base takes six. A second cabinet's parts share those sheets where they fit, material by material.
 

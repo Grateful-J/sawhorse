@@ -94,6 +94,9 @@ export interface Sizes extends TrimSizes {
   grainFronts: Run;
   grainSides: SideGrain;
   grainHidden: HiddenGrain;
+  /** Grain-matched fronts: the doors and drawer fronts cut from one panel in the order they stand
+   * (match.js). Off by default. */
+  grainMatch: boolean;
   /** Drawers over a door: each drawer front's height (metres). A drawer cabinet's fronts are all one height. */
   drawerFront: number;
   base: Base;
@@ -189,6 +192,10 @@ export interface Part {
   finished?: V3;
   offset?: V3;
   bands?: PartBand[];
+  /** Grain-matched fronts (match.js): kept together on the sheet with the cabinet's other fronts,
+   * at `index` (vertical grain: 0 the top front; grain across: 0 the bottom one), the kernel's part
+   * attribute `together`. One copy when set. */
+  together?: { key: string; index: number; stack: "along" | "across" };
 }
 export interface RunnerLength {
   nl: number;

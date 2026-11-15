@@ -580,9 +580,17 @@ fn check_snapshot(s: &Snapshot) -> Result<(), KernelError> {
         }
     };
     // The shopping list's items on every part attribute the file holds.
+    // And what keeps a part together with others (grain-matched fronts).
     let bom_ok = |what: &str, p: &PartAttrs| -> Result<(), KernelError> {
-        match crate::cutlist::bom_problem(&p.bom) {
-            Some(why) => Err(bad(format!("{what}'s hardware list: {why}"))),
+        if let Some(why) = crate::cutlist::bom_problem(&p.bom) {
+            return Err(bad(format!("{what}'s hardware list: {why}")));
+        }
+        match p
+            .together
+            .as_ref()
+            .and_then(crate::cutlist::Together::problem)
+        {
+            Some(why) => Err(bad(format!("{what}'s keep together: {why}"))),
             None => Ok(()),
         }
     };

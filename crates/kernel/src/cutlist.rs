@@ -366,6 +366,96 @@ fn bom_count(bom: &[BomItem]) -> Option<String> {
     })
 }
 
+/// Longest keep-together key (characters).
+pub const MAX_TOGETHER_KEY_CHARS: usize = 64;
+/// Highest keep-together index.
+pub const MAX_TOGETHER_INDEX: u32 = 9_999;
+
+/// Which way the parts of a keep-together block follow one another on the sheet, against
+/// their grain ([`Together::stack`]).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
+pub enum Stack {
+    /// End to end along the grain (the default): drawer fronts with their grain running up
+    /// the cabinet, each one crosscut off the next, so the grain runs on from one to the next.
+    #[default]
+    Along,
+    /// Side by side across the grain: drawer fronts with their grain running across the
+    /// cabinet, each one ripped off the next.
+    Across,
+}
+
+impl Stack {
+    pub(crate) fn code(self) -> u64 {
+        match self {
+            Stack::Along => 0,
+            Stack::Across => 1,
+        }
+    }
+}
+
+fn is_along(s: &Stack) -> bool {
+    *s == Stack::Along
+}
+
+/// Keep together (grain-matched fronts): parts that share a `key` are nested as one rigid
+/// block, in `index` order, a kerf apart, their grain lined up, never split between sheets.
+/// The parts of one block are those with the key in the same group or component (copies of
+/// a cabinet are blocks of their own). See [`crate::nesting`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct Together {
+    /// Which block, 1 to 64 characters, no control characters and no space at either end.
+    pub key: String,
+    /// Its place in the block, from 0 (at most 9,999): the block runs from the lowest index
+    /// to the highest. Two parts of one block with the same index are reported, not nested.
+    pub index: u32,
+    /// Which way the block runs against the grain; written only when `across`.
+    #[serde(default, skip_serializing_if = "is_along")]
+    pub stack: Stack,
+}
+
+impl Together {
+    /// Why this cannot be kept, or `None`.
+    pub fn problem(&self) -> Option<String> {
+        let k = &self.key;
+        if k.trim().is_empty() || k.trim() != k || k.chars().count() > MAX_TOGETHER_KEY_CHARS {
+            return Some(format!(
+                "a key must be 1 to {MAX_TOGETHER_KEY_CHARS} characters, with no space at either end"
+            ));
+        }
+        if k.chars().any(char::is_control) {
+            return Some("a key may not hold control characters (tabs, line breaks)".into());
+        }
+        if self.index > MAX_TOGETHER_INDEX {
+            return Some(format!(
+                "an index must be 0 to {MAX_TOGETHER_INDEX}, not {}",
+                self.index
+            ));
+        }
+        None
+    }
+
+    pub(crate) fn hash_into(&self, h: &mut StableHasher) {
+        h.tag("together");
+        h.tag(&self.key);
+        h.u64(u64::from(self.index));
+        h.u64(self.stack.code());
+    }
+}
+
 /// What a person said about a part, beyond its geometry: grain and stock. Stored on a
 /// component definition, a group, or a solid (and carried into a definition's members).
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -390,6 +480,10 @@ pub struct PartAttrs {
     /// banding); empty: nothing. Written only when not empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bom: Vec<BomItem>,
+    /// Keep together: nested as one block with the other parts of its key (grain-matched
+    /// fronts). Absent: nested on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub together: Option<Together>,
 }
 
 impl PartAttrs {
@@ -419,6 +513,10 @@ impl PartAttrs {
             for b in &self.bom {
                 b.hash_into(h);
             }
+        }
+        // Keep together, hashed only when said, for the same reason.
+        if let Some(t) = &self.together {
+            t.hash_into(h);
         }
     }
 
@@ -584,6 +682,11 @@ pub struct Occurrence {
     /// Its box in the world (grain arrows are drawn along it).
     #[serde(flatten)]
     pub bbox: PartBox,
+    /// The group or instance it is directly in (`None`: the top level): parts kept together
+    /// ([`PartAttrs::together`]) form one block per holder, so each copy of a cabinet is a
+    /// block of its own. Not written, not hashed (it follows from the items, which are).
+    #[serde(skip)]
+    pub holder: Option<u64>,
 }
 
 /// One line of the cut list.
@@ -652,6 +755,9 @@ pub struct CutRow {
     /// follows from the placements, which are).
     #[serde(skip_serializing_if = "is_zero")]
     pub stretched: usize,
+    /// Keep together ([`PartAttrs::together`]); left out when not said.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub together: Option<Together>,
     /// Every piece, counted or not.
     pub occurrences: Vec<Occurrence>,
 }
@@ -1249,6 +1355,15 @@ impl Model {
             }
         }
         Ok(crate::model::OpOutcome::PartSet)
+    }
+
+    /// The group or instance an item is directly in (`None`: the top level, or not found).
+    fn holder_of(&self, item: Item) -> Option<u64> {
+        let parent = match item {
+            Item::Object(id) => self.objects.get(from_public::<ObjectId>(id))?.member.parent,
+            Item::Node(id) => self.nodes.get(from_public::<NodeId>(id))?.member.parent,
+        };
+        parent.map(to_public)
     }
 
     /// Whether a part target holds other parts (an assembly: a component with a nested group
@@ -1861,6 +1976,7 @@ impl Model {
                 area_m2,
                 bom: attrs.bom.clone(),
                 stretched: idx.iter().filter(|&&i| pieces[i].stretched).count(),
+                together: attrs.together.clone(),
                 occurrences: idx
                     .iter()
                     .map(|&i| Occurrence {
@@ -1868,6 +1984,7 @@ impl Model {
                         visible: pieces[i].visible,
                         handed: pieces[i].handed,
                         bbox: pieces[i].bbox,
+                        holder: self.holder_of(pieces[i].item),
                     })
                     .collect(),
             });
@@ -2026,6 +2143,10 @@ impl CutList {
                 for b in &r.bom {
                     b.hash_into(&mut h);
                 }
+            }
+            // Keep together, only when said: every older list keeps its hash.
+            if let Some(t) = &r.together {
+                t.hash_into(&mut h);
             }
             h.usize(r.occurrences.len());
             for o in &r.occurrences {
