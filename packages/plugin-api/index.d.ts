@@ -193,6 +193,24 @@ declare module "sawhorse" {
     shaped: boolean;
     handed: number;
     hidden: number;
+    /** What is bought for each piece beyond its wood (set with the `set_bom` op); [] when nothing. */
+    bom: BomItem[];
+  }
+
+  /**
+   * One thing bought for a part beyond its wood: a hinge, a runner pair, shelf pins, edge
+   * banding. Set on a part with `{ op: "set_bom", part, bom: BomItem[] }` (it replaces the
+   * part's list; [] clears it). It rides on the part, so the shopping list counts it once per
+   * piece: copies add it, deletions take it away. At most 32 items per part.
+   */
+  export interface BomItem {
+    /** What it is, in words, 1 to 128 characters, no space at either end. */
+    item: string;
+    /** The maker's part number, 1 to 64 characters; leave it out when none is known. */
+    sku?: string;
+    /** How many per piece of the part: more than 0, at most 10,000; whole for "each" and "pair". */
+    qty: number;
+    unit: "each" | "pair" | "m";
   }
 
   export interface CutList {

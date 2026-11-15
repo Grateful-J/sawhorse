@@ -306,6 +306,7 @@ export function cutListOf(c: CutList) {
       shaped: r.shaped,
       handed: r.handed,
       hidden: r.hidden,
+      bom: (r.bom ?? []).map((b) => ({ item: b.item, ...(b.sku ? { sku: b.sku } : {}), qty: b.qty, unit: b.unit })),
     })),
     totals: {
       parts: c.totals.parts,
