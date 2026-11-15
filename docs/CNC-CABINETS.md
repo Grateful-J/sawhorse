@@ -11,18 +11,19 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 2. [Quick start: one cabinet to CNC files](#quick-start-one-cabinet-to-cnc-files)
 3. [Set up your shop once](#set-up-your-shop-once)
 4. [Make and edit a cabinet](#make-and-edit-a-cabinet)
-5. [Build a row of cabinets](#build-a-row-of-cabinets)
-6. [Put a row on a base frame](#put-a-row-on-a-base-frame)
-7. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
-8. [Set up the CAM job](#set-up-the-cam-job)
-9. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
-10. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
-11. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
-12. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-13. [Shopping list and pricing](#shopping-list-and-pricing)
-14. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-15. [What is kept with the model](#what-is-kept-with-the-model)
-16. [Limits](#limits)
+5. [Edge banding](#edge-banding)
+6. [Build a row of cabinets](#build-a-row-of-cabinets)
+7. [Put a row on a base frame](#put-a-row-on-a-base-frame)
+8. [Nest the parts and save the CNC files](#nest-the-parts-and-save-the-cnc-files)
+9. [Set up the CAM job](#set-up-the-cam-job)
+10. [Feeds, speeds and your bits](#feeds-speeds-and-your-bits)
+11. [Test cuts: prove the setup before the real sheet](#test-cuts-prove-the-setup-before-the-real-sheet)
+12. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
+13. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
+14. [Shopping list and pricing](#shopping-list-and-pricing)
+15. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+16. [What is kept with the model](#what-is-kept-with-the-model)
+17. [Limits](#limits)
 
 ## Why this exists
 
@@ -214,8 +215,11 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 | Change bit | A groove or a hole smaller than your **Bit diameter**: its layer needs a smaller bit. |
 | Check | A warning. Act on it before you cut: the row says what to change. |
 | Not drilled | Left out of the files, with the reason (inset hinge plates and runner screws). |
+| Edge band | A banded part: which edges, the band, its finished size and its cut size ([Edge banding](#edge-banding)). |
 
 **9 · Test cuts** makes small pieces that prove the setup before the real sheet: a machine check, joint ladders, a mini drawer and a mini door ([Test cuts](#test-cuts-prove-the-setup-before-the-real-sheet)).
+
+**10 · Edge banding** bands the edges that show: doors and drawer fronts all round, the carcass's front edges, the adjustable shelves' front edges. It starts off ([Edge banding](#edge-banding)).
 
 ### Edit a cabinet
 
@@ -239,6 +243,76 @@ Some cabinets are not rebuilt by a change, and the panel says why and what to do
 - **A new cabinet or base frame while a cabinet or frame is open:** leave it first (Esc). A new one is never made inside another.
 
 When a change is refused, the panel goes back to what the cabinet is.
+
+## Edge banding
+
+Laminate-faced plywood and MDF show their core at every cut edge, and a band covers it. Turn banding on in the cabinet panel's **10 · Edge banding** group with **Band the edges**. It starts off: until you tick it, every part is cut at its finished size, exactly as before.
+
+### The rule: blank plus band is the size you designed
+
+- You design the cabinet at its finished sizes, as before.
+- Each banded edge's blank is cut short by that band's thickness, so the part comes out at its designed size with the band on. A 23 7/8 x 30 3/8 in door banded all round with a 1 mm band is cut 23.796 x 30.296 in (606.4 x 771.5 mm finished, 604.4 x 769.5 mm cut).
+- Every cut stays where it is in the finished part: holes, dados, grooves, notches, hinge cups, plate holes, runner screws, shelf pins and pull holes. Blum gives the cup's boring distance from the door's edge, and the plates and runner screws 37 mm from the side's front edge. With a band on, that edge is the band's face. So on the blank, each cut is the band's thickness nearer the raw edge.
+- This is geometry, not a convention. No edgeband or machine maker's rule for taking the band off the cut size was found. Trade software (Mozaik, OptiCut, Promob, Microvellum) takes it off by default. The sources, quoted, are in [research/edge-banding-sources.md](research/edge-banding-sources.md).
+
+Cut the parts on the router, band them, then fit the hardware.
+
+### Measure your band
+
+Type the thickness your band measures, not the one on its label. Measure it as you measured the plywood ([Measure your plywood](#1-measure-your-plywood)): calipers across a piece of the band, in a few places, and take the average. REHAU makes its 1 mm band to +-0.1 mm. In the band's **Thickness**, pick **Measured: type it** and type the number.
+
+Each 0.1 mm the band is thicker than typed makes the part 0.1 mm larger on every banded edge, and moves each hinge cup 0.1 mm further from the door's finished edge. To check, band a test door ([Mini door](#mini-door)) and measure it across its bands: it should be the door's finished size.
+
+### The fields
+
+| Field | Starts at | Limits | Notes |
+|---|---|---|---|
+| **Band the edges** | Off | | Off, every other field here is ignored. |
+| **Bands** | One band | 1 to 3 | One band for each kind of part at most. |
+| **Thickness** | Band 1: 1 mm. Band 2: 3 mm. Band 3: 2 mm. | 0.45 mm (0.018 in), 1, 2 or 3 mm, REHAU's stock sizes; or **Measured: type it**, 0.1 to 6.35 mm (1/4 in) | Thicker than 1/4 in is solid-wood edging, not a band. |
+| **Name or colour** | Empty | 40 characters | Goes on the shopping list: "Edge banding, 1 mm x 15/16 in, White PVC". |
+| **Width** | 15/16 in (23 mm in a metric document) | More than 0, at most 4 in; at least as wide as the stock it covers | REHAU stocks 15/16 in; Ostermann's standard widths include 23 mm. The width only names the band; a band narrower than the stock it covers is refused. |
+| **Doors and drawer fronts, all four edges** | Band 1 | | **No banding**, or a band of the list. |
+| **Front edges of the sides, top, bottom, fixed shelves and front stretcher** | Band 1 | | |
+| **Adjustable shelves, front edge** | Band 1 | | |
+| **Edgebander pre-mill** | 0 | 0 to 3 mm | Edgebanders only (below). Iron-on banding: 0. |
+| **Waste per banded side**, **Then add, %** | 1 in (25.4 mm), 5% | 0 to 12 in, 0 to 100% | Microvellum's default, not a standard. |
+
+### Which edges, and why
+
+- **The carcass and the shelves.** The AWS standard (2009) defines a frameless cabinet as one "where the front edge of the cabinet body components are edgebanded", and counts the "visible front edges of stretchers, ends, divisions, tops, bottoms, shelves" as exposed. It counts "the three non-visible edges of adjustable shelves" as concealed. So the starting choice bands the front edges of the sides, the top, the bottom, the fixed shelves and the front stretcher, and the front edge of each adjustable shelf.
+- **Doors and drawer fronts.** These are banded all round. One owner's spec (the University of Maryland's casework section) asks for banding "on all exposed edges", 3 mm PVC on doors and drawer fronts and 1 mm elsewhere. That is one spec, not a standard. To follow it: **Bands** > **Two bands**, Band 2 at 3 mm, and **Doors and drawer fronts** > Band 2. A 3 mm band on doors needs a **Boring distance** of at least 6 mm (below).
+- **Never banded:** the rear stretcher, the back, the toe kick, the nailers, the drawer boxes and the bin frame. They do not show, or they sit in a joint.
+- **Finished ends:** the plugin makes none yet.
+- A band goes only on an edge that shows. The planner refuses one that would sit in a dado or groove, or against another part, where it would change the joint.
+
+### What it refuses, and what to change
+
+A band leaves the wood behind it thinner by the band's thickness. The planner keeps its 3 mm of wood to every raw edge, as it already does to every finished one. Each refusal says the value to type.
+
+| Refused | Why | Change |
+|---|---|---|
+| A blind dado's stop | The sides' dados stop **Dado stop** from the finished front edge; under the band there is that much less wood in front of them. | **Dado stop** at least the band plus 3 mm, or a thinner band on the carcass. |
+| A hinge cup | The cup's edge is the **Boring distance** from the door's finished edge, so the band's thickness less from its raw edge. | **Boring distance** at least the band plus 3 mm: 6 mm for a 3 mm band; the starting 5 mm takes up to 2 mm. Over 4 mm, no boring distance Blum gives (3 to 7 mm) works. |
+| A pull hole | The same, to the hole's edge. | **From the edge** at least the band plus 3 mm plus the hole's radius. |
+| A finger notch in a banded drawer front | An edgebander runs the band straight across the notch. | Another **Pull**, or **No banding** on doors and drawer fronts. |
+| A band narrower than its stock | It cannot cover the edge. | A wider band. |
+| A band where it would change a joint | A groove or rabbet running out of the edge, a notch in its middle, a hole bored into it, or another part against it. | Do not band that edge. |
+
+### Where it shows
+
+- **10 · Edge banding** lists each banded part: how many, which edges, which band, its finished size, its cut size, and the band each piece takes with waste. **8 · Cuts and holes** has the same, as **Edge band** rows.
+- **The CNC files** draw the cut sizes, the blanks. Every hole and pocket is where the finished part needs it.
+- **The Cut list** lists a banded part at its cut size, as it is drawn, with a note: "edge banding 1 mm x 15/16 in, 3.001 m a piece". The note under the list says so. The Cut list gives neither the finished size nor which edges: **10 · Edge banding** does.
+- **The Shopping list** lists each band by the metre: every banded edge's length, plus the waste per banded side, plus the percentage, rounded up to the millimetre per piece, times the pieces. Type a **roll** length to buy whole rolls (REHAU sells 600 ft coils under 0.8 mm, 400 ft of 2 mm and 300 ft of 3 mm). The shopping list adds its own banding overage on top (15% to start): set it to 0% if the cabinet's waste allowance is all you want.
+
+### With an edgebander
+
+An edgebander's jointing cutter (pre-mill) takes a little off each edge before the band goes on, to clean up the saw's or the router's cut: 0 to 3 mm on Felder's and SCM's machines. Type what yours takes in **Edgebander pre-mill**. Each banded edge's blank is cut that much larger, so after the pre-mill and the band the part is its designed size. With a 1 mm band and a 1 mm pre-mill the blank is the finished size; with a pre-mill larger than the band the blank is larger than the finished part. The 3 mm of wood is kept to the edge as it is after the pre-mill. Iron-on banding takes no pre-mill: leave it at 0.
+
+### Test cuts
+
+The mini drawer and the mini door are banded as your cabinet is (the same planner), and say so: band them before you measure or fit anything. The mini door's rows give the cup's centre from the banded edge and from the raw edge. The machine check and the joint ladders are never banded: they test the machine and the joints, and have no edge that shows.
 
 ## Build a row of cabinets
 
@@ -808,7 +882,7 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 |---|---|
 | **Sheet goods** | The nesting: the sheets it lays the parts out on, one row per stock and material. The track saw's 4 x 8 sheets are marked **track saw**. Parts the nesting puts on no stock are not in the list; a line says how many. |
 | **Solid lumber** | The nesting's boards, with their board feet (on the nominal thickness, as the yard sells them). |
-| **Edge banding** | Not worked out yet. A part that says how much banding it takes (an item in metres) will be listed here. |
+| **Edge banding** | What each part carries by the metre: the Cabinet generator adds it to each part it bands ([Edge banding](#edge-banding)), with its waste. With none, the group says so. |
 | **Hardware** | What each part carries, times how many of that part there are. Items with a part number are added up by part number; the rest by their words. |
 | **Tools** | A drilling template and its tool set: one each, however many cabinets need them. Shown only when a part asks for one. |
 
@@ -825,6 +899,7 @@ Part numbers are only those printed in Blum's catalogues. Anything Blum does not
 | A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: where the plate's holes are drilled (overlay doors, holes on) and the Overlay row settles on a 0 mm plate, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe), with pre-mounted system screws; otherwise (an inset door, holes drilled by hand, another plate height) the plate is named in words. Two screws per hinge, cup to door: **606N** (#6 x 5/8 in, Blum Inc.) or **609.1700** (3.5 x 17 mm, Blum Europe). A pull and its two screws, when the door has a pull. |
 | A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give (Blum names a 14.5 mm system screw for the 560H but no hole depth for it, and the holes here are 13 mm deep). A pull and its two screws, when the front has one (not a finger notch). A trash pull-out's bins, in words with the sizes from the maker's drawing (no order number). Once, on the Tools list: the drilling template (**T65.1600.01** with drill bits **DB-2.5mm** and **DB-6mm**, or **T65.1000.02** in Europe) and tool set **T65.9000**. |
 | A loose shelf | Four 5 mm shelf pins (Blum sells none: buy the ones that fit a 5 x 10 mm hole). |
+| A banded part (banding on) | Its band by the metre, with waste: "Edge banding, 1 mm x 15/16 in", one item per band it takes. |
 
 The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the plates and the runner screws are named in words, because their holes are not drilled here.
 
@@ -875,6 +950,8 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 | Back groove and dados on the same layer | Not allowed: make **Groove depth** different from **Dado depth**. |
 | Too much plywood used | Set inside parts and hidden sides **Free to turn** (**4 · Materials** > Grain); try **Tightest (CNC)**. |
 | A part on no stock as too large | Turn on **Track saw what won't fit**, or nest on a bigger sheet. |
+| A banded part too big or too small with its band on | The band is not the thickness typed: measure it with calipers and type it (**10 · Edge banding** > **Thickness** > **Measured: type it**). With an edgebander, check **Edgebander pre-mill** against what yours takes off. |
+| A hinge cup too near or too far from a banded door's edge | The same: the cup is placed from the finished edge, so a band thicker than typed moves the edge, not the cup. |
 | The base frame splits into short ladders | Raise **Longest piece** for a bigger bed, or use **long rails on the track saw**. |
 | The base frame does not match the row | Select it and click **Fit to the row again**. |
 
@@ -890,6 +967,7 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - The clearances of the last joint ladders added are kept in the model, so the ladders' picks name the dados that were cut.
 - The hardware each part takes (its `bom`, [format.md](format.md#part-attributes-cut-list)) is saved on the part in the model, so the shopping list counts copies and deletions. It is not in the plugin's 64 KB store, where it could be dropped.
 - Shopping list prices are kept on this device, not in the model.
+- A cabinet's edge banding settings are kept with its other settings. Each banded part's band, by the metre, is in its `bom` in the model, as the hardware is.
 
 ## Limits
 
@@ -903,5 +981,6 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
 - A test cut is not rebuilt when the settings change, and is not edited as a cabinet: delete it and add it again. Nesting only the tests, or only the cabinets, takes hiding the others and **Visible only**.
-- The shopping list does not work out edge banding yet, and names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
+- The shopping list names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
+- Edge banding: no finished ends; drawer boxes are never banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels do not show banding yet.
 - Hardware is put on parts, never on a whole cabinet: a cabinet is an assembly, and the cut list counts its parts.
