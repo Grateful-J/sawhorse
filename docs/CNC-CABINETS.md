@@ -582,7 +582,7 @@ The PDF's last pages are one label per part on the router's sheets, sheet by she
 - its size (width × length × thickness);
 - its grain in words with the side it runs along ("Grain along the length (the 34 1/2 in side)"), and an arrow;
 - which face was up on the router;
-- a **Banding** line to write on: Sawhorse does not know edge banding yet.
+- **Banding:** the bands the part carries, when the Cabinet generator banded it ("1 mm x 15/16 in", from the cut list), or a line to write on. The label does not say which edges: the cabinet's **10 · Edge banding** group lists them (doors and drawer fronts all round, the other parts at the front). With the Cut list not of the model as it is, every label has the line.
 
 The first page of the PDF says which pages the labels are on.
 
@@ -1072,5 +1072,5 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - Feeds and speeds are starting points from published charts, for 1/8 in and 1/4 in bits (and a reseller's 6 mm row), in MDF, laminate on MDF and Baltic birch. One machine is built in, the Shapeoko 5 Pro 4×4; another is typed in as **Custom**.
 - A test cut is not rebuilt when the settings change, and is not edited as a cabinet: delete it and add it again. Nesting only the tests, or only the cabinets, takes hiding the others and **Visible only**.
 - The shopping list names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
-- Edge banding: no finished ends; drawer boxes are never banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels do not show banding yet.
+- Edge banding: no finished ends; drawer boxes are never banded; a finger notch cannot be banded. The Cut list lists a banded part at its cut size and does not say which edges are banded or the finished size: the cabinet panel does. Part labels name the bands a part carries, not which edges.
 - Hardware is put on parts, never on a whole cabinet: a cabinet is an assembly, and the cut list counts its parts.
