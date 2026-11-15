@@ -8,7 +8,7 @@
 // section under the list (lane 9: cutting diagrams; `NestingSection.tsx`).
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { CutList, CutRow, Grain, Item, Rounding } from "../kernel/types";
-import { BOARD_FEET_NOTE, formatSteps, geometryNote, listStyle, materialText, nominalText, rowNotes, ROUNDINGS, scopeNote, sizeUnit, summary, UNCOUNTED_NOTES, type RoundingChoice } from "../cutlist/format";
+import { anyBanded, BOARD_FEET_NOTE, formatSteps, geometryNote, listStyle, materialText, nominalText, rowNotes, ROUNDINGS, scopeNote, sizeUnit, summary, UNCOUNTED_NOTES, type RoundingChoice } from "../cutlist/format";
 import { nameRuns, sizeChars, sizePieces } from "../cutlist/wrap";
 
 export interface CutListPaneProps {
@@ -723,7 +723,7 @@ export function CutListPane(p: CutListPaneProps) {
         ) : null}
       </div>
       <p className="note" data-testid="cutlist-note">
-        {scopeNote(r)} Sizes in {sizeUnit(r)}.
+        {scopeNote(r, anyBanded(list))} Sizes in {sizeUnit(r)}.
       </p>
       {p.nesting}
       {p.shopping}

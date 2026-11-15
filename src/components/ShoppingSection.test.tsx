@@ -61,8 +61,8 @@ describe("Shopping list section", () => {
     expect(tool.textContent).toContain("Needs 1");
     // The part the nesting could not place is said.
     expect(screen.getByTestId("shop-unplaced").textContent).toMatch(/^1 part is on no stock/);
-    // Banding is a placeholder for now.
-    expect(sec.querySelector('[data-category="banding"]')!.textContent).toMatch(/not worked out yet/);
+    // No part carries banding: the group says so.
+    expect(sec.querySelector('[data-category="banding"]')!.textContent).toMatch(/No part carries edge banding\./);
     // Overage defaults are stated as assumptions.
     expect(screen.getByTestId("shop-assumptions").textContent).toMatch(/0% for sheet goods \(The nesting's sheet count is exact; add overage for spares or mistakes\), 20% for lumber.*assumptions, not facts/);
   });

@@ -301,7 +301,7 @@ describe("the CSV", () => {
     expect([sheet[0], sheet[4], sheet[6], sheet[7], sheet[8], sheet[10], sheet[11]]).toEqual(["Sheet goods", "1 sheet", "1 sheet", "2 sheets", "40.00", "40.00", "80.00"]);
     const runners = rows.find((r) => r[2] === "563H5330B")!;
     expect([runners[4], runners[8], runners[10], runners[13]]).toEqual(["3 pairs", "price not set", "", "left out of the total"]);
-    expect(rows.find((r) => r[0] === "Edge banding")![13]).toMatch(/not worked out yet/);
+    expect(rows.find((r) => r[0] === "Edge banding")![13]).toMatch(/^No part carries edge banding\./);
     const total = rows.find((r) => r[0] === "Total")!;
     expect([total[10], total[11]]).toEqual([String((40 + 16).toFixed(2)), String((80 + 16).toFixed(2))]);
     expect(total[13]).toMatch(/^Leaves out 3 rows with no price: /);

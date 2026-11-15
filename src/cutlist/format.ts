@@ -169,8 +169,22 @@ export function rowNotes(row: CutRow): string[] {
   if (row.handed) notes.push(row.handed === row.total ? "handed" : `${row.handed} of ${row.total} handed`);
   if (row.hidden) notes.push(row.hidden === row.total ? "hidden" : `${row.hidden} hidden`);
   if (row.scaled) notes.push("scaled");
+  const band = bandingText(row);
+  if (band) notes.push(band);
   return notes;
 }
+
+/** A part that carries edge banding (items in metres on its `bom`): "edge banding 1 mm x 15/16
+ * in, 3.001 m", per piece; "" when it carries none. The Cabinet generator draws such a part at
+ * its cut size, before the band (scopeNote). */
+export function bandingText(row: CutRow): string {
+  const bands = (row.bom ?? []).filter((b) => b.unit === "m");
+  if (!bands.length) return "";
+  return `edge banding ${bands.map((b) => `${b.item.replace(/^edge banding,?\s*/i, "")}, ${Math.round(b.qty * 1000) / 1000} m`).join("; ")} a piece`;
+}
+
+/** Whether any row carries edge banding. */
+export const anyBanded = (list: CutList | null | undefined): boolean => !!list?.rows.some((r) => bandingText(r));
 
 /** The material column: the part's stock, its material's name, or a dash. */
 export function materialText(row: CutRow): string {
@@ -220,10 +234,15 @@ export function reportCells(row: CutRow, list: CutList): string[] {
   ];
 }
 
-/** The footer every output carries. */
-export function scopeNote(r: Rounding): string {
+/** The footer every output carries. With `banded` (a part carries edge banding), it says that
+ * such a part is listed at the size it is drawn: the Cabinet generator draws one at its cut size,
+ * before the band. */
+export function scopeNote(r: Rounding, banded = false): string {
   const step = r === "sixteenth" ? "1/16 in" : r === "thirty_second" ? "1/32 in" : "0.5 mm";
-  return `Finished sizes, rounded to the nearest ${step}. Grain runs along L unless noted. ${BOARD_FEET_NOTE} Edge banding is not included; the sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).`;
+  const band = banded
+    ? `Edge banding is not added to the sizes: a part noted "edge banding" is listed as drawn, and the Cabinet generator draws one at its cut size, before the band (its 10 · Edge banding group gives the finished size and the banded edges). The`
+    : "Edge banding is not included; the";
+  return `Finished sizes, rounded to the nearest ${step}. Grain runs along L unless noted. ${BOARD_FEET_NOTE} ${band} sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).`;
 }
 
 /** Lane 15: board feet are bought on the rough thickness, not the finished one. */

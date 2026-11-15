@@ -375,7 +375,7 @@ export const SHOPPING_CSV_TYPE = { description: "Shopping list (CSV)", mime: "te
 
 /** Said wherever the list is written: how quantities are rounded, and what overage is. */
 export const ROUNDING_NOTE = "Quantities to buy are rounded up: whole sheets and boards, whole pairs, whole packs (and rolls, when a size is set). Overage is added before rounding.";
-export const BANDING_PLACEHOLDER = "Edge banding is not worked out yet: when a part says how much it takes (an item in metres), it is listed here.";
+export const BANDING_PLACEHOLDER = "No part carries edge banding. A part that does (an item in metres: the Cabinet generator adds one to each part it bands, with its waste) is listed here.";
 
 function money2(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);
