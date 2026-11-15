@@ -576,7 +576,7 @@ describe("tops, shelves, drawer heights and catalogues", () => {
     expect(named(p.parts, "Drawer side")[0].blank[1]).toBeCloseTo(510 * MM, 12);
     expect(p.rows.some((r) => /runner screws at 37, 69, 261 mm/.test(r[1]))).toBe(true);
     const mov = ok({ ...s, slides: "movento" }, true);
-    expect(mov.runner?.part).toBe("760H5201S");
+    expect(mov.runner?.part).toBe("760H5200S");
     expect(mov.rows.some((r) => /runner screws at 37, 69, 261, 293 mm/.test(r[1]))).toBe(true);
     // The US catalogue in a metric document still works, by choice.
     expect(ok({ ...s, catalog: "us" }, true).runner?.part).toBe("563H4570B");
@@ -586,11 +586,25 @@ describe("tops, shelves, drawer heights and catalogues", () => {
     const cups = (p: ReturnType<typeof plan>, name = "Door") => p.rows.filter((r) => r[0] === name && /^Hinge cup/.test(r[1])).length;
     const base = imperial({ layout: "doors", shelves: 0, hardware: true });
     expect(cups(ok(base))).toBe(2);
-    expect(cups(ok({ ...base, catalog: "eu" }))).toBe(3);
+    // Its door is 24 in wide (over 600 mm: one more) and about 770 mm tall (over Europe's 750 mm band).
+    expect(cups(ok({ ...base, catalog: "eu" }))).toBe(4);
     // A tall door is heavy: an 84 in pantry's 24 in door, about 14 kg, gets the height's 5.
     const tall = imperial({ layout: "doors", shelves: 0, hardware: true, height: 84 * IN });
     expect(cups(ok(tall))).toBe(5);
     expect(ok(tall).rows.some((r) => /5 hinges \(.*kg/.test(r[1]))).toBe(true);
+  });
+
+  it("hinges: Blum Europe's height bands add a hinge to a door between 750 and 900 mm, never take one away", () => {
+    const cups = (p: ReturnType<typeof plan>) => p.rows.filter((r) => r[0] === "Door" && /^Hinge cup/.test(r[1])).length;
+    // A narrow door (under 600 mm, so no width hinge) whose front is about 800 mm tall.
+    const s = imperial({ layout: "doors", shelves: 0, hardware: true, width: 18 * IN, height: 34.5 * IN });
+    expect(cups(ok(s))).toBe(2);
+    expect(cups(ok({ ...s, catalog: "eu" }))).toBe(3);
+    // Short doors keep 2 in both; a 1700 mm door gets the US chart's 4 in both (Europe's is 4 too).
+    const short = { ...s, height: 24 * IN, base: "none" as const };
+    expect(cups(ok(short))).toBe(2);
+    expect(cups(ok({ ...short, catalog: "eu" }))).toBe(2);
+    for (const catalog of ["us", "eu"] as const) expect(cups(ok({ ...s, height: 72 * IN, base: "none", catalog }))).toBe(4);
   });
 });
 

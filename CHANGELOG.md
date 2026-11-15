@@ -6,6 +6,13 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ### Fixed (CNC cabinets, 2026-11-14)
 
+- **Blum part numbers and hinge counts checked against Blum's current catalogues.**
+  - Blum Europe's MOVENTO 760H runners were listed as 760H…1S, as Blum's TD-132/1 sheet (06.22) prints them. Blum's 2024/2025 and 2027/2028 catalogues list them as 760H…0S (760H4500S), the numbers to order; the table now says those.
+  - With Blum Europe's catalogue, a door between about 750 and 900 mm tall got two hinges, the US chart's count; Blum's European chart asks for three. The European chart's height bands now apply with that catalogue, and the larger of the two counts wins, so a misread of a chart drawn without printed numbers can only add a hinge. Blum Inc. (US) doors are unchanged.
+  - Confirmed, no change: Blum Inc.'s TANDEM and MOVENTO catalogues give the locking devices' two 2.5 mm pilot holes, 10 mm deep, drilled through the T65.1600.01 template (TANDEM plus BLUMOTION catalog p. 11 and p. 35, MOVENTO catalog p. 11); every US runner and locking-device part number; the mounting plate's two 5 mm holes 32 mm apart and 37 mm back.
+
+  How: `plugins/cabinet-generator/cabinet.js` (`RUNNERS_EU.movento`, the hinge count). Tests: `src/plugins/cabinet.test.ts`.
+
 - **Shelves stand behind an inset door, and each starting point is a clean start.**
   - With inset fronts the shelves ran the cabinet's full depth, through the door. A shelf behind an inset door now starts the carcass thickness plus 3 mm back from the cabinet's front (room for the door and its bumpers), and is that much shallower; a fixed shelf's dados start with it. The pin rows are where they were: the front row is 37 mm from the cabinet's front, behind the door. A cabinet too shallow to leave a shelf there says so. Open shelves and shelves behind overlay doors are unchanged. Found by a new check that builds every starting point and option as solids and requires that no two parts share any volume.
   - A starting point picked after another kept that one's nailers, pull distances, drawer pull and bins: a Base after a Tall pantry had its pull 30 in up the door, on a dado, and could not be generated. Each starting point now puts those, and the number of drawers, back to a new cabinet's unless it names them, so a cabinet picked after another is the one picked first. Stock, grain, joinery, hardware and CNC settings are kept as before.
