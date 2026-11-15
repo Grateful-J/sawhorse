@@ -15,13 +15,16 @@ Researched 2026-11-14. Every row below comes from a document opened during that 
 
 | The plugin | From |
 |---|---|
-| Finished part = cut blank + bands: each banded edge's blank is cut short by its band's thickness | Geometry. **No edgeband or machine maker states this rule** (section 3). Trade software deducts the band (Mozaik, OptiCut, Promob, Microvellum: section 3), which agrees with it. |
-| Every cut stays where it is in the finished part | Blum measures the cup's boring distance and the 37 mm setbacks from the door's and the side's edge: the finished edge. The planner keeps its 3 mm of wood to the raw edge under the band. |
-| Band thicknesses offered: 0.45 mm (0.018 in), 1, 2, 3 mm, or measured | REHAU's stock sizes (section 1) |
+| Finished part = cut blank + bands: each banded edge's blank is cut short by its band's thickness | Geometry. **No edgeband or machine maker states this rule** (section 3). Of the trade software read (section 3): OptiCut deducts the edging thickness "when working in net dimensions"; Mozaik's help says to set the band to 0 mm when the bander pre-mills, "to ensure Mozaik is not deducting anything"; Promob's worked example subtracts the band; Microvellum's pre-mill modes remove or add it. |
+| Every cut stays where it is in the finished part | Blum gives the cup's boring distance from the door's edge, and the plates and runner screws 37 mm from the side's front edge; with a band on, that edge is the band's face. The planner keeps its 3 mm of wood to the raw edge under the band, after any pre-mill. |
+| Band thicknesses offered: 0.018 in (0.457 mm), 1, 2, 3 mm, or measured | REHAU's stock sizes (section 1). REHAU gives the thin band as .018" only; 0.457 mm is the conversion. |
+| A typed thickness of 0.1 to 6.35 mm (1/4 in); a band at least as wide as the stock it covers | **Sawhorse's limits, not sourced rules.** |
 | Widths to start: 15/16 in (inch documents), 23 mm (metric) | REHAU stocks 15/16 in; Ostermann's standard widths include 23 mm (section 1) |
 | Which edges to start: the front edges of the sides, top, bottom, fixed shelves and front stretcher; an adjustable shelf's front edge | AWS 2009, section 10 (section 2) |
 | Doors and drawer fronts banded all round | One owner's spec: all exposed edges; 3 mm on doors and drawer fronts, 1 mm elsewhere (section 2). **One spec, not a standard.** |
-| Waste: 1 in per banded side, then 5% | Microvellum's edgeband report (section 4). **A software default, not a standard.** |
+| Waste: 1 in per banded side (on each part), then 5% (the shopping list's banding overage, once on the total) | Microvellum's edgeband report (section 4). **A software default, not a standard.** |
+| An edge with a notch at its end (a toe kick, a rail's tongues) counts its whole run | Sawhorse's choice: on an edgebander the band runs across the notch and is trimmed by hand at its inside corner. Not sourced. |
+| Nailers not banded, though AWS counts their visible front edges as exposed | The nailers here sit behind the back at the rear edge: no front edge of theirs shows. |
 | Edgebander pre-mill, 0 to 3 mm, default 0 | Felder and SCM edgebanders (section 3). An iron-on band takes none. |
 | Measure the band with calipers | REHAU's thickness tolerance, +-0.10 to +-0.15 mm (section 1) |
 
@@ -39,7 +42,7 @@ From `cabinet-standards.md` § 1a.
 | 2 mm stock | 7/8" × 2 mm, 15/16" × 2 mm | same | p.2 (SpectraEdge Rigid – Thick) | High |
 | 3 mm stock | 15/16" × 3 mm, 1-5/16" × 3 mm (rigid and FlexEdge semi-rigid) | same | p.2 | High |
 | Thickness tolerance | 0.9–1.0 mm: ±0.10 mm; 1.1–1.6 mm: ±0.15 mm; 1.7–3.9 mm: ±0.15 mm (embossed: an extra −0.05 to −0.10 mm) | same | p.2 "Size availability" table | High |
-| Coil lengths | 600 ft for bands under 0.8 mm; 400 ft for 2 mm; 300 ft for 3 mm | same | p.3 "Packaging" | High |
+| Coil lengths | 600 ft (182.88 m) for bands under 0.8 mm; 400 ft (121.92 m) for 2 mm; 300 ft (91.44 m) for 3 mm | same | p.3 "Packaging" (metres converted here) | High |
 | Edge thickness range of a small automatic edgebander | 0.4–3 mm coiled PVC/ABS | https://cdn.shopify.com/s/files/1/0053/0907/1450/files/cantek_mx350m.pdf | Cantek MX350M brochure, p.1–2 | High (for that machine) |
 
 From `r2/edgebanding.md`, "edgeband width relative to board thickness".

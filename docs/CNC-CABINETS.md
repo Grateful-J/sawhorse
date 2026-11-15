@@ -253,7 +253,8 @@ Laminate-faced plywood and MDF show their core at every cut edge, and a band cov
 - You design the cabinet at its finished sizes, as before.
 - Each banded edge's blank is cut short by that band's thickness, so the part comes out at its designed size with the band on. A 23 7/8 x 30 3/8 in door banded all round with a 1 mm band is cut 23.796 x 30.296 in (606.4 x 771.5 mm finished, 604.4 x 769.5 mm cut).
 - Every cut stays where it is in the finished part: holes, dados, grooves, notches, hinge cups, plate holes, runner screws, shelf pins and pull holes. Blum gives the cup's boring distance from the door's edge, and the plates and runner screws 37 mm from the side's front edge. With a band on, that edge is the band's face. So on the blank, each cut is the band's thickness nearer the raw edge.
-- This is geometry, not a convention. No edgeband or machine maker's rule for taking the band off the cut size was found. Trade software (Mozaik, OptiCut, Promob, Microvellum) takes it off by default. The sources, quoted, are in [research/edge-banding-sources.md](research/edge-banding-sources.md).
+- This is geometry, not a convention. No edgeband or machine maker's rule for taking the band off the cut size was found. What the trade software read says: OptiCut deducts the edging thickness "when working in net dimensions"; Mozaik's help says to set the band to 0 mm when the edgebander pre-mills it, "to ensure Mozaik is not deducting anything for the edging thickness"; Promob's worked example subtracts a 1 mm band per side (and adds an offset); Microvellum offers pre-mill modes that remove or add the band thickness. The sources, quoted, are in [research/edge-banding-sources.md](research/edge-banding-sources.md).
+- **The model shows the blanks.** A banded edge stands a band's thickness short of where the finished part's edge will be, so you see a gap that size at banded edges (between a door's edge and its neighbour's, for example, the gap looks a band wider on each side), and a size measured in the model is the cut size. **10 · Edge banding** gives the finished sizes.
 
 Cut the parts on the router, band them, then fit the hardware.
 
@@ -269,22 +270,23 @@ Each 0.1 mm the band is thicker than typed makes the part 0.1 mm larger on every
 |---|---|---|---|
 | **Band the edges** | Off | | Off, every other field here is ignored. |
 | **Bands** | One band | 1 to 3 | One band for each kind of part at most. |
-| **Thickness** | Band 1: 1 mm. Band 2: 3 mm. Band 3: 2 mm. | 0.45 mm (0.018 in), 1, 2 or 3 mm, REHAU's stock sizes; or **Measured: type it**, 0.1 to 6.35 mm (1/4 in) | Thicker than 1/4 in is solid-wood edging, not a band. |
+| **Thickness** | Band 1: 1 mm. Band 2: 3 mm. Band 3: 2 mm. | 0.018 in (0.457 mm), 1, 2 or 3 mm, REHAU's stock sizes (REHAU gives the thin band in inches only); or **Measured: type it**, 0.1 to 6.35 mm (1/4 in) | The 0.1 to 6.35 mm range is Sawhorse's limit, not a sourced rule: thicker than 1/4 in is solid-wood edging, not a band. |
 | **Name or colour** | Empty | 40 characters | Goes on the shopping list: "Edge banding, 1 mm x 15/16 in, White PVC". |
-| **Width** | 15/16 in (23 mm in a metric document) | More than 0, at most 4 in; at least as wide as the stock it covers | REHAU stocks 15/16 in; Ostermann's standard widths include 23 mm. The width only names the band; a band narrower than the stock it covers is refused. |
+| **Width** | 15/16 in (23 mm in a metric document) | More than 0, at most 4 in; at least as wide as the stock it covers | REHAU stocks 15/16 in; Ostermann's standard widths include 23 mm, and it cuts edging to any width up to 100 mm. The width only names the band. "At least as wide as the stock" is Sawhorse's rule, not a sourced one: a narrower band leaves the edge bare. |
 | **Doors and drawer fronts, all four edges** | Band 1 | | **No banding**, or a band of the list. |
 | **Front edges of the sides, top, bottom, fixed shelves and front stretcher** | Band 1 | | |
 | **Adjustable shelves, front edge** | Band 1 | | |
 | **Edgebander pre-mill** | 0 | 0 to 3 mm | Edgebanders only (below). Iron-on banding: 0. |
-| **Waste per banded side**, **Then add, %** | 1 in (25.4 mm), 5% | 0 to 12 in, 0 to 100% | Microvellum's default, not a standard. |
+| **Waste per banded side** | 1 in (25.4 mm) | 0 to 12 in | Microvellum's default, not a standard: its edgeband report adds 1 in per banded side, then 5%. Each part carries the 1 in a side; the 5% is the shopping list's banding overage, added once to the total. |
 
 ### Which edges, and why
 
-- **The carcass and the shelves.** The AWS standard (2009) defines a frameless cabinet as one "where the front edge of the cabinet body components are edgebanded", and counts the "visible front edges of stretchers, ends, divisions, tops, bottoms, shelves" as exposed. It counts "the three non-visible edges of adjustable shelves" as concealed. So the starting choice bands the front edges of the sides, the top, the bottom, the fixed shelves and the front stretcher, and the front edge of each adjustable shelf.
+- **The carcass and the shelves.** The AWS standard (2009) defines a frameless cabinet as one "where the front edge of the cabinet body components are edgebanded", and counts the "visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers" as exposed. It counts "the three non-visible edges of adjustable shelves" as concealed. So the starting choice bands the front edges of the sides, the top, the bottom, the fixed shelves and the front stretcher, and the front edge of each adjustable shelf.
 - **Doors and drawer fronts.** These are banded all round. One owner's spec (the University of Maryland's casework section) asks for banding "on all exposed edges", 3 mm PVC on doors and drawer fronts and 1 mm elsewhere. That is one spec, not a standard. To follow it: **Bands** > **Two bands**, Band 2 at 3 mm, and **Doors and drawer fronts** > Band 2. A 3 mm band on doors needs a **Boring distance** of at least 6 mm (below).
-- **Never banded:** the rear stretcher, the back, the toe kick, the nailers, the drawer boxes and the bin frame. They do not show, or they sit in a joint.
+- **Never banded:** the rear stretcher, the back, the toe kick, the nailers, the drawer boxes and the bin frame. AWS counts nailers' visible front edges as exposed, but the nailers here sit behind the back at the rear edge: no front edge of theirs shows. The others do not show either, or they sit in a joint.
 - **Finished ends:** the plugin makes none yet.
-- A band goes only on an edge that shows. The planner refuses one that would sit in a dado or groove, or against another part, where it would change the joint.
+- A band goes only on an edge that shows. No edge the panel offers can be banded into a joint: every one is a front edge, or a front's edge, that nothing sits against. The planner also checks each banded edge against every other part (and refuses a band that would sit in a dado or groove, or against another part); today that check never fires, and it guards part kinds added later.
+- **Notches at an end.** A side's front edge ends at its toe kick notch, and a fixed rail's at its tongues, which are notched to clear the dado's stop. On an edgebander the band runs across such a notch; trim it off by hand at the notch's inside corner. The band counted for the part is the edge's whole run, notch and all, plus the waste per side. **10 · Edge banding** and **8 · Cuts and holes** say so for each such part.
 
 ### What it refuses, and what to change
 
@@ -292,19 +294,20 @@ A band leaves the wood behind it thinner by the band's thickness. The planner ke
 
 | Refused | Why | Change |
 |---|---|---|
-| A blind dado's stop | The sides' dados stop **Dado stop** from the finished front edge; under the band there is that much less wood in front of them. | **Dado stop** at least the band plus 3 mm, or a thinner band on the carcass. |
+| A blind dado's stop | The sides' dados stop **Dado stop** from the finished front edge; under the band (after any pre-mill) there is that much less wood in front of them. | **Dado stop** at least the band plus 3 mm, or a thinner band on the carcass. |
 | A hinge cup | The cup's edge is the **Boring distance** from the door's finished edge, so the band's thickness less from its raw edge. | **Boring distance** at least the band plus 3 mm: 6 mm for a 3 mm band; the starting 5 mm takes up to 2 mm. Over 4 mm, no boring distance Blum gives (3 to 7 mm) works. |
 | A pull hole | The same, to the hole's edge. | **From the edge** at least the band plus 3 mm plus the hole's radius. |
 | A finger notch in a banded drawer front | An edgebander runs the band straight across the notch. | Another **Pull**, or **No banding** on doors and drawer fronts. |
 | A band narrower than its stock | It cannot cover the edge. | A wider band. |
-| A band where it would change a joint | A groove or rabbet running out of the edge, a notch in its middle, a hole bored into it, or another part against it. | Do not band that edge. |
+| A band where it would change a joint | A groove or rabbet running out of the edge, a notch in its middle, a hole bored into it, or another part against it. None of these arises with the edges the panel offers; the checks guard part kinds added later. | Do not band that edge. |
 
 ### Where it shows
 
 - **10 · Edge banding** lists each banded part: how many, which edges, which band, its finished size, its cut size, and the band each piece takes with waste. **8 · Cuts and holes** has the same, as **Edge band** rows.
 - **The CNC files** draw the cut sizes, the blanks. Every hole and pocket is where the finished part needs it.
-- **The Cut list** lists a banded part at its cut size, as it is drawn, with a note: "edge banding 1 mm x 15/16 in, 3.001 m a piece". The note under the list says so. The Cut list gives neither the finished size nor which edges: **10 · Edge banding** does.
-- **The Shopping list** lists each band by the metre: every banded edge's length, plus the waste per banded side, plus the percentage, rounded up to the millimetre per piece, times the pieces. Type a **roll** length to buy whole rolls (REHAU sells 600 ft coils under 0.8 mm, 400 ft of 2 mm and 300 ft of 3 mm). The shopping list adds its own banding overage on top (15% to start): set it to 0% if the cabinet's waste allowance is all you want.
+- **The model** shows the blanks too (above): measuring in it gives the cut sizes.
+- **The Cut list** lists a banded part at its cut size, as it is drawn, with a note: "edge banding 1 mm x 15/16 in, 2.858 m a piece". The note under the list then opens "Sizes as drawn" instead of "Finished sizes" and says so. The Cut list gives neither the finished size nor which edges: **10 · Edge banding** does.
+- **The Shopping list** lists each band by the metre: every banded edge's whole run plus the waste per banded side, rounded up to the millimetre per piece, times the pieces. Its banding overage starts at 5%, Microvellum's default (not a standard), added once to the total. Type a **roll** length to buy whole rolls (REHAU sells 600 ft (182.88 m) coils under 0.8 mm, 400 ft (121.92 m) of 2 mm and 300 ft (91.44 m) of 3 mm).
 
 ### With an edgebander
 
@@ -312,7 +315,7 @@ An edgebander's jointing cutter (pre-mill) takes a little off each edge before t
 
 ### Test cuts
 
-The mini drawer and the mini door are banded as your cabinet is (the same planner), and say so: band them before you measure or fit anything. The mini door's rows give the cup's centre from the banded edge and from the raw edge. The machine check and the joint ladders are never banded: they test the machine and the joints, and have no edge that shows.
+The mini drawer and the mini door are banded as your cabinet is (the same planner), and say so. Measure the mini drawer's side length, the machine's scale check, before banding: the row gives the side's blank as cut, a band shorter than your cabinet's depth (less any pre-mill). Then band them, and measure across the bands and fit the hardware. The mini door's rows give the cup's centre, and the plates' 37 mm line, from the banded edge and from the blank's edge as cut (the band less any pre-mill). The machine check and the joint ladders are never banded: they test the machine and the joints, and have no edge that shows.
 
 ## Build a row of cabinets
 
@@ -912,7 +915,7 @@ Every price field starts empty. Sawhorse ships no prices.
 - **pack** (hardware) is how many pieces or pairs come in a pack; the price is then per pack. **roll** (banding) is the metres in a roll. Empty: sold singly, or by the metre. Blum gives no pack sizes, so none is filled in.
 - **Prices in** is the currency (a three-letter code: USD, CAD, EUR). It starts from your browser's region when that is a common one; empty writes plain numbers. Money is written the way your browser's language writes it.
 
-**Overage.** Each group has an overage percentage, added to what the parts need before rounding up, so it buys more only when it reaches past the next whole sheet, pair or pack (10% on 24 pins in packs of 50 is still one pack). It starts at 0% for sheet goods (the nesting's sheet count is exact; add overage for spares or mistakes), 20% for lumber, 15% for banding and 0% for hardware. These are assumptions, not facts: set your own. Tools have no overage.
+**Overage.** Each group has an overage percentage, added to what the parts need before rounding up, so it buys more only when it reaches past the next whole sheet, pair or pack (10% on 24 pins in packs of 50 is still one pack). It starts at 0% for sheet goods (the nesting's sheet count is exact; add overage for spares or mistakes), 20% for lumber, 5% for banding (Microvellum's default, not a standard: its edgeband report adds 1 in per banded side, which the Cabinet generator's parts carry, then 5%) and 0% for hardware. These are assumptions, not facts: set your own. Tools have no overage.
 
 **Rounding.** What you buy is rounded up to what can be bought: whole sheets and boards, whole pairs, whole packs, whole rolls. Banding by the metre is rounded up to the next centimetre. A row says what it needs and what to buy ("Needs 3 sheets · buy 4 sheets (10% over; 3 sheets without)").
 
