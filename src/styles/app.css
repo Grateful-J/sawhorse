@@ -358,8 +358,8 @@ button.chip:hover{border-color:var(--accent)}
 /* ---- Lane 9: the Nesting section (cutting diagrams) and the Stock dialog ---- */
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .nesting{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
-.nest-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.nest-head h4{margin:0;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;text-transform:uppercase}
+.nest-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.nest-head h4{flex:1 1 auto;margin:0;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;text-transform:uppercase}
 .nest-head .btn{padding:3px 8px;font-size:12px}
 .nest-controls input{width:62px;font:12px var(--mono);padding:2px 4px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);text-align:right}
 .nest-controls label.err input{border-color:var(--warn);outline:1px solid var(--warn)}
@@ -409,6 +409,45 @@ button.chip:hover{border-color:var(--accent)}
 .stock-dialog .stock-form input{width:84px}
 .stock-dialog .stock-form input[aria-label="Name"]{width:200px}
 .stock-dialog select{font:12px var(--body);padding:3px 5px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);max-width:100%}
+
+/* CNC setup: the machine, the bits, feeds and speeds (src/components/CncSetupDialog.tsx). */
+.cam-dialog{width:min(760px,calc(100vw - 32px))}
+.cam-dialog .cam-tabs{margin:0 -12px 8px}
+.cam-panel > label{max-width:360px}
+.cam-form{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.cam-form label + label{margin-top:0}
+.cam-form input{width:110px}
+.cam-form input[aria-label="Bit name"],.cam-form input[aria-label="Machine name"]{width:220px}
+.cam-form label.err input{border-color:var(--warn);outline:1px solid var(--warn)}
+.cam-table{width:100%;border-collapse:collapse;margin:6px 0}
+.cam-table th{text-align:left;font-weight:600;font-size:11px;color:var(--muted);padding:3px 4px;border-bottom:1px solid var(--line)}
+.cam-table td{vertical-align:top}
+.cam-table td small,.cam-result small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}
+.cam-src{display:inline;margin-left:4px;font:10px var(--mono);color:var(--muted)}
+.cam-src summary{display:inline-block;list-style:none;padding:0 5px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;cursor:pointer;vertical-align:1px}
+.cam-src summary::-webkit-details-marker{display:none}
+.cam-src summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.cam-src[data-conf="high"] summary{border-color:color-mix(in srgb,var(--inf-end) 60%,var(--line))}
+.cam-src[data-conf="low"] summary{border-color:var(--warn);color:var(--fg)}
+.cam-src[open] .cam-src-doc{display:block;margin:3px 0;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);font:11px var(--body);white-space:normal}
+.cam-src-url{font-family:var(--mono);word-break:break-all}
+.cam-yours{font:10px var(--mono);color:var(--muted)}
+.cam-conf{display:block;font-weight:600}
+.cam-conf[data-conf="low"]{color:var(--warn)}
+.cam-from{display:block;color:var(--muted);font-size:10.5px;max-width:260px}
+.cam-notes{margin:6px 0;padding-left:18px;font-size:11.5px;color:var(--muted)}
+.cam-warnings{list-style:none;margin:10px 0;padding:7px 9px;border:1px solid var(--warn);border-radius:6px;background:color-mix(in srgb,var(--warn) 9%,transparent);font-size:12px}
+.cam-warnings li + li{margin-top:5px}
+.cam-warnings b{font-family:var(--display);text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+.cam-warnings li[data-level="stop"] b{color:var(--warn)}
+.cam-result{display:grid;grid-template-columns:max-content 1fr;gap:6px 12px;margin:10px 0;font-size:12.5px}
+.cam-result dt{font-family:var(--display);font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-size:12px}
+.cam-result dd{margin:0}
+.cam-low{color:var(--fg)}
+.cam-scrap ol{padding-left:20px;font-size:12px}
+.cam-scrap li + li{margin-top:5px}
+.cam-scrap small{display:block;color:var(--muted);font-size:10.5px}
+@media (max-width:560px){.cam-result{grid-template-columns:1fr}}
 
 /* Lane 14: the browser demo's notice (only in the build served at /app/). Floats over the
    bottom of the viewport; never part of the grid, so the layout is the desktop app's. */

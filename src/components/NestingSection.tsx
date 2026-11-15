@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
-import { handWorkLegend, nestProblems, type HandWork } from "../nesting/cnc";
+import { handWorkLegend, KERF_MAX, nestProblems, type HandWork } from "../nesting/cnc";
 import type { NestSettingsPatch } from "../nesting/settingsQueue";
 import { ALGORITHMS, cutText, dims, fineU, glueText, JOINT_LOSS_DEFAULT, type Units, nestNote, nestSummary, pieceNumber, pieceYield, placedSize, reasonText, stripText } from "../nesting/format";
 
@@ -25,6 +25,8 @@ export interface NestingSectionProps {
    * settings as they are now). The saw's fields are patched one by one too: `{ overflow: { kerf } }`. */
   onSettings: (s: NestSettings, patch?: NestSettingsPatch) => void;
   onStock: () => void;
+  /** Open CNC setup: the machine, the bits, feeds and speeds (shop data, kept on this device). */
+  onCncSetup?: () => void;
   /** The pointer is over a part's rectangle (null: over none). */
   onHover: (p: Placement | null) => void;
   onSelect: (p: Placement) => void;
@@ -109,7 +111,6 @@ function LengthField({ label, value, units, rounding, max, onCommit }: { label: 
   );
 }
 
-const KERF_MAX = 0.5 * 0.0254;
 const TRIM_MAX = 4 * 0.0254;
 const JOINT_LOSS_MAX = 0.5 * 0.0254;
 
@@ -209,6 +210,11 @@ export function NestingSection(p: NestingSectionProps) {
         <button type="button" className="btn" onClick={p.onStock} disabled={!n} title="The sheets and boards parts are cut from, and which stock each material uses">
           Stock…
         </button>
+        {p.onCncSetup ? (
+          <button type="button" className="btn" onClick={p.onCncSetup} data-action="cnc-setup" title="Your CNC machine, router and bits, and feeds and speeds to start from. Kept on this device, not in the model.">
+            CNC setup…
+          </button>
+        ) : null}
       </header>
       {settings ? (
         <div className="cut-controls nest-controls">
