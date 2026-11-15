@@ -68,6 +68,8 @@ Where Sawhorse uses a number that no source gives, it says so here and in the pa
 | Preset | Value | Source | Where | Conf. |
 |---|---|---|---|---|
 | GE built-in (PDT750 family) | "at least 24" deep, 24" wide and approximately 34-1/2" high from floor to underside of the countertop" | GE install instructions, Pub. 31-31546 (09-14), https://assets.ajmadison.com/ajmadison/itemdocs/PDT750SSFSSInstallation.pdf | p.3 | High |
+| GE built-in (PDT750 family), Figure A | Floor to underside of the countertop: 34-1/2" ± 1/4" (34-1/4" to 34-3/4"). The ± was read from the PDF's extracted text ('+ 34-1/2"  1/4"'); the plus-minus glyph should be checked against the drawing. | GE install instructions, Pub. 31-31546 (09-14), https://assets.ajmadison.com/ajmadison/itemdocs/PDT750SSFSSInstallation.pdf | Figure A | Medium |
+| GE built-in (PDT750 family), Figure B | Floor to underside of the countertop: 33-1/2" to 34-3/4". Which models each figure is for is not stated in the text read. | GE install instructions, Pub. 31-31546 (09-14), https://assets.ajmadison.com/ajmadison/itemdocs/PDT750SSFSSInstallation.pdf | Figure B | High |
 | Bosch (US guide) | "opening is at least 33 7/8" (860 mm) high and 24" (610 mm) wide" | Bosch dishwasher installation instructions 9002059336 A, https://media3.bosch-home.com/Documents/9002059336_A.pdf | p.9 and p.12 | High |
 | Bosch fully integrated panel model | Width 23 5/8"–24 1/4" (600–616 mm); height 32"–34 1/4" (813–870 mm) | Bosch 9001450387 C, "Installation Guide for Fully Integrated Door Panel", https://media3.bosch-home.com/Documents/9001450387_C.pdf | p.7 Fig. 1 | High |
 

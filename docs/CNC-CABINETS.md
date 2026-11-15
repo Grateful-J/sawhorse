@@ -332,7 +332,7 @@ A row is cabinets side by side: turned the same way, each against the last one's
 3. In **Place**, choose where the next one goes, relative to the last cabinet made or edited:
    - **Right of …, at its row's end** (the default);
    - **Left of …, at its row's start**;
-   - **Around the corner, right of …'s row** or **left of …'s row**: turned a quarter, its back on the next wall. **Corner filler** (3 in, 75 mm) is the gap from the corner cabinet's carcass front to the new cabinet's side, so doors and pulls clear. After a corner, Place carries on down the new wall.
+   - **Around the corner, right of …'s row** or **left of …'s row**: turned a quarter, its back on the next wall. **Corner filler** (3 in, 75 mm) is the gap from the corner cabinet's carcass front to the new cabinet's side, so doors and pulls clear. The new cabinet's own filler or end panel on that side is counted too. After a corner, Place carries on down the new wall.
    - **Apart, beside the model**.
 4. Pick the next cabinet in **Start from** and click **Generate cabinet**.
 
@@ -443,7 +443,7 @@ A skin is a strip in front of the toe kick, in the stock you pick: **Carcass**, 
 - **On a cabinet with a toe kick** (**Toe-kick skin** in **11 · Ends, fillers and openings**): as tall as the kick, under the cabinet and its fillers, and under an end panel that is flush with the box's bottom. It stops at an end panel to the floor.
 - **On a base frame** (**Toe-kick skin** in **Rows and base frames**): one strip in front of each ladder's front rail, as long and as tall, in the row's first cabinet's stock.
 
-KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) deep. Those are checks: a lower kick, or less depth once the skin is in front of it, is warned of, never refused. A skin as thick as the setback, or thicker, would stand in front of the cabinets, and is refused. Glue and pin or screw the skin on from behind, and scribe it to the floor as needed (Decor: "Scribe the toe kick as needed").
+KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) deep. Those are checks, made only when a toe-kick skin is on: a lower kick, or less depth once the skin is in front of it, is warned of, never refused. A bare toe kick is not checked. A skin as thick as the setback, or thicker, would stand in front of the cabinets, and is refused. Glue and pin or screw the skin on from behind, and scribe it to the floor as needed (Decor: "Scribe the toe kick as needed").
 
 ### Appliance openings
 
@@ -451,7 +451,7 @@ KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) de
 
 | Preset | Starts at | Checked | Source |
 |---|---|---|---|
-| Dishwasher, GE built-in | 24 in | At least 24 in wide; about 34-1/2 in under the countertop | GE installation instructions 31-31546 |
+| Dishwasher, GE built-in | 24 in | At least 24 in wide; 34-1/4 to 34-3/4 in under the countertop (GE's Figure A: 34-1/2 in, plus or minus 1/4 in) | GE installation instructions 31-31546 |
 | Dishwasher, Bosch | 24 in (610 mm) | At least 24 in (610 mm) wide, 33-7/8 in (860 mm) high | Bosch 9002059336 |
 | Dishwasher, Bosch fully integrated | 600 mm (23 5/8 in) | 600 to 616 mm wide, 813 to 870 mm high | Bosch 9001450387 |
 | Range, freestanding 30 in | 30 in | At least 30 in wide; a cabinet of the plugin's over it at most 13 in deep | Frigidaire FFEF3003U |
@@ -461,7 +461,7 @@ KCMA A161.1 asks a toe kick to be at least 3 in (76 mm) high and 2 in (51 mm) de
 
 A metric document reads the millimetres where the maker prints them (Bosch's 610 and 860 mm) and converts the rest. The **height under the countertop** is the top of the cabinets beside the opening above the floor (the lower one, if they differ), since the countertop is not modelled. GE's 24 in depth is shown, not checked. The floor is the model's ground.
 
-**Over-the-range microwave.** A microwave over a range hangs under a wall cabinet in the wall row, not in a gap. Tick **An over-the-range microwave hangs under it** on that wall cabinet (no toe kick). GE's installation guide asks for the space between the cabinets to be 30 in wide (a filler panel kit if wider), the cabinet over it at most 13 in deep for a standard installation, and 66 in or more from the floor to the microwave's top: each is checked, the last against the cabinet's bottom. GE's 30 in from the cooking surface is in the panel's text only.
+**Over-the-range microwave.** A microwave over a range hangs under a wall cabinet in the wall row, not in a gap. Tick **An over-the-range microwave hangs under it** on that wall cabinet (no toe kick). GE's installation guide asks for the space between the cabinets to be 30 in wide: a narrower cabinet over it is warned of, and a wider one is warned of too, the warning naming the Filler Panel Kit GE says may be used where the space is wider. The cabinet over it is checked at most 13 in deep for a standard installation, and 66 in or more from the floor to the microwave's top, against the cabinet's bottom. GE's 30 in from the cooking surface is in the panel's text only.
 
 ### Sinks
 
