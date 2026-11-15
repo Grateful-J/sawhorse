@@ -6,7 +6,7 @@
 // pane is 360 px wide to begin with.
 import { useEffect, useMemo, useState } from "react";
 import type { CutList, Nesting } from "../kernel/types";
-import { amountText, BANDING_PLACEHOLDER, boughtText, checkText, DEFAULT_OVERAGE, knownUnit, MAX_OVERAGE, moneyText, priceList, ROUNDING_NOTE, SHEET_OVERAGE_NOTE, SHOP_CATEGORIES, shoppingList, UNKNOWN_UNIT_NOTE, validCurrency, type PricedRow, type ShopCategory, type ShopPrefs } from "../cutlist/shopping";
+import { amountText, BANDING_OVERAGE_NOTE, BANDING_PLACEHOLDER, boughtText, checkText, DEFAULT_OVERAGE, knownUnit, MAX_OVERAGE, moneyText, priceList, ROUNDING_NOTE, SHEET_OVERAGE_NOTE, SHOP_CATEGORIES, shoppingList, UNKNOWN_UNIT_NOTE, validCurrency, type PricedRow, type ShopCategory, type ShopPrefs } from "../cutlist/shopping";
 import { MAX_PRICE } from "../cutlist/shop-store";
 
 export interface ShoppingSectionProps {
@@ -318,7 +318,7 @@ export function ShoppingSection(p: ShoppingSectionProps) {
         </div>
       </div>
       <p className="note" data-testid="shop-assumptions">
-        Overage starts at {DEFAULT_OVERAGE.sheet}% for sheet goods ({SHEET_OVERAGE_NOTE.replace(/\.$/, "")}), {DEFAULT_OVERAGE.lumber}% for lumber, {DEFAULT_OVERAGE.banding}% for banding and {DEFAULT_OVERAGE.hardware}% for hardware: assumptions, not facts; set your own. {ROUNDING_NOTE} Sheets are priced per sheet, lumber per board foot of the boards bought, hardware per piece or pair (or per pack once you set a pack size). Sheets and boards are the nesting's; hardware is what each part carries, times how many of it there are.
+        Overage starts at {DEFAULT_OVERAGE.sheet}% for sheet goods ({SHEET_OVERAGE_NOTE.replace(/\.$/, "")}), {DEFAULT_OVERAGE.lumber}% for lumber, {DEFAULT_OVERAGE.banding}% for banding ({BANDING_OVERAGE_NOTE}) and {DEFAULT_OVERAGE.hardware}% for hardware: assumptions, not facts; set your own. {ROUNDING_NOTE} Sheets are priced per sheet, lumber per board foot of the boards bought, hardware per piece or pair (or per pack once you set a pack size). Sheets and boards are the nesting's; hardware is what each part carries, times how many of it there are.
       </p>
     </section>
   );

@@ -275,7 +275,7 @@ describe("money and the shop's prefs", () => {
     const p = readShopPrefs({ prices: { a: 12.5, b: -1, c: "9", __proto__: 3 }, packs: { a: 0, b: 100 }, overage: { sheet: 12, lumber: "x" }, currency: "XYZ!", labour: { hours: 3, rate: Infinity } }, "CAD");
     expect(p.prices).toEqual({ a: 12.5 });
     expect(p.packs).toEqual({ b: 100 });
-    expect(p.overage).toEqual({ sheet: 12, lumber: 20, banding: 15, hardware: 0, tools: 0 });
+    expect(p.overage).toEqual({ sheet: 12, lumber: 20, banding: 5, hardware: 0, tools: 0 });
     expect(p.currency).toBe("CAD");
     expect(p.labour).toEqual({ hours: 3, rate: null });
     expect(readShopPrefs("junk", null)).toEqual(defaultShopPrefs(null));

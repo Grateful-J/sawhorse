@@ -239,10 +239,10 @@ export function reportCells(row: CutRow, list: CutList): string[] {
  * before the band. */
 export function scopeNote(r: Rounding, banded = false): string {
   const step = r === "sixteenth" ? "1/16 in" : r === "thirty_second" ? "1/32 in" : "0.5 mm";
-  const band = banded
-    ? `Edge banding is not added to the sizes: a part noted "edge banding" is listed as drawn, and the Cabinet generator draws one at its cut size, before the band (its 10 · Edge banding group gives the finished size and the banded edges). The`
-    : "Edge banding is not included; the";
-  return `Finished sizes, rounded to the nearest ${step}. Grain runs along L unless noted. ${BOARD_FEET_NOTE} ${band} sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).`;
+  const tail = `Grain runs along L unless noted. ${BOARD_FEET_NOTE}`;
+  const sheets = "sheet count here is a rough area estimate (Nesting lays the parts out on real sheets and boards, kerf included).";
+  if (banded) return `Sizes as drawn, rounded to the nearest ${step}. A part noted "edge banding" is drawn at its cut size, before the band (the Cabinet generator's 10 · Edge banding group gives its finished size and banded edges); the other parts at their finished sizes. ${tail} The ${sheets}`;
+  return `Finished sizes, rounded to the nearest ${step}. ${tail} Edge banding is not included; the ${sheets}`;
 }
 
 /** Lane 15: board feet are bought on the rough thickness, not the finished one. */

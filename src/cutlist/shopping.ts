@@ -35,8 +35,13 @@ export const SHOP_CATEGORIES: { id: ShopCategory; label: string }[] = [
   { id: "tools", label: "Tools (once for the shop)" },
 ];
 
-/** Overage to start with (percent): assumptions the view states as such, never facts. */
-export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 0, lumber: 20, banding: 15, hardware: 0, tools: 0 };
+/** Overage to start with (percent): assumptions the view states as such, never facts. Banding's is
+ * Microvellum's default 5% (its edgeband report adds 1 in per banded side, which the parts carry,
+ * then 5%: docs/research/edge-banding-sources.md), a software default, not a standard. */
+export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 0, lumber: 20, banding: 5, hardware: 0, tools: 0 };
+
+/** Where banding's starting overage comes from. */
+export const BANDING_OVERAGE_NOTE = "Microvellum's default, not a standard: its edgeband report adds 1 in per banded side (the Cabinet generator's parts carry that), then 5%";
 
 /** Why sheet goods start at no overage. */
 export const SHEET_OVERAGE_NOTE = "The nesting's sheet count is exact; add overage for spares or mistakes.";

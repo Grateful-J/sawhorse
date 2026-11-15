@@ -65,6 +65,8 @@ describe("Shopping list section", () => {
     expect(sec.querySelector('[data-category="banding"]')!.textContent).toMatch(/No part carries edge banding\./);
     // Overage defaults are stated as assumptions.
     expect(screen.getByTestId("shop-assumptions").textContent).toMatch(/0% for sheet goods \(The nesting's sheet count is exact; add overage for spares or mistakes\), 20% for lumber.*assumptions, not facts/);
+    // Banding starts at Microvellum's 5%, said to be a software default.
+    expect(screen.getByTestId("shop-assumptions").textContent).toMatch(/5% for banding \(Microvellum's default, not a standard: its edgeband report adds 1 in per banded side \(the Cabinet generator's parts carry that\), then 5%\)/);
   });
 
   it("a price typed is costed with the overage, kept in the prefs, and the total names what it leaves out", () => {

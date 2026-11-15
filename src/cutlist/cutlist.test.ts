@@ -43,7 +43,10 @@ describe("cut list formatting", () => {
     expect(bandingText({ ...list.rows[0], bom: [{ item: "Blum hinge", qty: 2, unit: "each" }] })).toBe("");
     list.rows[0] = banded;
     expect(anyBanded(list)).toBe(true);
-    expect(scopeNote("half_mm", true)).toMatch(/Edge banding is not added to the sizes: a part noted "edge banding" is listed as drawn, and the Cabinet generator draws one at its cut size, before the band .* The sheet count here is a rough area estimate/);
+    // Not "Finished sizes" when a part is drawn at its cut size.
+    expect(scopeNote("half_mm", true)).toMatch(/^Sizes as drawn, rounded to the nearest 0\.5 mm\. A part noted "edge banding" is drawn at its cut size, before the band .* the other parts at their finished sizes\. .* The sheet count here is a rough area estimate/);
+    expect(scopeNote("half_mm", true)).not.toMatch(/Finished sizes/);
+    expect(scopeNote("sixteenth")).toMatch(/^Finished sizes, rounded to the nearest 1\/16 in\. Grain runs along L unless noted\. Board feet .* Edge banding is not included; the sheet count here is a rough area estimate \(Nesting lays the parts out on real sheets and boards, kerf included\)\.$/);
   });
 });
 
