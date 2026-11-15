@@ -1287,7 +1287,13 @@ fn find_cut(reg: Rect, parts: &[Put], dir: CutDir, kerf: f64) -> Option<f64> {
     // A cut short of the region's far end, so the near side is smaller than the region. (A
     // part of no size there, with no kerf, made the same cut over and over without end; a
     // part with a size always starts before the far end.)
-    if lead > r0 + EPS && lead < r1 - EPS {
+    //
+    // The first part starts past the region's edge: a cut against it takes the strip off
+    // when the strip is a kerf wide or wider (a kerf wide: the cut is at the edge itself).
+    // A strip narrower than the kerf cannot be taken off. The cut would have to start before
+    // the edge, in the kerf that made it, and a saw is not set to that. Left alone it stays
+    // joined to the part for good, so `decompose` reports the layout as no guillotine.
+    if iv[0].0 > r0 + EPS && lead > r0 - EPS && lead < r1 - EPS {
         return Some(lead);
     }
     let mut hi = iv[0].1;
@@ -1325,7 +1331,9 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
             .iter()
             .find_map(|&d| find_cut(reg, &ps, d, kerf).map(|c| (d, c)));
         let Some((dir, c)) = found else {
-            if ps.len() > 1 {
+            // Parts joined, or a part joined to a strip of waste narrower than the kerf, which
+            // no cut gets between: the layout is no guillotine layout.
+            if ps.len() > 1 || ps.iter().any(|p| p.x > reg.x + EPS || p.y > reg.y + EPS) {
                 ok = false;
             }
             continue;
@@ -1333,7 +1341,7 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
         let (lo_reg, hi_reg, from, to) = match dir {
             CutDir::Rip => (
                 Rect {
-                    h: c - reg.y,
+                    h: (c - reg.y).max(0.0),
                     ..reg
                 },
                 Rect {
@@ -1346,7 +1354,7 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
             ),
             CutDir::Crosscut => (
                 Rect {
-                    w: c - reg.x,
+                    w: (c - reg.x).max(0.0),
                     ..reg
                 },
                 Rect {
@@ -1368,7 +1376,8 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
             at: c,
             from,
             to,
-            size: c - near,
+            // A cut right at the region's edge (a strip a kerf wide) may start a hair before it.
+            size: (c - near).max(0.0),
             trim: false,
         });
         let (lo, hi): (Vec<Put>, Vec<Put>) = ps.into_iter().partition(|p| match dir {
@@ -1890,19 +1899,86 @@ mod tests {
         assert!(!decompose(u, &pin, 0.1, StockKind::Sheet).1);
     }
 
+    /// A piece of `w` x `h` made of `parts` and `cuts`, to run the checker's cuts on.
+    fn piece(w: f64, h: f64, kerf: f64, parts: &[Put], cuts: Vec<Cut>) -> StockPiece {
+        let placements = parts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| Placement {
+                row: 0,
+                copy: i + 1,
+                tag: format!("{}", i + 1),
+                name: String::new(),
+                item: Item::Object(i as u64 + 1),
+                x: p.x,
+                y: p.y,
+                dx: p.dx,
+                dy: p.dy,
+                turned: false,
+                grain: Grain::None,
+                size: [0.0, p.dx, p.dy],
+                not_solid: false,
+                strip: None,
+            })
+            .collect();
+        StockPiece {
+            index: 1,
+            group: 0,
+            seq: 1,
+            count: 1,
+            stock: String::new(),
+            kind: StockKind::Sheet,
+            nominal: None,
+            material: None,
+            length: w,
+            width: h,
+            thickness: 0.0,
+            grain: StockGrain::None,
+            trim: 0.0,
+            kerf,
+            usable: [0.0, 0.0, w, h],
+            placements,
+            cuts,
+            guillotine: true,
+            saw: false,
+            parts_area: 0.0,
+            stock_area: 0.0,
+            waste_area: 0.0,
+            efficiency: 0.0,
+        }
+    }
+
+    /// Whether the cuts of `parts` on a `w` x `h` sheet free every part, by the checker's own
+    /// reckoning (making the cuts); and what `decompose` says of it.
+    fn cut_and_check(
+        w: f64,
+        h: f64,
+        kerf: f64,
+        parts: &[Put],
+    ) -> (Result<(), String>, bool, Vec<Cut>) {
+        let u = Rect {
+            x: 0.0,
+            y: 0.0,
+            w,
+            h,
+        };
+        let (cuts, ok) = decompose(u, parts, kerf, StockKind::Sheet);
+        let p = piece(w, h, kerf, parts, cuts.clone());
+        (crate::testing::cuts_free_every_part(&p), ok, cuts)
+    }
+
     /// Two parts more than a kerf apart and less than two: the cut goes against the far
     /// part and the sliver is taken off the near one, so both are freed. (Cut against the
     /// near part, a sliver narrower than the kerf was left before the far part.)
     #[test]
     fn a_gap_between_one_kerf_and_two_leaves_no_sliver() {
-        let u = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 4.0,
-            h: 10.0,
-        };
-        let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.15, 4.0, 3.0)];
-        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+        let (freed, ok, cuts) = cut_and_check(
+            4.0,
+            10.0,
+            0.1,
+            &[put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.15, 4.0, 3.0)],
+        );
+        assert_eq!(freed, Ok(()));
         assert!(ok);
         let at: Vec<(CutDir, f64)> = cuts.iter().map(|c| (c.dir, c.at)).collect();
         assert_eq!(at.len(), 3, "{at:?}");
@@ -1912,9 +1988,74 @@ mod tests {
         // Exactly a kerf, or two or more: as ever, against the near part.
         for gap in [0.1, 0.2, 0.5] {
             let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.0 + gap, 4.0, 3.0)];
-            let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+            let (freed, ok, cuts) = cut_and_check(4.0, 10.0, 0.1, &parts);
+            assert_eq!(freed, Ok(()), "{gap}: {cuts:?}");
             assert!(ok);
             assert!((cuts[0].at - 3.0).abs() < 1e-12, "{gap}: {cuts:?}");
+        }
+    }
+
+    /// A gap of 1, 1.5, 2 and 2.5 kerfs between two parts, along each axis: every part is
+    /// freed, and no cut goes through one.
+    #[test]
+    fn a_gap_of_any_width_frees_both_parts() {
+        let kerf = 0.1;
+        for times in [1.0, 1.5, 2.0, 2.5] {
+            let gap = times * kerf;
+            // Stacked along y, and side by side along x.
+            for along_x in [false, true] {
+                let (a, b) = if along_x {
+                    (put(0.0, 0.0, 3.0, 4.0), put(3.0 + gap, 0.0, 3.0, 4.0))
+                } else {
+                    (put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.0 + gap, 4.0, 3.0))
+                };
+                let parts = [a, b];
+                let (freed, ok, cuts) = cut_and_check(10.0, 10.0, kerf, &parts);
+                assert_eq!(freed, Ok(()), "{times} kerfs, x {along_x}: {cuts:?}");
+                assert!(ok, "{times} kerfs, x {along_x}");
+                // No cut's kerf crosses a part.
+                for c in &cuts {
+                    for p in &parts {
+                        let (lo, hi) = match c.dir {
+                            CutDir::Rip => (p.y, p.y + p.dy),
+                            CutDir::Crosscut => (p.x, p.x + p.dx),
+                        };
+                        assert!(
+                            c.at + kerf <= lo + 1e-9 || c.at >= hi - 1e-9,
+                            "{times} kerfs: {c:?} through {p:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The reviewer's layout, by hand: a wide part, then two parts side by side above it, one
+    /// a kerf above (so the cut goes at its edge) and one a little less than two kerfs, a
+    /// strip no cut can take off. That is no guillotine layout, and `decompose` says so
+    /// rather than claiming a cut sequence that leaves the part joined to waste.
+    #[test]
+    fn a_strip_narrower_than_a_kerf_is_no_guillotine_layout() {
+        let kerf = 0.1;
+        for strip in [0.01, 0.05, 0.099] {
+            let parts = [
+                put(0.0, 0.0, 6.0, 3.0),
+                put(3.0, 3.0 + kerf, 3.0, 4.0),
+                put(0.0, 3.0 + kerf + strip, 2.9, 4.0),
+            ];
+            let (_, ok, cuts) = cut_and_check(10.0, 10.0, kerf, &parts);
+            assert!(!ok, "{strip}: {cuts:?}");
+        }
+        // A strip of exactly a kerf, or wider, is cut off, and every part is freed.
+        for strip in [0.1, 0.1000001, 0.25] {
+            let parts = [
+                put(0.0, 0.0, 6.0, 3.0),
+                put(3.0, 3.0 + kerf, 3.0, 4.0),
+                put(0.0, 3.0 + kerf + strip, 2.9, 4.0),
+            ];
+            let (freed, ok, cuts) = cut_and_check(10.0, 10.0, kerf, &parts);
+            assert_eq!(freed, Ok(()), "{strip}: {cuts:?}");
+            assert!(ok, "{strip}");
         }
     }
 }

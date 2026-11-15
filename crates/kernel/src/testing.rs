@@ -1030,7 +1030,7 @@ const CUT_SLACK: f64 = 4.0 * crate::nesting::EPS;
 /// what `guillotine: true` promises, checked from the cut list alone: a cut that stops
 /// inside an offcut holding a part, a part left joined to another or to waste, or cut into,
 /// fails.
-fn cuts_free_every_part(p: &crate::nesting::StockPiece) -> Result<(), String> {
+pub(crate) fn cuts_free_every_part(p: &crate::nesting::StockPiece) -> Result<(), String> {
     use crate::nesting::{CutDir, Placement};
     let e = CUT_SLACK;
     // Offcuts as x0, y0, x1, y1.
