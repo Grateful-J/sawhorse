@@ -31,7 +31,7 @@ A CNC router cuts exactly what the file says. A dado drawn 3/4 in wide in 23/32 
 - Blum's own hardware tables.
 
 Sawhorse checks two of them before it writes a file, and asks before it goes on:
-- **Parts too close together.** The check assumes a 1/4 in bit: it wants at least 5/16 in between parts. Sawhorse does not know the bit in your router, so with a wider bit check **Kerf** yourself.
+- **Parts too close together.** The check reads the profile bit you choose in **CNC setup** ([Feeds, speeds and your bits](#feeds-speeds-and-your-bits)): it wants the bit's diameter plus 1/16 in between parts. With no profile bit chosen it assumes 1/4 in, and wants 5/16 in.
 - **A part drawn at a thickness its sheet is not**, in a file that has dados, holes or notches in it.
 
 On a 4 x 4 bed, two more problems come up: a run of cabinets needs a base, and some parts (a pantry side, a long rail) do not fit the bed at all. The row tools and base frames handle the first. Mixed CNC and track saw nesting handles the second: it sends only those parts to a 4 x 8 on the track saw, and lists the cuts on them you make by hand.
@@ -103,7 +103,7 @@ In the Nesting section, **CNC spacing** sets:
 - **Kerf** (the gap between parts) to 3/8 in (10 mm);
 - **Trim** (the margin at every sheet edge) to 1/2 in (12 mm).
 
-That suits a 1/4 in (6 mm) bit. With a wider bit, type a **Kerf** larger than the bit: the gap must be wider than the bit, or the CAM program sees two neighbouring parts as one shape and cuts around the pair. Kerf goes up to 1/2 in and trim up to 4 in. So a 1/2 in bit cannot be spaced, though the cabinet panel accepts one: use a bit of 3/8 in or less.
+That suits a 1/4 in (6 mm) bit. With a wider bit, type a **Kerf** larger than the bit: the gap must be wider than the bit, or the CAM program sees two neighbouring parts as one shape and cuts around the pair. Choose that bit as your **Profile bit** in **CNC setup** too, so the check before saving measures the gap against it. Kerf goes up to 1/2 in and trim up to 4 in. So a 1/2 in bit cannot be spaced, though the cabinet panel accepts one: use a bit of 3/8 in or less.
 
 The gap and the margin do a second job. A dado or groove that runs out of a part's edge is drawn a little past that edge, into the gap, so the bit cuts its end square ([Leave the dados that cross the outline as they are](#3-leave-the-dados-that-cross-the-outline-as-they-are)). With no gap between the parts (a Kerf of 0.5 mm or less) or no margin (Trim 0) that cannot be done, and those dados are left with round corners at their ends.
 
@@ -323,7 +323,7 @@ Click **CNC files**. If something is wrong, Sawhorse asks first in **The nesting
 - **Parts on no stock** or the wrong stock: fix them in **Stock…** first.
 
 Two things to know about these questions:
-- **The spacing check assumes a 1/4 in bit.** It passes when Kerf is 5/16 in or more. It does not read the cabinet panel's **Bit diameter** and does not know the bit in your router: with a wider bit, make Kerf larger than the bit yourself.
+- **The spacing check reads your profile bit.** Choose it in **CNC setup** > **Tools** (**Profile bit**). The check passes when Kerf is the bit's diameter plus 1/16 in or more: 5/16 in for a 1/4 in bit, 3/16 in for a 1/8 in bit. With no profile bit chosen it assumes 1/4 in and says so. It does not read the cabinet panel's **Bit diameter**, which sizes the joints. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type, and does not offer **Use CNC spacing**.
 - **A part drawn at a thickness its sheet is not** (more than 0.1 mm apart) is asked about when the file holds machined cuts: a pocket, a hole, a cutout or a notch somewhere. The line reads, for a cabinet drawn at 3/4 in on 23/32 in plywood: "drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4 (23/32 in), a sheet 1/32 in thinner: joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut". Take it seriously, and fix it before you save. A file of plain rectangles has nothing sized to the thickness and is not asked about.
 
 You get one DXF for each sheet the router cuts (and for each board, when the model has solid-lumber parts such as a lumber base frame), ready for one CAM job per sheet:

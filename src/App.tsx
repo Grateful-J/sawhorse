@@ -14,7 +14,8 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
-import { cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { CNC_BIT, cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingNeeded, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { profileBit } from "./cam/shop";
 import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, stampOf, type NestStamp } from "./nesting/exportGuard";
 import { assemblyIndex } from "./lib/assembly";
 import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
@@ -2445,13 +2446,16 @@ export function App() {
           // material kept on its own stock), which "nest on 4 x 4" did not move.
           const problems = [...nestProblems(n, nestUnits, reasonText), ...(kind === "cnc" ? routerSheetProblems(n, nestUnits) : []), ...(m ? cutProblems(share, m.cuts, nestUnits) : [])];
           // For the router: parts too close for the bit cut as one blob in the CAM program.
-          const spacing = kind === "cnc" ? spacingProblem(n, nestUnits) : null;
+          // The profile bit chosen in CNC setup (1/4 in when none is).
+          const spacing = kind === "cnc" ? spacingProblem(n, nestUnits, profileBit()) : null;
           if (spacing) problems.unshift(spacing);
           return problems;
         },
         ask: (problems, proceed) => {
           const metric = units === "mm" || units === "cm" || units === "m";
-          const fix = problems.some((x) => x.kind === "spacing") ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
+          // CNC spacing is offered only when its gap is enough for the profile bit.
+          const enough = cncSettings(metric).kerf >= spacingNeeded(profileBit()?.diameter ?? CNC_BIT) - 1e-9;
+          const fix = enough && problems.some((x) => x.kind === "spacing") ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
           setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), fix });
         },
         refuse: (why) => setMessage({ text: why, error: true }),

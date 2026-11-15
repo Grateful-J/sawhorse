@@ -681,24 +681,44 @@ export function routerSheetProblems(n: Nesting, units: Units): NestProblem[] {
   return out;
 }
 
-/** The bit a CNC export assumes when it checks the spacing: 1/4 in, the usual for sheet goods. */
+/** The bit the spacing check assumes when no profile bit is chosen in CNC setup: 1/4 in, the
+ * usual for sheet goods. */
 export const CNC_BIT = 0.25 * 0.0254;
+
+/** The profile bit chosen in CNC setup's tool library (src/cam/shop.ts `profileBit`). */
+export interface SpacingBit {
+  diameter: number;
+  name: string;
+}
+
+/** The gap a bit needs between parts: the bit, plus 1/16 in of wood between the two cuts. */
+export function spacingNeeded(bit: number): number {
+  return bit + 0.0625 * 0.0254;
+}
 
 /**
  * Parts too close together for a router bit. An outside profile runs half the bit outside each
  * part, so two parts closer than the bit (plus 1/16 in of wood between the two cuts) have cuts
  * that meet, and CAM programs (Carbide Create, VCarve) merge outside cuts that meet: they cut
- * around the group and skip the edges between its parts.
+ * around the group and skip the edges between its parts. The bit is the profile bit chosen in
+ * CNC setup; with none chosen, 1/4 in.
  */
-export function spacingProblem(n: Nesting, units: Units, bit = CNC_BIT): NestProblem | null {
+export function spacingProblem(n: Nesting, units: Units, chosen: SpacingBit | null = null): NestProblem | null {
+  const bit = chosen?.diameter ?? CNC_BIT;
   const gap = n.settings.kerf;
-  if (gap >= bit + 0.0625 * 0.0254 - 1e-9) return null;
+  const need = spacingNeeded(bit);
+  if (gap >= need - 1e-9) return null;
   // The track saw's sheets are laid out with the saw's kerf: only the router's sheets count.
   if (!n.pieces.some((p) => !p.saw && p.placements.length > 1)) return null;
+  const metric = sizeUnit(units) === "mm";
+  // CNC spacing's kerf (src/components/NestingSection.tsx, cncSettings).
+  const cncKerf = metric ? 0.01 : 0.375 * 0.0254;
+  const which = chosen ? `your profile bit (${chosen.name}, ${fineU(bit, units)})` : `a ${fineU(bit, units)} bit (no profile bit is chosen in CNC setup, so Sawhorse assumes 1/4 in)`;
+  const fix = cncKerf >= need - 1e-9 ? `Use CNC spacing (${metric ? "10 mm" : "3/8 in"} apart), or set Kerf larger than your bit.` : `Set Kerf to at least ${fineU(need, units)}: CNC spacing (${metric ? "10 mm" : "3/8 in"} apart) is too close for this bit.`;
   return {
     kind: "spacing",
     tag: "",
     name: "Every sheet",
-    text: `parts are ${fineU(gap, units)} apart (Kerf), too close for a ${fineU(bit, units)} bit: the outside cuts of neighbouring parts meet, and the CAM program cuts around the group, not between its parts. Use CNC spacing (${sizeUnit(units) === "mm" ? "10 mm" : "3/8 in"} apart), or set Kerf larger than your bit.`,
+    text: `parts are ${fineU(gap, units)} apart (Kerf), too close for ${which}: the outside cuts of neighbouring parts meet, and the CAM program cuts around the group, not between its parts. ${fix}`,
   };
 }
