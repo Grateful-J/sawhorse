@@ -520,6 +520,8 @@ pub enum Op {
     /// Metadata, like grain: allowed anywhere in the tree, and it reaches every copy of a
     /// component. At most [`crate::cutlist::MAX_BOM_ITEMS`] items, each checked by
     /// [`crate::cutlist::BomItem::problem`].
+    /// Refused on an assembly (a part target that holds other parts), where it would be
+    /// counted nowhere, and for a unit this version does not know.
     SetBom {
         part: crate::cutlist::PartRef,
         #[serde(default)]
@@ -986,6 +988,10 @@ pub enum OpOutcome {
     Exploded {
         objects: Vec<u64>,
         nodes: Vec<u64>,
+        /// Where what was said about the exploded part went (its hardware onto a solid), in
+        /// words for the status line. Left out when empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        notes: Vec<String>,
     },
     NodeDeleted,
     VisibilitySet,
@@ -2380,8 +2386,15 @@ impl Model {
                 self.set_part(*part, |a| a.include = v)
             }
             Op::SetBom { part, bom } => {
-                if let Some(why) = crate::cutlist::bom_problem(bom) {
+                if let Some(why) = crate::cutlist::bom_problem_to_set(bom) {
                     return Err(DocumentError::BadBom(why).into());
+                }
+                // On an assembly it would be counted nowhere: the cut list lists its pieces.
+                if !bom.is_empty() && self.holds_parts(*part)? {
+                    return Err(DocumentError::BadBom(
+                        "that holds other parts (an assembly, such as a whole cabinet), so the cut list never counts it: put the hardware on the part it goes on (a door, a drawer front)".into(),
+                    )
+                    .into());
                 }
                 let bom = bom.clone();
                 self.set_part(*part, move |a| a.bom = bom)

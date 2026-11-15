@@ -155,11 +155,12 @@ impl Grain {
 }
 
 /// How a bill-of-materials item is counted and bought.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+///
+/// JSON: `"each"`, `"pair"` or `"m"`. A unit a newer writer adds is kept as it was read
+/// ([`BomUnit::Other`]), so this version opens the file and writes the unit back unchanged;
+/// it never makes one itself ([`crate::model::Op::SetBom`] takes only the three it knows).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[serde(rename_all = "snake_case")]
 pub enum BomUnit {
     /// One by one (a hinge, a pull).
     Each,
@@ -167,14 +168,55 @@ pub enum BomUnit {
     Pair,
     /// Metres (edge banding).
     M,
+    /// A unit this version does not know, as read: 1 to 16 characters, no control characters.
+    Other(String),
+}
+
+/// Longest unknown unit kept from a file (characters).
+pub const MAX_BOM_UNIT_CHARS: usize = 16;
+
+impl serde::Serialize for BomUnit {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BomUnit {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = String::deserialize(d)?;
+        Ok(match t.as_str() {
+            "each" => BomUnit::Each,
+            "pair" => BomUnit::Pair,
+            "m" => BomUnit::M,
+            _ => BomUnit::Other(t),
+        })
+    }
 }
 
 impl BomUnit {
-    fn code(self) -> u64 {
+    pub fn as_str(&self) -> &str {
         match self {
-            BomUnit::Each => 0,
-            BomUnit::Pair => 1,
-            BomUnit::M => 2,
+            BomUnit::Each => "each",
+            BomUnit::Pair => "pair",
+            BomUnit::M => "m",
+            BomUnit::Other(t) => t,
+        }
+    }
+
+    /// A unit this version knows (each, pair, m).
+    pub fn known(&self) -> bool {
+        !matches!(self, BomUnit::Other(_))
+    }
+
+    fn hash_into(&self, h: &mut StableHasher) {
+        match self {
+            BomUnit::Each => h.u64(0),
+            BomUnit::Pair => h.u64(1),
+            BomUnit::M => h.u64(2),
+            BomUnit::Other(t) => {
+                h.u64(3);
+                h.tag(t);
+            }
         }
     }
 }
@@ -214,12 +256,38 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 impl BomItem {
-    /// Why this item cannot be kept, or `None`.
+    /// Why this item cannot be kept, or `None`. A unit this version does not know is kept (as a
+    /// file from a newer version has it); [`Self::problem_to_set`] refuses one.
     pub fn problem(&self) -> Option<String> {
         let item = self.item.trim();
         if item.is_empty() || item != self.item {
             return Some("an item needs a description, with no space at either end".into());
+        }
+        if self.item.chars().any(char::is_control)
+            || self
+                .sku
+                .as_deref()
+                .is_some_and(|s| s.chars().any(char::is_control))
+        {
+            return Some(format!(
+                "{:?}: a description or part number may not hold control characters (tabs, line breaks)",
+                self.item
+            ));
+        }
+        if let BomUnit::Other(t) = &self.unit
+            && (t.is_empty()
+                || t.chars().count() > MAX_BOM_UNIT_CHARS
+                || t.chars().any(char::is_control))
+        {
+            return Some(format!(
+                "{:?}: a unit must be 1 to {MAX_BOM_UNIT_CHARS} characters",
+                self.item
+            ));
         }
         if self.item.chars().count() > MAX_BOM_ITEM_CHARS {
             return Some(format!(
@@ -240,13 +308,27 @@ impl BomItem {
                 self.item
             ));
         }
-        if self.unit != BomUnit::M && self.qty.fract() != 0.0 {
+        if matches!(self.unit, BomUnit::Each | BomUnit::Pair) && self.qty.fract() != 0.0 {
             return Some(format!(
                 "{:?}: a quantity counted each or in pairs must be a whole number",
                 self.item
             ));
         }
         None
+    }
+
+    /// Why this item cannot be set by an edit, or `None`: [`Self::problem`], and a unit this
+    /// version does not know (it only writes the units it knows).
+    pub fn problem_to_set(&self) -> Option<String> {
+        self.problem().or_else(|| {
+            (!self.unit.known()).then(|| {
+                format!(
+                    "{:?}: the unit must be \"each\", \"pair\" or \"m\", not {:?}",
+                    self.item,
+                    self.unit.as_str()
+                )
+            })
+        })
     }
 
     fn hash_into(&self, h: &mut StableHasher) {
@@ -256,7 +338,7 @@ impl BomItem {
             None => h.u64(u64::MAX),
         }
         h.u64(self.qty.to_bits());
-        h.u64(self.unit.code());
+        self.unit.hash_into(h);
         // Hashed only when set, so an item without it hashes as it did before.
         if self.once {
             h.tag("once");
@@ -264,15 +346,24 @@ impl BomItem {
     }
 }
 
-/// Why a part's bill-of-materials list cannot be kept, or `None`.
+/// Why a part's bill-of-materials list cannot be kept (read from a file), or `None`.
 pub fn bom_problem(bom: &[BomItem]) -> Option<String> {
-    if bom.len() > MAX_BOM_ITEMS {
-        return Some(format!(
+    bom_count(bom).or_else(|| bom.iter().find_map(BomItem::problem))
+}
+
+/// Why a part's bill-of-materials list cannot be set by an edit, or `None`: as
+/// [`bom_problem`], and only units this version knows.
+pub fn bom_problem_to_set(bom: &[BomItem]) -> Option<String> {
+    bom_count(bom).or_else(|| bom.iter().find_map(BomItem::problem_to_set))
+}
+
+fn bom_count(bom: &[BomItem]) -> Option<String> {
+    (bom.len() > MAX_BOM_ITEMS).then(|| {
+        format!(
             "a part carries at most {MAX_BOM_ITEMS} items, not {}",
             bom.len()
-        ));
-    }
-    bom.iter().find_map(BomItem::problem)
+        )
+    })
 }
 
 /// What a person said about a part, beyond its geometry: grain and stock. Stored on a
@@ -552,10 +643,15 @@ pub struct CutRow {
     pub board_feet: f64,
     /// Area of the counted pieces (sheet goods; 0 for lumber), m², from the exact sizes.
     pub area_m2: f64,
-    /// What is bought for each piece beyond its wood ([`PartAttrs::bom`]): the shopping list
-    /// multiplies it by `qty`. Left out when empty.
+    /// What is bought for each piece beyond its wood ([`PartAttrs::bom`]), per piece: the
+    /// shopping list multiplies it by `qty`. Left out when empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub bom: Vec<BomItem>,
+    /// Pieces placed under a transform that stretches or squashes them: their hardware is
+    /// still the original's, which the shopping list says. Left out when 0; not hashed (it
+    /// follows from the placements, which are).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub stretched: usize,
     /// Every piece, counted or not.
     pub occurrences: Vec<Occurrence>,
 }
@@ -1062,6 +1158,8 @@ struct Piece {
     item: Item,
     visible: bool,
     handed: bool,
+    /// Placed under a transform that stretches or squashes it (not rigid).
+    stretched: bool,
     bbox: PartBox,
     /// Every piece of geometry in it is a solid, or meshes that heal closed (lane 15).
     solid: bool,
@@ -1151,6 +1249,41 @@ impl Model {
             }
         }
         Ok(crate::model::OpOutcome::PartSet)
+    }
+
+    /// Whether a part target holds other parts (an assembly: a component with a nested group
+    /// or component, or a group holding a group or component). The cut list lists an
+    /// assembly's pieces, never the assembly, so what is said on it is counted nowhere.
+    pub(crate) fn holds_parts(&self, part: PartRef) -> Result<bool, crate::error::KernelError> {
+        use crate::error::{DocumentError, StructureError};
+        let def_holds = |d: DefId| {
+            self.defs[d]
+                .members
+                .values()
+                .any(|m| matches!(m.kind, MemberKind::Group(..) | MemberKind::Instance(..)))
+        };
+        Ok(match part {
+            PartRef::Definition(id) => {
+                let d = from_public::<DefId>(id);
+                if !self.defs.contains_key(d) {
+                    return Err(StructureError::NoSuchDefinition(id).into());
+                }
+                def_holds(d)
+            }
+            PartRef::Node(id) => {
+                let n = self.node_key(id)?;
+                match self.nodes[n].kind {
+                    NodeKind::Instance(d) => def_holds(d),
+                    NodeKind::Group => self.nodes.values().any(|c| c.member.parent == Some(n)),
+                }
+            }
+            PartRef::Object(id) => {
+                if !self.objects.contains_key(from_public::<ObjectId>(id)) {
+                    return Err(DocumentError::NoSuchObject(id).into());
+                }
+                false
+            }
+        })
     }
 
     /// How many pieces of each component definition the model holds: every top-level
@@ -1404,6 +1537,7 @@ impl Model {
                     item,
                     visible,
                     handed: x.determinant() < 0.0,
+                    stretched: !rigid(&x),
                     bbox,
                     solid: true,
                 })
@@ -1418,6 +1552,7 @@ impl Model {
                     item,
                     visible,
                     handed: false,
+                    stretched: false,
                     bbox,
                     solid: true,
                 })
@@ -1462,6 +1597,7 @@ impl Model {
                     item,
                     visible,
                     handed: node.xform.determinant() < 0.0,
+                    stretched: !rigid(&node.xform),
                     bbox,
                     solid,
                 })
@@ -1474,21 +1610,24 @@ impl Model {
                     own_axes(&node.xform),
                 )?;
                 let solid = meshes_heal(&meshes);
-                let (key, handed) = match (node.member.slot, self.member_def(node.member.parent)) {
-                    (Some(slot), Some((d, i))) => (
-                        PartKey::Member {
-                            definition: to_public(d),
-                            slot,
-                        },
-                        self.nodes[i].xform.determinant() < 0.0,
-                    ),
-                    _ => (PartKey::Node(to_public(n)), false),
-                };
+                let (key, handed, stretched) =
+                    match (node.member.slot, self.member_def(node.member.parent)) {
+                        (Some(slot), Some((d, i))) => (
+                            PartKey::Member {
+                                definition: to_public(d),
+                                slot,
+                            },
+                            self.nodes[i].xform.determinant() < 0.0,
+                            !rigid(&self.nodes[i].xform),
+                        ),
+                        _ => (PartKey::Node(to_public(n)), false, false),
+                    };
                 Some(Piece {
                     key,
                     item,
                     visible,
                     handed,
+                    stretched,
                     bbox,
                     solid,
                 })
@@ -1721,6 +1860,7 @@ impl Model {
                 board_feet,
                 area_m2,
                 bom: attrs.bom.clone(),
+                stretched: idx.iter().filter(|&&i| pieces[i].stretched).count(),
                 occurrences: idx
                     .iter()
                     .map(|&i| Occurrence {

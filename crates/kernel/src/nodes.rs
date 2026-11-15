@@ -1224,6 +1224,7 @@ impl Model {
         self.editable_node(n)?;
         let kids = self.kids();
         let parent = self.nodes[n].member.parent;
+        let notes = self.carry_part_attrs(&kids, n)?;
         if matches!(self.nodes[n].kind, NodeKind::Instance(_)) {
             for t in self.scope_in(&kids, n) {
                 self.membership_mut(t).expect("in scope").slot = None;
@@ -1245,7 +1246,95 @@ impl Model {
         self.rehome_sections(n, parent);
         self.nodes.remove(n);
         self.mark(parent);
-        Ok(OpOutcome::Exploded { objects, nodes })
+        Ok(OpOutcome::Exploded {
+            objects,
+            nodes,
+            notes,
+        })
+    }
+
+    /// Before a part (a solid-only component or group) is exploded, hand what was said about it
+    /// to the solids that become parts of their own: each takes the grain, stock, sheet and
+    /// include it does not say itself, and the first solid takes the hardware list (`bom`),
+    /// added to its own, so nothing bought is dropped. Refused when the hardware has no solid to
+    /// go to, or would take that solid past [`crate::cutlist::MAX_BOM_ITEMS`]. Returns notes
+    /// saying where the hardware went.
+    fn carry_part_attrs(&mut self, kids: &Kids, n: NodeId) -> Result<Vec<String>, KernelError> {
+        use crate::cutlist::MAX_BOM_ITEMS;
+        let attrs = match self.nodes[n].kind {
+            NodeKind::Instance(d) => self.defs[d].part.clone(),
+            NodeKind::Group => self.nodes[n].part.clone(),
+        };
+        if attrs.is_default() {
+            return Ok(Vec::new());
+        }
+        let things = kids.of(Some(n));
+        let name = self.nodes[n]
+            .name
+            .clone()
+            .unwrap_or_else(|| match self.nodes[n].kind {
+                NodeKind::Instance(d) => self.defs[d].name.clone(),
+                NodeKind::Group => "the group".into(),
+            });
+        if things.iter().any(|t| matches!(t, Thing::Node(_))) {
+            // An assembly: its pieces keep their own attributes. A hardware list on it (counted
+            // nowhere) is still not dropped without a word.
+            if !attrs.bom.is_empty() {
+                return Err(DocumentError::BadBom(format!(
+                    "{name} holds other parts and carries a hardware list; move its hardware onto the part it goes on before exploding it"
+                ))
+                .into());
+            }
+            return Ok(Vec::new());
+        }
+        let solids: Vec<ObjectId> = things
+            .iter()
+            .filter_map(|t| match t {
+                Thing::Object(k) => Some(*k),
+                _ => None,
+            })
+            .collect();
+        let Some(&first) = solids.first() else {
+            if attrs.bom.is_empty() {
+                return Ok(Vec::new());
+            }
+            return Err(DocumentError::BadBom(format!(
+                "{name} carries a hardware list and holds no solid to keep it on; clear its hardware before exploding it"
+            ))
+            .into());
+        };
+        if self.objects[first].part.bom.len() + attrs.bom.len() > MAX_BOM_ITEMS {
+            return Err(DocumentError::BadBom(format!(
+                "exploding {name} would put more than {MAX_BOM_ITEMS} hardware items on one solid"
+            ))
+            .into());
+        }
+        for &k in &solids {
+            let p = &mut self.objects[k].part;
+            p.grain = p.grain.or(attrs.grain);
+            if p.stock.is_none() && p.sheet.is_none() {
+                p.stock = attrs.stock.clone();
+                p.sheet = attrs.sheet;
+            }
+            p.include = p.include.or(attrs.include);
+        }
+        let mut notes = Vec::new();
+        if !attrs.bom.is_empty() {
+            self.objects[first]
+                .part
+                .bom
+                .extend(attrs.bom.iter().cloned());
+            let o = &self.objects[first];
+            let solid = o
+                .name()
+                .map_or_else(|| format!("Solid {}", o.number()), str::to_string);
+            notes.push(format!(
+                "{name}'s hardware ({} item{}) is now on {solid}",
+                attrs.bom.len(),
+                if attrs.bom.len() == 1 { "" } else { "s" }
+            ));
+        }
+        Ok(notes)
     }
 
     /// Remove a thing and everything inside it (sketches in a removed node go with it).

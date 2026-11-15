@@ -200,17 +200,20 @@ declare module "sawhorse" {
   /**
    * One thing bought for a part beyond its wood: a hinge, a runner pair, shelf pins, edge
    * banding. Set on a part with `{ op: "set_bom", part, bom: BomItem[] }` (it replaces the
-   * part's list; [] clears it). It rides on the part, so the shopping list counts it once per
-   * piece: copies add it, deletions take it away. At most 32 items per part.
+   * part's list; [] clears it). On a part component (solids, no nested group or component) it
+   * is counted once per copy: copies add it, deletions take it away. On an assembly (a
+   * component or group that holds other parts, such as a whole cabinet) it is refused, since
+   * the cut list lists the assembly's pieces, not the assembly. At most 32 items per part.
    */
   export interface BomItem {
-    /** What it is, in words, 1 to 128 characters, no space at either end. */
+    /** What it is, in words, 1 to 128 characters, no space at either end, no control characters. */
     item: string;
-    /** The maker's part number, 1 to 64 characters; leave it out when none is known. */
+    /** The maker's part number, 1 to 64 characters, no control characters; leave it out when none is known. */
     sku?: string;
     /** How many per piece of the part: more than 0, at most 10,000; whole for "each" and "pair". */
     qty: number;
-    unit: "each" | "pair" | "m";
+    /** One of these three when set; a cut list read from a newer file may hold another word, kept as it was. */
+    unit: "each" | "pair" | "m" | (string & {});
     /** Bought once for the shop however many parts carry it (a drilling template, a tool set). */
     once?: boolean;
   }
