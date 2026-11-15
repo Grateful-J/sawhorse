@@ -1,6 +1,6 @@
 // How the cut list reads (lane 7): finished sizes from the kernel's rounding steps, so the
 // table, the CSV, the report, the PDF and the labels all say exactly the same thing.
-import type { CutList, CutRow, Grain, Rounding, Uncounted } from "../kernel/types";
+import type { CutList, CutRow, Grain, Item, Rounding, Uncounted } from "../kernel/types";
 import type { UnitSystem } from "../lib/units";
 
 /** What the Round to menu offers: follow the display units (the default), or a fixed step. */
@@ -181,6 +181,28 @@ export function bandingText(row: CutRow): string {
   const bands = (row.bom ?? []).filter((b) => b.unit === "m");
   if (!bands.length) return "";
   return `edge banding ${bands.map((b) => `${b.item.replace(/^edge banding,?\s*/i, "")}, ${Math.round(b.qty * 1000) / 1000} m`).join("; ")} a piece`;
+}
+
+/** What a part label says of a part's banding: the bands it carries ("1 mm x 15/16 in, White
+ * PVC"), or "" when none. Which edges take them is not in the cut list: the Cabinet generator's
+ * 10 · Edge banding group lists them. */
+export function labelBandingText(row: CutRow): string {
+  return (row.bom ?? [])
+    .filter((b) => b.unit === "m")
+    .map((b) => b.item.replace(/^edge banding,?\s*/i, ""))
+    .join("; ");
+}
+
+/** Each part's banding, by the model item it is (a placement's `item`), for the part labels:
+ * from a cut list of the model as it is; null for a part with none or not in the list. */
+export function bandingByItem(list: CutList | null | undefined): (item: Item) => string | null {
+  const by = new Map<string, string>();
+  for (const row of list?.rows ?? []) {
+    const text = labelBandingText(row);
+    if (!text) continue;
+    for (const o of row.occurrences) by.set("object" in o.item ? `o${o.item.object}` : `n${o.item.node}`, text);
+  }
+  return (item) => by.get("object" in item ? `o${item.object}` : `n${item.node}`) ?? null;
 }
 
 /** Whether any row carries edge banding. */

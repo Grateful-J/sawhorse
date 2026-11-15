@@ -230,7 +230,7 @@ export interface JobPart {
   holdDown: boolean;
   /** Cuts on FLIP_ layers. */
   flip: boolean;
-  /** Edge banding, when Sawhorse knows it (later): null prints a line to write on. */
+  /** Edge banding: the bands the part carries; null prints a line to write on. */
   banding: string | null;
 }
 
@@ -279,7 +279,8 @@ export interface JobSheetInput {
   ownerOf: (q: Placement) => string | null;
   /** The whole nesting, for the track saw's sheets (default: `n`). */
   all?: Nesting;
-  /** Edge banding for a part, when Sawhorse knows it (a hook for later; default none). */
+  /** Edge banding for a part: the bands it carries (the cut list's `bom`, `bandingByItem`), or
+   * null for a line to write on. */
   banding?: (q: Placement) => string | null;
 }
 
@@ -871,7 +872,7 @@ export function jobSheetsText(sheets: JobSheet[], title: string): string {
 
 /** Every router sheet's job sheet, each named for the DXF that CNC files writes for it.
  * `all` is the whole nesting; `measured`, its router share's cuts (null: not measured). */
-export function jobSheets(all: Nesting, measured: MeasuredNest | null, shop: Shop, units: Units, title: string, ownerOf: (q: Placement) => string | null): JobSheet[] {
+export function jobSheets(all: Nesting, measured: MeasuredNest | null, shop: Shop, units: Units, title: string, ownerOf: (q: Placement) => string | null, banding?: (q: Placement) => string | null): JobSheet[] {
   const n = routerShare(all);
-  return n.pieces.map((_, i) => jobSheet({ n, index: i, measured, shop, units, file: cncFileName(title, n, i, measured?.features, ownerOf), ownerOf, all }));
+  return n.pieces.map((_, i) => jobSheet({ n, index: i, measured, shop, units, file: cncFileName(title, n, i, measured?.features, ownerOf), ownerOf, all, banding }));
 }
