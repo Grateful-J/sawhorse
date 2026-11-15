@@ -36,7 +36,7 @@ You are on a Mac and have not bought VCarve. This decides it:
 | Job size without tiling | **25 in square** (its V12.5 help) or **24 x 24 in** (Vectric's Compare page and product text) | Unlimited | not listed | No limit found |
 | A 4 x 4 sheet (48 x 48 in, 1220 x 1220 mm) in one job | **No**: about a quarter of the bed | Yes | not known | Yes |
 | Toolpath templates (this guide's workflow) | No | Yes | not listed | Layer-linked toolpaths in a template `.c2d` ([its guide](CAM-CARBIDE-CREATE.md)) |
-| Double-sided jobs | Yes | Yes | not listed | No |
+| Double-sided jobs | Yes | Yes | not listed | none found |
 | What it cuts | | | Cut Out (tabs, ramps), Cut Along, Pocket, Drilling. "Gadgets are not supported... automatic tool changing is not supported." | |
 
 Sources: § 0.1, § 9, § 10.

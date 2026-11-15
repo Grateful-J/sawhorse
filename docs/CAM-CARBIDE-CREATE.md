@@ -189,7 +189,7 @@ A `FLIP_` layer (`FLIP_POCKET_6.35MM`, `FLIP_DRILL_D5MM_10MM`) holds cuts in the
 
 Sawhorse draws a `FLIP_` shape where its cut is when you look down through the part from the face that is up (`src/nesting/machine.ts`). After you turn the part over, those cuts are at the mirror image of that place.
 
-**Carbide Create has no two-sided job.** The report found no built-in two-sided feature (**not known**, § 9). Carbide staff on the forum (Jan and Feb 2025) give this workaround. **Check on your screen** before you rely on it:
+**No two-sided job was found in Carbide Create.** The report found no built-in two-sided feature in Carbide's own pages (**not known**, § 9). Carbide staff on the forum (Jan and Feb 2025) give this workaround. **Check on your screen** before you rely on it:
 1. Duplicate the geometry and mirror it with **Mirror Vertical** (staff first wrote Horizontal and corrected it to Vertical). Check on your screen which way **Mirror Vertical** turns the shapes: it must match the way you turn the part over.
 2. "Use the same corner for both operations": zero on the same corner of the stock for the second side as for the first.
 3. Cut centred dowel holes on side 1 to register side 2. Staff add that a centred setup "doubles any alignment error".
