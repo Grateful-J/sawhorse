@@ -1,4 +1,5 @@
 import type { Mesh, V3 } from "./mesh.js";
+import type { TrimSizes } from "./trimsizes.js";
 
 export type Layout = "shelves" | "doors" | "drawers" | "mixed" | "trash";
 export type DoorCount = "auto" | "one" | "two";
@@ -62,7 +63,7 @@ export interface BomItem {
   /** Bought once for the shop, however many parts carry it (a drilling template). */
   once?: boolean;
 }
-export interface Sizes {
+export interface Sizes extends TrimSizes {
   /** The cabinet's name: its instance in the model, and its files. */
   name: string;
   width: number;

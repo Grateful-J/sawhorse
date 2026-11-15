@@ -18,6 +18,7 @@
 // The parts are built in place (left side, right side, ...), so a part that is the mirror of
 // another is its own part with its own holes, and the DXF draws it from the face it is cut on.
 import { partMesh } from "./mesh.js";
+import { normalizeTrim, trimDefaults } from "./trimsizes.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -73,7 +74,7 @@ const MM = 0.001;
  *   band3Size: BandSize, band3Thick: number, band3Name: string, band3Width: number,
  *   bandFronts: BandPick, bandCarcass: BandPick, bandShelves: BandPick,
  *   bandPremill: number, bandWasteEnd: number,
- * }} Sizes
+ * } & import("./trimsizes.js").TrimSizes} Sizes
  */
 /** @typedef {import("./mesh.js").Prism} Prism */
 /** @typedef {import("./mesh.js").Hole} Hole */
@@ -607,6 +608,7 @@ export function defaults(metric) {
         // a 560 mm box takes.
         trashBins: "deep", bin: "rv35", binWidth: 280 * MM, binLength: 180 * MM, binHeight: 430 * MM, trayHeight: 150 * MM,
         ...bandDefaults(23 * MM),
+        ...trimDefaults(true),
       }
     : {
         name: "Cabinet 1",
@@ -633,6 +635,7 @@ export function defaults(metric) {
         // Bin cutouts are placeholders: measure your bins just under the lip.
         trashBins: "deep", bin: "rv35", binWidth: 11 * IN, binLength: 8.5 * IN, binHeight: 17 * IN, trayHeight: 6 * IN,
         ...bandDefaults((15 / 16) * IN),
+        ...trimDefaults(false),
       };
 }
 
@@ -735,6 +738,8 @@ export function normalize(saved, metric) {
     bandShelves: pick("bandShelves", /** @type {const} */ (["none", "1", "2", "3"])),
     bandPremill: num("bandPremill"),
     bandWasteEnd: num("bandWasteEnd"),
+    // Row features (trimsizes.js): what covers its sides, an opening beside it, a toe-kick skin, its sink.
+    ...normalizeTrim(s, d),
   };
 }
 
