@@ -26,6 +26,8 @@ export interface CncSetupDialogProps {
   /** Keep a change (default: on this device). */
   onShop?: (s: Shop) => void;
   tab?: CncTab;
+  /** The router's stocks in the model's nesting, each of which can have its own material. */
+  stocks?: string[];
 }
 
 const isMetric = (u: UnitSystem) => u === "mm" || u === "cm" || u === "m";
@@ -852,7 +854,7 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
 // ---------------------------------------------------------------------------------------
 // Job sheet
 
-function JobsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; units: UnitSystem }) {
+function JobsTab({ shop, set, units, stocks = [] }: { shop: Shop; set: (s: Shop) => void; units: UnitSystem; stocks?: string[] }) {
   const metric = isMetric(units);
   const j = shop.jobs;
   const setJ = (patch: Partial<JobPrefs>) => set({ ...shop, jobs: { ...j, ...patch } });
@@ -877,8 +879,16 @@ function JobsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; uni
             </select>
           </label>
         ))}
+        <LenInput label="Hold-down width" value={j.holdDown} units={units} onCommit={(v) => setJ({ holdDown: v })} placeholder={metric ? `${HOLD_DOWN_DEFAULT.metric * 1000} mm` : "5 in"} field="hold-down" />
+      </div>
+      <p className="note" data-testid="hold-down-note">
+        Parts this wide or narrower are flagged for hold-down. Left empty it is Sawhorse's default, {metric ? "125 mm" : "5 in"}: not a standard, since none was found. The docs name 3 in nailers, 4 in stretchers and drawer sides as the parts that need hold-down most, and the default takes all three.
+      </p>
+      <h5>Material</h5>
+      <p className="note">The feeds on each job sheet are read for its sheet's material. It starts as laminate-faced Baltic birch, the most cautious, so the warnings for a laminate face show until you set it.</p>
+      <div className="cam-form">
         <label>
-          <span>Material</span>
+          <span>Every sheet</span>
           <select aria-label="Job sheet material" value={j.material} onChange={(e) => setJ({ material: e.currentTarget.value as MaterialId })}>
             {MATERIALS.map((m) => (
               <option key={m.id} value={m.id}>
@@ -887,11 +897,30 @@ function JobsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; uni
             ))}
           </select>
         </label>
-        <LenInput label="Hold-down width" value={j.holdDown} units={units} onCommit={(v) => setJ({ holdDown: v })} placeholder={metric ? `${HOLD_DOWN_DEFAULT.metric * 1000} mm` : "4 in"} field="hold-down" />
+        {stocks.map((st) => (
+          <label key={st}>
+            <span>{st}</span>
+            <select
+              aria-label={`Material for ${st}`}
+              value={j.materials[st] ?? ""}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                const materials = { ...j.materials };
+                if (v) materials[st] = v as MaterialId;
+                else delete materials[st];
+                setJ({ materials });
+              }}
+            >
+              <option value="">As every sheet ({MATERIALS.find((m) => m.id === j.material)!.label})</option>
+              {MATERIALS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
       </div>
-      <p className="note" data-testid="hold-down-note">
-        Parts this wide or narrower are flagged for hold-down. Left empty it is Sawhorse's default, {metric ? "100 mm" : "4 in"}: not a standard, since none was found. The docs name 3 in nailers and 4 in stretchers as the parts that need hold-down most.
-      </p>
       <h5>Part labels</h5>
       <div className="cam-form">
         <label>
@@ -956,7 +985,7 @@ export function CncSetupDialog(p: CncSetupDialogProps) {
           </button>
         ))}
       </div>
-      {tab === "machine" ? <MachineTab shop={shop} set={set} units={p.units} /> : tab === "tools" ? <ToolsTab shop={shop} set={set} units={p.units} /> : tab === "jobs" ? <JobsTab shop={shop} set={set} units={p.units} /> : <FeedsTab shop={shop} set={set} units={p.units} />}
+      {tab === "machine" ? <MachineTab shop={shop} set={set} units={p.units} /> : tab === "tools" ? <ToolsTab shop={shop} set={set} units={p.units} /> : tab === "jobs" ? <JobsTab shop={shop} set={set} units={p.units} stocks={p.stocks} /> : <FeedsTab shop={shop} set={set} units={p.units} />}
       <div className="btnrow">
         <button type="button" className="btn" onClick={p.onClose}>
           Done

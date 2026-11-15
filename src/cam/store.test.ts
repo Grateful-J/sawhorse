@@ -118,7 +118,9 @@ describe("the job sheet's settings, kept with the shop", () => {
   it("start with the down-cut for pockets, the end mill for holes and narrow grooves, the profile bit for cutouts, Sawhorse's hold-down default and letter labels", () => {
     const j = loadShop().jobs;
     expect(j.tools).toEqual({ cutout: null, pocket: "seed-downcut", narrow: "seed-endmill", hole: "seed-endmill" });
-    expect(j.material).toBe("baltic-birch");
+    // The most cautious material, so a laminate face's warnings show until it is set.
+    expect(j.material).toBe("laminate-bb");
+    expect(j.materials).toEqual({});
     expect(j.holdDown).toBeNull();
     expect(j.labels).toEqual({ paper: "letter", size: "4x2in", outlines: true });
   });
@@ -126,10 +128,12 @@ describe("the job sheet's settings, kept with the shop", () => {
   it("read back: a bit that is gone, a nonsense width or paper is the default's; a bit set to none stays none", () => {
     const s = defaultShop();
     const raw = JSON.parse(JSON.stringify(s));
-    raw.jobs = { tools: { pocket: "no-such-bit", hole: null }, material: "unobtainium", holdDown: -3, labels: { paper: "legal", size: "huge", outlines: false } };
+    raw.jobs = { tools: { pocket: "no-such-bit", hole: null }, material: "unobtainium", materials: { "4 x 4 sheet, 3/4": "baltic-birch", "4 x 4 sheet, 1/4": "kryptonite" }, holdDown: -3, labels: { paper: "legal", size: "huge", outlines: false } };
     const back = readShop(raw).jobs;
     expect(back.tools).toEqual({ cutout: null, pocket: "seed-downcut", narrow: "seed-endmill", hole: null });
-    expect(back.material).toBe("baltic-birch");
+    expect(back.material).toBe("laminate-bb");
+    // A stock's own material is kept; one that is not a material is dropped.
+    expect(back.materials).toEqual({ "4 x 4 sheet, 3/4": "baltic-birch" });
     expect(back.holdDown).toBeNull();
     expect(back.labels).toEqual({ paper: "letter", size: "4x2in", outlines: false });
     // A shop saved before job sheets existed reads with the defaults.

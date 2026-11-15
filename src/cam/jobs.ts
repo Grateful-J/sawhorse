@@ -42,8 +42,10 @@ export interface JobPrefs {
   /** The bit for each kind of layer, by tool id (null: none). A null cutout bit is the
    * profile bit. */
   tools: Record<JobKind, string | null>;
-  /** The material the feeds are read for. */
+  /** The material the feeds are read for, for a stock with none of its own. */
   material: MaterialId;
+  /** A stock's own material, by the stock's name ("4 x 4 sheet, 3/4"). */
+  materials: Record<string, MaterialId>;
   /** Flag parts this narrow or narrower for hold-down (metres). Null: Sawhorse's default,
    * 4 in, or 100 mm in a metric document. Not a standard: none was found. */
   holdDown: number | null;
@@ -52,9 +54,10 @@ export interface JobPrefs {
   labels: { paper: LabelPaper; size: string; outlines: boolean };
 }
 
-/** Sawhorse's own hold-down default, not a standard: the docs name 3 in nailers and 4 in
- * stretchers as the parts that need hold-down most, and no source gives a threshold. */
-export const HOLD_DOWN_DEFAULT = { inch: 4 * 0.0254, metric: 0.1 };
+/** Sawhorse's own hold-down default, not a standard: the docs name 3 in nailers, 4 in
+ * stretchers and drawer sides (4 9/16 in in the starting drawer base) as the parts that need
+ * hold-down most, and no source gives a threshold, so it is wide enough to take all three. */
+export const HOLD_DOWN_DEFAULT = { inch: 5 * 0.0254, metric: 0.125 };
 
 export function holdDownOf(p: JobPrefs, metric: boolean): number {
   return p.holdDown ?? (metric ? HOLD_DOWN_DEFAULT.metric : HOLD_DOWN_DEFAULT.inch);
@@ -67,7 +70,10 @@ export function defaultJobs(tools: Tool[]): JobPrefs {
   const has = (id: string) => (tools.some((t) => t.id === id) ? id : null);
   return {
     tools: { cutout: null, pocket: has("seed-downcut"), narrow: has("seed-endmill"), hole: has("seed-endmill") },
-    material: "baltic-birch",
+    // The most cautious of the materials: a laminate face, so the warnings for it show until
+    // the material is set.
+    material: "laminate-bb",
+    materials: {},
     holdDown: null,
     labels: { paper: "letter", size: LABEL_SIZES[0].id, outlines: true },
   };
@@ -85,6 +91,11 @@ export function readJobs(x: unknown, tools: Tool[]): JobPrefs {
   return {
     tools: { cutout: id(t.cutout, d.tools.cutout), pocket: id(t.pocket, d.tools.pocket), narrow: id(t.narrow, d.tools.narrow), hole: id(t.hole, d.tools.hole) },
     material: MATERIALS.some((m) => m.id === o.material) ? (o.material as MaterialId) : d.material,
+    materials: Object.fromEntries(
+      Object.entries(o.materials && typeof o.materials === "object" ? (o.materials as Record<string, unknown>) : {})
+        .filter(([k, v]) => k.length <= 200 && MATERIALS.some((m) => m.id === v))
+        .slice(0, 200),
+    ) as Record<string, MaterialId>,
     holdDown: typeof hd === "number" && Number.isFinite(hd) && hd > 0 && hd <= 1 ? hd : null,
     labels: {
       paper: l.paper === "a4" ? "a4" : "letter",
@@ -92,6 +103,11 @@ export function readJobs(x: unknown, tools: Tool[]): JobPrefs {
       outlines: typeof l.outlines === "boolean" ? l.outlines : d.labels.outlines,
     },
   };
+}
+
+/** The material a stock's feeds are read for: its own, or the shop's. */
+export function materialFor(p: JobPrefs, stock: string): MaterialId {
+  return p.materials[stock] ?? p.material;
 }
 
 export function labelSizeOf(p: JobPrefs): LabelSize {
