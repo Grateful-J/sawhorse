@@ -18,7 +18,7 @@
 import { events, model, storage, ui, units } from "sawhorse";
 import { applyPreset, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
-import { clearanceText, areaText, partArea, testCut, TEST_TAG, TEST_TITLES, validSteps } from "./testcuts.js";
+import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
 
 const IN = 0.0254;
@@ -58,8 +58,8 @@ let testKind = /** @type {import("./testcuts.js").TestKind} */ ("machine");
   const saved = await storage.app.get("testKind");
   if (saved === "machine" || saved === "ladders" || saved === "drawer" || saved === "door") testKind = saved;
 }
-/** The clearances of the last joint ladders made in this document (kept in it), or null. */
-let ladderCut = /** @type {number[] | null} */ (null);
+/** The last joint ladders added to this model, as cut (kept in the document), while they are in it; or null. */
+let ladderCut = /** @type {import("./testcuts.js").LadderRecord | null} */ (null);
 /** The dado picked on each ladder: "1" to "5", "tight", "loose", or "" (not tried). */
 let picks = /** @type {Record<string, string>} */ ({});
 /** The Test cuts group's own fields: not settings of the cabinet. */
@@ -115,7 +115,7 @@ const record = (v) => /** @type {Record<string, any>} */ (v && typeof v === "obj
  * instances, the selection (each item as the node it starts from), the open context, and what
  * is kept in the document. A sync used to ask for the whole node list three times and the
  * store five times for each click.
- * @typedef {{ nodes: import("sawhorse").Node[], byId: Map<number, import("sawhorse").Node>, kids: Map<number, number[]>, copies: Map<number, number[]>, starts: (number | null)[], context: number | null, cabinets: Record<string, Kept>, bases: Record<string, any>, last: number | null, legacy: number | null, ladders: number[] | null }} Snapshot
+ * @typedef {{ nodes: import("sawhorse").Node[], byId: Map<number, import("sawhorse").Node>, kids: Map<number, number[]>, copies: Map<number, number[]>, starts: (number | null)[], context: number | null, cabinets: Record<string, Kept>, bases: Record<string, any>, last: number | null, legacy: number | null, ladders: import("./testcuts.js").LadderRecord | null }} Snapshot
  * @returns {Promise<Snapshot>}
  */
 async function snapshot() {
@@ -152,7 +152,7 @@ async function snapshot() {
     bases: record(bs),
     last: typeof last === "number" ? last : null,
     legacy: typeof legacy === "number" ? legacy : null,
-    ladders: validSteps(record(ladders).steps),
+    ladders: validLadderRecord(ladders),
   };
 }
 
@@ -485,8 +485,13 @@ function currentTest() {
   if (testMemo.key !== key || !testMemo.value) testMemo = { key, value: testCut(testKind, sizes, m) };
   return /** @type {import("./testcuts.js").TestCut} */ (testMemo.value);
 }
-/** The clearances a ladder's picks name: those of the ladders made in this document, else those Add makes now. */
-const pickSteps = () => ladderCut ?? currentTest().steps;
+/** The ladders the picks name: those added to this model (as cut: each dado's width, and the
+ * mating stock then), else those Add would make now. */
+const pickLadders = () => {
+  if (ladderCut) return ladderCut.ladders;
+  const t = currentTest();
+  return testKind === "ladders" && !t.error ? t.coupons.map((c) => ({ kind: c.kind, name: c.name, mating: c.mating, widths: c.widths })) : [];
+};
 
 /** The Test cuts group's fields. @returns {Field[]} */
 function testFields() {
@@ -506,12 +511,11 @@ function testFields() {
     { type: "table", id: "testRows", columns: ["Measure", "Expected", "If it is off"], rows: [], align: ["left", "left", "left"] },
   ];
   if (t.columns.length) out.push({ type: "table", id: "testCuts", columns: t.columns, rows: [], align: t.columns.map(() => /** @type {"left"} */ ("left")) });
-  if (testKind === "ladders" && t.coupons.length) {
-    const steps = pickSteps();
+  // The picks stay while ladders are in the model, even when the settings now could not make them.
+  const ladders = testKind === "ladders" ? pickLadders() : [];
+  if (ladders.length) {
     out.push(heading("Which dado fits"));
-    for (const c of t.coupons) {
-      out.push(pick(`fit_${c.kind}`, c.name, picks[c.kind] ?? "", [["", "Not tried yet"], ...steps.map((v, k) => /** @type {[string, string]} */ ([String(k + 1), `Dado ${k + 1} · ${clearanceText(v, m)}`])), ["tight", "All too tight"], ["loose", "All loose"]]));
-    }
+    for (const l of ladders) out.push(pick(`fit_${l.kind}`, l.name, picks[l.kind] ?? "", pickOptions(l, sizes, m)));
     out.push({ type: "button", id: "applyFit", label: "Set Joint clearance" }, { type: "note", id: "fitStatus", text: "" });
   }
   out.push({ type: "note", id: "testArea", text: "" });
@@ -520,31 +524,19 @@ function testFields() {
   return out;
 }
 
-/**
- * What the ladders' picks come to: the Joint clearance they agree on (null when there is none
- * to set), and what to say.
- * @returns {{ value: number | null, text: string, tone: "info" | "warning" }}
- */
+/** What the ladders' picks come to (testcuts.js fitFromPicks), and which ladders they name. */
 function fitAdvice() {
-  const t = currentTest();
   const m = planMetric();
-  const steps = pickSteps();
+  const a = fitFromPicks(pickLadders(), picks, sizes, m);
+  const t = currentTest();
   const c = (/** @type {number} */ v) => clearanceText(v, m);
-  const tried = t.coupons.filter((x) => picks[x.kind]);
-  const moved = ladderCut && ladderCut.some((v, k) => Math.abs(v - t.steps[k]) > 1e-9) ? ` The ladders in the model were cut at ${c(ladderCut[0])} to ${c(ladderCut[ladderCut.length - 1])}; Add makes ${c(t.steps[0])} to ${c(t.steps[t.steps.length - 1])} now.` : "";
-  if (!tried.length) return { value: null, text: `Cut the ladders, slide the mating stock into each dado, and pick the one it goes into with hand pressure.${moved}`, tone: "info" };
-  const tight = tried.find((x) => picks[x.kind] === "tight");
-  if (tight) return { value: null, text: `${tight.name}: even dado ${steps.length} (${c(steps[steps.length - 1])}) is too tight, so that sheet is thicker than 4 · Materials says by more than that. Measure it again, type what it measures, and cut the ladder again.${moved}`, tone: "warning" };
-  const loose = tried.find((x) => picks[x.kind] === "loose");
-  if (loose) return { value: null, text: `${loose.name}: even dado 1 (${c(steps[0])}) is loose, so that sheet is thinner than 4 · Materials says. Measure it again, type what it measures, and cut the ladder again.${moved}`, tone: "warning" };
-  const ks = tried.map((x) => Number(picks[x.kind]) - 1);
-  if (ks.some((k) => k !== ks[0])) {
-    const said = tried.map((x, i) => `${x.name}, dado ${ks[i] + 1} (${c(steps[ks[i]])})`).join("; ");
-    return { value: null, text: `The ladders disagree: ${said}. One Joint clearance serves every dado and groove, so the difference is in the stock: measure the sheets again, type what they measure in 4 · Materials, and cut the ladders again.${moved}`, tone: "warning" };
-  }
-  const v = steps[ks[0]];
-  const same = Math.abs(v - sizes.fit) < 1e-9;
-  return { value: same ? null : v, text: `Dado ${ks[0] + 1} on ${tried.map((x) => x.name).join(" and ")}: a Joint clearance of ${c(v)}${same ? ", which it is already" : ` (it is ${c(sizes.fit)} now)`}.${moved}`, tone: "info" };
+  const steps = ladderCut?.steps;
+  const which = !ladderCut
+    ? " No ladders were added to this model: the dados named are those Add makes now."
+    : !t.error && steps && steps.some((v, k) => Math.abs(v - t.steps[k]) > 1e-9)
+      ? ` The ladders in the model were cut at ${c(steps[0])} to ${c(steps[steps.length - 1])} over their stock; Add makes ${c(t.steps[0])} to ${c(t.steps[t.steps.length - 1])} now.`
+      : "";
+  return { ...a, text: `${a.text}${which}` };
 }
 
 /** Fill in the Test cuts group. @param {Record<string, Record<string, unknown>>} fields @param {ReturnType<typeof plan> | null} planned */
@@ -563,8 +555,8 @@ function explainTests(fields, planned) {
   fields.makeTest = { label: `Add the ${TEST_TITLES[testKind].toLowerCase()} to the model`, disabled: !!t.error };
   fields.testStatus = t.error
     ? { text: t.error, tone: "warning" }
-    : { text: `It goes beside the model as ${t.name}, on the tag ${TEST_TAG}, and nests with the cabinets. To cut only the tests: hide the cabinets and tick Visible only in the Cut list. To cut only the cabinets: hide the tag ${TEST_TAG} (Tags pane) and tick Visible only.`, tone: "info" };
-  if (testKind === "ladders" && t.coupons.length) {
+    : { text: `It goes beside the model as ${t.name}, on the tag ${TEST_TAG}, and nests with everything shown. To cut one test alone: hide the cabinets, the base frames and the other tests (Outliner), and tick Visible only in the Cut list. For a test cut from MDF, add your MDF sheet at its measured thickness (Stock…) and give the test's parts that sheet (Cut list, right-click, Stock / material…), or it nests on your plywood. To cut only the cabinets: hide the tag ${TEST_TAG} (Tags pane) and tick Visible only.`, tone: "info" };
+  if (testKind === "ladders" && pickLadders().length) {
     const a = fitAdvice();
     fields.fitStatus = { text: a.text, tone: a.tone };
     fields.applyFit = { label: a.value === null ? "Set Joint clearance" : `Set Joint clearance to ${clearanceText(a.value, m)} (${editing === null ? "new cabinets" : sizes.name})`, disabled: a.value === null };
@@ -600,21 +592,25 @@ async function makeTestNow(kind, s) {
   const ref = batch.makeComponent(items, label);
   batch.rename({ node: ref.node }, t.name);
   batch.setTag([{ node: ref.node }], TEST_TAG);
+  /** @type {import("sawhorse").BatchResult} */
+  let result;
   try {
-    await batch.commit();
+    result = await batch.commit();
   } catch (e) {
     await ui.notify(`Could not add ${t.name}: ${e instanceof Error ? e.message : String(e)}`, { kind: "error" });
     await syncOnce();
     return;
   }
   if (kind === "ladders") {
-    // The picks name the dados of the ladders just made.
-    ladderCut = t.steps;
+    // The picks name the dados of the ladders just made, by the node they were added as: an
+    // Undo of the Add, or the ladders deleted, and the record is no longer used.
+    const record = ladderRecord(t, /** @type {number} */ (result.value(ref.node)));
+    ladderCut = record;
     picks = {};
     try {
-      await storage.document.set(LADDERS, { steps: t.steps });
+      await storage.document.set(LADDERS, record);
     } catch {
-      // Not kept (the store is full): the picks still name these steps until the document is closed.
+      // Not kept (the store is full): this session still names these ladders while they are in the model.
     }
   }
   await syncOnce();
@@ -623,24 +619,42 @@ async function makeTestNow(kind, s) {
 }
 
 /**
- * Set Joint clearance to the dado the ladders agree on: to the cabinet the panel edits (one
- * rebuild, one undo step, as a change typed in 7 · CNC) or to new cabinets.
+ * Set Joint clearance to the one the ladders agree on: to the cabinet the panel edits (one
+ * rebuild, one undo step, as a change typed in 7 · CNC) or to new cabinets. Says what happened:
+ * a cabinet that is not rebuilt from the panel (an older one, one scaled by hand), or whose
+ * rebuild was refused, keeps its build, and the message says why.
  * @param {import("sawhorse").Values} values
  */
 async function applyFit(values) {
   const a = fitAdvice();
   if (a.value === null) return;
-  sizes = { ...read(values), fit: a.value };
+  const v = a.value;
+  sizes = { ...read(values), fit: v };
   picks = {};
-  const target = editing === null ? null : sizes.name;
+  const c = clearanceText(v, planMetric());
   if (editing === null) {
     draft = sizes;
     void storage.app.set("sizes", sizes);
-  } else if (!why) liveUpdate();
+    shown = "";
+    await refresh();
+    await ui.notify(`Joint clearance is ${c} for new cabinets. Cabinets already made keep theirs: select each and set it in 7 · CNC.`);
+    return;
+  }
+  const name = sizes.name;
+  if (why) {
+    shown = "";
+    await refresh();
+    await ui.notify(`Joint clearance is ${c} in the panel, but ${name} is not rebuilt: ${why}`, { kind: "warning" });
+    return;
+  }
+  liveUpdate();
+  // Built now, not in a moment, so the message says what was built.
+  await flushEdit();
   shown = "";
   await refresh();
-  const c = clearanceText(a.value, planMetric());
-  await ui.notify(target ? `Joint clearance is ${c} for ${target}, rebuilt with it (Ctrl+Z undoes it). Other cabinets keep theirs: select each and set it in 7 · CNC.` : `Joint clearance is ${c} for new cabinets. Cabinets already made keep theirs: select each and set it in 7 · CNC.`);
+  const built = editing !== null && kept && Math.abs(kept.fit - v) < 1e-12;
+  if (built) await ui.notify(`Joint clearance is ${c} for ${name}, rebuilt with it (Ctrl+Z undoes it). Other cabinets keep theirs: select each and set it in 7 · CNC.`);
+  else await ui.notify(`${name} is not rebuilt with a Joint clearance of ${c}: ${why ?? issue({ ...sizes, fit: v }, planMetric()) ?? "the change was refused (the note under Generate says why)"}`, { kind: "warning" });
 }
 
 /** The whole panel for the sizes and the open group. @returns {Field[]} */
@@ -682,7 +696,8 @@ function body() {
 
 /** The ids the panel shows now, to rebuild it only when they change. */
 let shown = "";
-const idsOf = (/** @type {Field[]} */ fields) => fields.map((x) => ("id" in x && x.id ? `${x.id}:${x.type === "select" ? x.options.map((o) => o.value).join("|") : ""}` : "")).join(",");
+// A select's options by value and label: a label that changes (a ladder's dado, its clearance now) is redrawn.
+const idsOf = (/** @type {Field[]} */ fields) => fields.map((x) => ("id" in x && x.id ? `${x.id}:${x.type === "select" ? x.options.map((o) => `${o.value}=${o.label}`).join("|") : ""}` : "")).join(",");
 
 /** Rebuild the panel when what it shows changes, then say what Generate will do. */
 async function refresh() {
@@ -897,9 +912,12 @@ async function syncOnce() {
   const key = f ? f.key : null;
   const { list } = await placed(snap);
   taken = new Set(list.map((c) => c.name));
-  // The last joint ladders made in this document: what their picks name.
-  if (JSON.stringify(snap.ladders) !== JSON.stringify(ladderCut)) {
-    ladderCut = snap.ladders;
+  // The last joint ladders added, while they are in the model: what the picks name. This session's
+  // record first (its write to the document may have failed), then the document's; one whose
+  // ladders are gone (an Undo of the Add, deleted) names nothing.
+  const cut = liveLadders(ladderCut, snap.ladders, (id) => snap.byId.get(id)?.kind === "instance");
+  if (JSON.stringify(cut) !== JSON.stringify(ladderCut)) {
+    ladderCut = cut;
     picks = {};
   }
   // The cabinet a new one goes against: this one, else the last one made or edited (kept in
