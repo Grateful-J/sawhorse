@@ -216,7 +216,7 @@ Try a flip on scrap before a real part. A flip mirrored the wrong way puts the c
 
 - **It may be dropped.** In Feb 2026 Carbide staff said imported text is something "we still do not support" (§ 1b). Sawhorse's `LABELS` layer is text: each part's tag and name, and the sheet's title. Expect it to be missing. **Check on your screen.**
 - Nothing is cut from it. Give it no toolpath, and hide or delete it. Name the parts from the PDF's page for the sheet, or from the Nesting section's diagram.
-- The sheet's title is drawn above the sheet and centred on its left edge, so part of it lies left of 0,0 (`src/nesting/dxf.ts`). If Carbide Create keeps it, it lies outside the stock.
+- The sheet's title is drawn above the sheet, starting at its left edge (`src/nesting/dxf.ts`). If Carbide Create keeps it, it lies outside the stock, above it; nothing in the file lies left of or below 0,0.
 - Keep `STOCK` for measuring ([Each sheet](#each-sheet), step 4), with no toolpath.
 
 ## Comparison fixtures: Carbide's G-code for a test DXF

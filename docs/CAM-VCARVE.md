@@ -92,7 +92,7 @@ So an inch template needs 11 toolpaths, a metric template 10. No starting cabine
 ## Set up the job
 
 Make the job first, then import the DXF into it.
-- The help says files from other CAD programs "will be opened in the original size and position. The Job Setup Form is automatically opened showing the maximum X and Y dimensions of the opened design" (§ 1a). Sawhorse's file is bigger than the sheet: the sheet's title on `LABELS` is drawn above the sheet and centred on its left edge (`src/nesting/dxf.ts`). **Not known:** whether VCarve counts text in that size. Do not take the size it offers; type the sheet's.
+- The help says files from other CAD programs "will be opened in the original size and position. The Job Setup Form is automatically opened showing the maximum X and Y dimensions of the opened design" (§ 1a). Sawhorse's file is taller than the sheet: the sheet's title on `LABELS` is drawn above the sheet, starting at its left edge (`src/nesting/dxf.ts`). Nothing lies left of or below 0,0, so the design's lower-left corner is the sheet's. **Not known:** whether VCarve counts text in that size. Do not take the size it offers; type the sheet's.
 - **Not known:** which unit VCarve reads a DXF in. Sawhorse writes millimetres in the file's header (`$INSUNITS` 4); the report found nothing on whether VCarve reads it. A user says DXFs "open in VCarve by default into inches", and makes a millimetre job first, then imports (§ 1a, a user forum). **Check on your screen**, by measuring, as in [Each sheet](#each-sheet).
 
 **Job Setup** (§ 2):
@@ -242,7 +242,7 @@ The post-processor writes the toolpaths as G-code for Carbide Motion.
 
 - Keep both for reference and hide them. Give neither a toolpath (§ 10).
 - Keep `STOCK` to measure the scale and position ([Each sheet](#each-sheet)).
-- `LABELS` is text: each part's tag and name, and the sheet's title, drawn above the sheet and centred on its left edge. **Not known:** whether VCarve imports DXF text. Name the parts from the PDF's page for the sheet.
+- `LABELS` is text: each part's tag and name, and the sheet's title, drawn above the sheet and starting at its left edge. **Not known:** whether VCarve imports DXF text. Name the parts from the PDF's page for the sheet.
 - VCarve prints part labels only through the paid Advanced Machining Module's cabinet import (§ 10).
 
 ## Aside: the Advanced Machining Module
