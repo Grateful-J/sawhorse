@@ -84,7 +84,8 @@ const MM = 0.001;
  * - US: TANDEM plus BLUMOTION 563H (2021 catalog pp. 11-15) and MOVENTO 763H (2026 catalog
  *   pp. 9-13). The box is the runner's length; screws at 37 then Blum's A and B.
  * - Europe: TANDEM 560H (TD-127/3, EN 07.23, pp. 3, 5, 24) and MOVENTO 760H (TD-132/1, EN
- *   06.22, pp. 3, 5, 13). The box is NL - 10; the least inside depth NL + 3; Blum gives the
+ *   06.22, pp. 3, 5, 13). TD-132/1 prints the 760H runners as 760H…1S; Blum's catalogues
+ *   (2024/2025 p. 412, 2027/2028 p. 420) list them as 760H…0S, the numbers to order. The box is NL - 10; the least inside depth NL + 3; Blum gives the
  *   underside of the drawer bottom at least 27.5 (TANDEM) or 28.5 (MOVENTO) above the
  *   opening, so with the 13 mm recess the box sits 14.5 or 15.5 up.
  * `minDepth` is the least inside cabinet depth; `screws` the System 32 screw holes from the
@@ -186,20 +187,20 @@ export const RUNNERS_EU = {
   movento: {
     name: "Blum MOVENTO 760H",
     lengths: [
-      runnerLen(250, "760H2501S", 253, [37, 69, 197]),
-      runnerLen(270, "760H2701S", 273, [37, 69, 197]),
-      runnerLen(300, "760H3001S", 303, [37, 69, 261]),
-      runnerLen(320, "760H3201S", 323, [37, 69, 261]),
-      runnerLen(350, "760H3501S", 353, [37, 69, 261]),
-      runnerLen(380, "760H3801S", 383, [37, 69, 261, 293]),
-      runnerLen(400, "760H4001S", 403, [37, 69, 261, 293]),
-      runnerLen(420, "760H4201S", 423, [37, 69, 261, 293]),
-      runnerLen(450, "760H4501S", 453, [37, 69, 261, 293]),
-      runnerLen(480, "760H4801S", 483, [37, 69, 261, 293]),
-      runnerLen(500, "760H5001S", 503, [37, 69, 261, 293]),
-      runnerLen(520, "760H5201S", 523, [37, 69, 261, 293]),
-      runnerLen(550, "760H5501S", 553, [37, 69, 261, 293]),
-      runnerLen(600, "760H6001S", 603, [37, 69, 261, 293]),
+      runnerLen(250, "760H2500S", 253, [37, 69, 197]),
+      runnerLen(270, "760H2700S", 273, [37, 69, 197]),
+      runnerLen(300, "760H3000S", 303, [37, 69, 261]),
+      runnerLen(320, "760H3200S", 323, [37, 69, 261]),
+      runnerLen(350, "760H3500S", 353, [37, 69, 261]),
+      runnerLen(380, "760H3800S", 383, [37, 69, 261, 293]),
+      runnerLen(400, "760H4000S", 403, [37, 69, 261, 293]),
+      runnerLen(420, "760H4200S", 423, [37, 69, 261, 293]),
+      runnerLen(450, "760H4500S", 453, [37, 69, 261, 293]),
+      runnerLen(480, "760H4800S", 483, [37, 69, 261, 293]),
+      runnerLen(500, "760H5000S", 503, [37, 69, 261, 293]),
+      runnerLen(520, "760H5200S", 523, [37, 69, 261, 293]),
+      runnerLen(550, "760H5500S", 553, [37, 69, 261, 293]),
+      runnerLen(600, "760H6000S", 603, [37, 69, 261, 293]),
     ],
     screwHeight: 38,
     bottomClearance: 15.5,
@@ -1038,7 +1039,14 @@ function build(s, metric) {
     // data relates to front widths of 600 mm"); Blum Inc.'s does not, and asks instead for the
     // top and bottom hinges to be farther apart than the door is wide. Weight is the plywood's,
     // at 600 kg/m3, plus a pull.
-    const byHeight = fh <= 900 * MM ? 2 : fh <= 1600 * MM ? 3 : fh <= 2000 * MM ? 4 : 5;
+    // With Blum Europe's catalogue the European chart's height bands apply too, and the larger
+    // count wins: 2 hinges to about 750 mm, 3 to 1500, 4 to 2100 (catalogue 2024/2025 p. 75,
+    // 2027/2028 p. 69). Blum draws those bands as a chart without printed numbers, so they are
+    // read from it; taking the larger count means a misread can only add a hinge, never leave
+    // one out.
+    const usHeight = fh <= 900 * MM ? 2 : fh <= 1600 * MM ? 3 : fh <= 2000 * MM ? 4 : 5;
+    const euHeight = fh <= 750 * MM ? 2 : fh <= 1500 * MM ? 3 : fh <= 2100 * MM ? 4 : 5;
+    const byHeight = s.catalog === "eu" ? Math.max(usHeight, euHeight) : usHeight;
     const r = (CUP.dia * MM) / 2;
     const cupCenter = CUP.radius * MM + s.cupDistance;
     for (const leaf of leaves) {
