@@ -25,6 +25,8 @@ export interface NestingSectionProps {
    * settings as they are now). The saw's fields are patched one by one too: `{ overflow: { kerf } }`. */
   onSettings: (s: NestSettings, patch?: NestSettingsPatch) => void;
   onStock: () => void;
+  /** Open CNC setup: the machine, the bits, feeds and speeds (shop data, kept on this device). */
+  onCncSetup?: () => void;
   /** The pointer is over a part's rectangle (null: over none). */
   onHover: (p: Placement | null) => void;
   onSelect: (p: Placement) => void;
@@ -209,6 +211,11 @@ export function NestingSection(p: NestingSectionProps) {
         <button type="button" className="btn" onClick={p.onStock} disabled={!n} title="The sheets and boards parts are cut from, and which stock each material uses">
           Stock…
         </button>
+        {p.onCncSetup ? (
+          <button type="button" className="btn" onClick={p.onCncSetup} data-action="cnc-setup" title="Your CNC machine, router and bits, and feeds and speeds to start from. Kept on this device, not in the model.">
+            CNC setup…
+          </button>
+        ) : null}
       </header>
       {settings ? (
         <div className="cut-controls nest-controls">

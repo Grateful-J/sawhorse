@@ -10,6 +10,7 @@ import { CutListReport } from "./components/CutListReport";
 import { rowKey } from "./components/CutListPane";
 import { cncSettings, NestingSection } from "./components/NestingSection";
 import { StockDialog } from "./components/StockDialog";
+import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
@@ -441,6 +442,8 @@ export function App() {
   const nestNow = useRef<{ nesting: Nesting | null; pending: boolean; failed: boolean }>({ nesting: null, pending: false, failed: false });
   const [nestHover, setNestHover] = useState<Entity | null>(null);
   const [stockOpen, setStockOpen] = useState(false);
+  // CNC setup: shop data kept on this device (src/cam/store.ts), never the model's.
+  const [cncSetupOpen, setCncSetupOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Camera: the requested standard view (re-applied when viewSeq changes), the projection,
@@ -3260,6 +3263,7 @@ export function App() {
       {settingsOpen ? <SettingsDialog url={gate.url} status={gate.status} onUrl={gate.setUrl} onRecheck={gate.recheck} onClose={() => setSettingsOpen(false)} /> : null}
       {plugins.dialogs}
       <CutListReport list={printing ? cutList : null} title={cutTitle} />
+      {cncSetupOpen ? <CncSetupDialog units={units} onClose={() => setCncSetupOpen(false)} /> : null}
       {stockOpen && nesting ? (
         <StockDialog
           library={nesting.library}
@@ -3406,6 +3410,7 @@ export function App() {
               units={units}
               onSettings={(s, patch) => (patch ? void patchNestSettings(patch) : setNestSettings(s))}
               onStock={() => setStockOpen(true)}
+              onCncSetup={() => setCncSetupOpen(true)}
               onHover={hoverPlacement}
               onSelect={selectPlacement}
               onGrain={grainPlacement}
