@@ -8,7 +8,7 @@ The step-by-step guide, from a cabinet to the CAM job (shop setup, rows, base fr
 
 1. Open the Plugins pane (the puzzle-piece tab at the end of the side panel) and click **Enable…** beside Cabinet generator. The dialog lists what it asks for: read the model, change the model, add a panel and a command, keep settings.
 2. The **Cabinet** section appears at the top of the pane, laid out like a cabinet shop's order form: **Start from**, **Name**, then eight numbered groups. Each group shows one line on what is in it while closed ("24 × 34 1/2 × 23 1/4 · 4 toe kick"); click one to open it (the one that was open closes). A field shows only when it applies.
-   - **Start from** fills in a cabinet: Base (door and shelf), Drawer base (3 drawers), Sink base (2 doors, open top), Base (drawer over door), Trash pull-out (2 bins), Wall cabinet (doors, nailers), Tall pantry (needs sheets over 4 ft), or Open shelves. It sets the style, the usual sizes, the top and the name, and keeps your stock, joints and hardware. Base cabinets are 23 1/4 in deep (24 in with the door, the frameless standard, and a side and a top share a 4 x 4 sheet) with two stretchers for a top; in millimetres they are 870 tall with the toe kick (a 720 carcass on a plinth) and 560 deep.
+   - **Start from** fills in a cabinet: Base · door and shelf; Drawer base · 3 drawers; Sink base · 2 doors, open top; Base · drawer over door; Trash pull-out · one 50 qt bin; Wall cabinet · doors, nailers; Tall pantry · needs sheets over 4 ft; or Open shelves · no doors. Each is a clean start: a Base picked after a Tall pantry is the same Base as one picked first. It sets the style, the usual sizes, the toe kick, the shelves, the top and the name. It puts the door pull's place, the drawer pull, the rear nailers, the bins and the number of drawers back to a new cabinet's unless the preset has its own. It keeps everything else: your stock and grain, joinery, back, hardware and CNC settings. Base cabinets are 23 1/4 in deep (24 in with the door, the frameless standard, and a side and a top share a 4 x 4 sheet) with two stretchers for a top; in millimetres they are 870 tall with the toe kick (a 720 carcass on a plinth) and 560 deep.
    - **1 · Size:** width, height (with the toe kick) and depth (the box), and the toe kick: notched into the sides, its height and setback, or none.
    - **2 · Layout:** the style (doors and shelves, drawers, drawers over a door, trash pull-out, open shelves); shelves and whether they are adjustable (on pins) or fixed (in dados); drawers and their heights (all equal, or a short top drawer and the rest equal); single or double doors and the hinge side; the bins.
    - **3 · Fronts and pulls:** full overlay or inset, the reveal gap, and where the door and drawer pulls go.
@@ -39,8 +39,8 @@ A ladder: a **front rail** set back for the toes (the toe setback, 3 in or 75 mm
 | Toe setback | 3 in (75 mm) | The front rail behind the carcass front. |
 | Back inset | 0 | The back rail in from the cabinets' backs. |
 | Ends | against walls or cabinets | A showing end is set back like the front, so the toe space turns the corner. |
-| Stock | plywood strips, 23/32 in (18 mm) | Strips on Cabinet plywood nest with the carcass on the same sheets; **Lumber** (1 1/2 in, 38 mm, 8 ft) is its own material, counted in board feet. |
-| Sleepers | in dados in the rails, 1/4 in (6 mm) deep | Each a dado across the rail's inside face, open top and bottom, the stock plus the fit wide; the sleeper's tongue 0.5 mm short so the shoulders close, and the ladder comes out square. Or butted between the rails, glued and screwed. |
+| Stock | plywood strips, 23/32 in (18 mm) | Strips on Cabinet plywood nest with the carcass on the same sheets; **Lumber** (1 1/2 in, 38 mm, 8 ft) is its own material, counted in board feet. **Thickness** starts at 23/32 in (18 mm) or what you typed last, and does not follow the cabinets' Materials: type your measured thickness. Changing Stock sets it again, to the carcass thickness of the row's first cabinet for plywood. |
+| Sleepers | in dados in the rails, 1/4 in (6 mm) deep | Each a dado across the rail's inside face, open top and bottom, the stock plus 0.008 in (0.2 mm) wide (fixed: the frame has no clearance field, and the cabinet's Joint clearance does not reach it); the sleeper's tongue 0.5 mm short so the shoulders close, and the ladder comes out square. Or butted between the rails, glued and screwed. |
 | Sleepers at most | 16 in (400 mm) on centre | One at each end of a ladder, one centred under each joint between cabinets (under both sides), and more between. |
 | Longest piece | 47 in (1190 mm) | A 4 x 4 sheet less the CNC preset's trim. A longer row is split into **ladders**, each under whole cabinets where it can (a cabinet longer than a piece is split evenly), set side by side and screwed together through their end sleepers. |
 
@@ -56,10 +56,10 @@ The frame follows the shallowest cabinet when depths differ, backs in line. Leve
 
 | Field | Starts at | Used for | Material |
 |---|---|---|---|
-| Cabinet and doors | 23/32 in ("3/4" ply) | sides, top, bottom, shelves, toe kick, doors | Cabinet plywood, Door plywood |
-| Drawer fronts | 23/32 in, the doors' stock, so a drawer over a door is flush with it | drawer fronts | Drawer front plywood |
+| Carcass, doors | 23/32 in ("3/4" ply) | sides, top, bottom, shelves, toe kick, doors | Cabinet plywood, Door plywood |
+| Drawer faces | 23/32 in, the doors' stock, so a drawer over a door is flush with it | drawer fronts | Drawer front plywood |
 | Drawer boxes | 15/32 in | drawer sides, sub-fronts, backs | Drawer box plywood |
-| Back and drawer bottoms | 7/32 in ("1/4" ply) | the back, drawer bottoms | Back plywood |
+| Back, bottoms | 7/32 in ("1/4" ply) | the back, drawer bottoms | Back plywood |
 
 For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in 3/4, 1/2 and 1/4 and nests every sheet good on them, so each material finds its thickness by itself. Or give a material its own sheet in Stock...: it must be the material's thickness. The plugin defines a material only when the model does not have it, so the sheet you picked is kept when you generate again. The CNC export warns about any part drawn at a thickness its sheet is not.
 
@@ -75,17 +75,17 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 **Fronts.**
 - **Doors:** automatic (a pair over 24 in), one or two. One door hinges on the side you pick, and its pull goes on the other edge.
 - **Full overlay** (default): the fronts tile the cabinet's face with the gap you set between them (1/8 in) and half of it at the edges.
-- **Inset:** fronts sit inside the opening, with half the gap all round.
+- **Inset:** fronts sit inside the opening, with half the gap all round. Shelves behind an inset door start the carcass thickness plus 3 mm back from the cabinet's front (0.837 in with 23/32 in stock, 21 mm with 18 mm), so the door and its bumpers close in front of them: the shelf is that much shallower, and a fixed shelf's dados start that much further back. The pin rows do not move (the front row is 37 mm from the cabinet's front). Open shelves and shelves behind overlay doors run to the front. A cabinet too shallow to leave a shelf behind the door is refused.
 - A door wider than 24 in is a pair.
 
 **Joinery and bit.**
-- **Blind dados:** each side gets a groove for the top, the bottom and each fixed shelf. The groove is a dado depth deep (1/4 in), the stock plus the **fit** wide (0.008 in), and stops short of the front by the distance you set (1/2 in).
+- **Blind dados:** each side gets a groove for the top, the bottom and each fixed shelf. The groove is a dado depth deep (1/4 in), the stock plus the **Joint clearance** wide (0.008 in), and stops short of the front by the distance you set (1/2 in).
 - **Rails:** each rail's tongue is 0.5 mm shorter than its groove, so the shoulders close. Its front corners are notched the stop plus one **bit diameter** deep, so the round end the router leaves in the groove never meets the rail's square shoulder.
 - **Narrow grooves:** a groove narrower than the bit (the back and drawer-bottom grooves, about 7/32 in) is listed, to cut with a smaller bit on its own layer.
 
 **Trash pull-out.** One full-height drawer front on Blum runners. The box is a low tray (6 in sides to start); its sub-front and back run full height as uprights, and a bin frame spans between them, in a dado in the sub-front and with a tongue through a slot in the back (a dado there would be in the face opposite the hook holes, a second setup), with a cutout for each bin to hang in by its rim: one, two side by side, or two front to back.
 - **Bins** are Rev-A-Shelf's, sized from their customer drawings: 27 qt (RV-1024: rim 10.96 x 10.96 in, 17.75 tall, opening 10.10 x 10.10), 35 qt (RV-35: rim 14.21 x 10.46, 17.85 tall, opening 13.16 x 9.56) and 50 qt (RV-50: rim 14.75 x 10.67, 21.75 tall, opening 13.59 x 9.80). Each cutout is the drawing's minimum opening plus 1/32 in a side; the frame's top is the rim's drop below the rim (1.80, 1.63, 1.75 in), with the bin 1/4 in off the tray floor. Two bins keep their rims 1/8 in apart; every cutout keeps 3/4 in of wood to the frame's edges; a bin turns its long side front to back when that is what fits. **Other: measure it** takes your own cutout and frame height (Knape & Vogt's 35 qt is 9 3/16 in deep at the rim, not Rev-A-Shelf's 10.46), and says the largest cutout the cabinet takes.
-- **What fits:** one bin, any of the three, from a 15 in cabinet; two side by side from 27 in. Two front to back need more than the 20 in between a 21 in (533 mm) runner box's uprights (two 35 qt rims are 20.92 in): Rev-A-Shelf's own doubles ride 22 in slides. They fit a deeper cabinet on Blum's European 600 mm runners. The Trash preset is one 50 qt in an 18 in cabinet.
+- **What fits:** one bin, any of the three, from a 15 in cabinet; two side by side from 26 in (any of the three, with the starting stock and depth). Two front to back need more than the 20 in between a 21 in (533 mm) runner box's uprights (two 35 qt rims are 20.92 in): Rev-A-Shelf's own doubles ride 22 in slides. They fit a deeper cabinet on Blum's European 600 mm runners. The Trash preset is one 50 qt in an 18 in cabinet.
 - The cutouts go on CUTOUT_THRU in the DXF.
 
 **Drawer runners.** Drawers are sized for Blum runners from Blum's own tables, in two catalogues (in `RUNNERS` and `RUNNERS_EU` in `cabinet.js`): **Blum Inc.** (US, inch lengths: TANDEM plus BLUMOTION 563H, 2021 catalog pp. 11-15; MOVENTO 763H, 2026 catalog pp. 9-13), the default in inch documents, and **Blum Europe** (mm lengths: TANDEM 560H, TD-127/3; MOVENTO 760H, TD-132/1), the default in metric ones.
@@ -104,15 +104,15 @@ For a 4 x 4 bed, Nesting > Stock... > **Use 4 x 4 plywood** adds 4 x 4 sheets in
 
 Only the System 32 screw holes are drilled; Blum's chipboard-only holes (4 x 15 mm screws) are listed, not drilled. **Runner length** is the longest the inside depth allows, or the one you pick. A 560 mm metric box with a 12 mm back inset has 542 mm inside: a 520 mm 560H or 760H.
 
-**Drawer heights.** A drawer cabinet's fronts are all one height (an overlay front covers the top or the bottom, so the top and bottom boxes are a thickness shorter). Drawers over a door are each **Drawer front height** tall (6 in, 150 mm to start), stacked from the top, with the door under them and the shelves behind it.
+**Drawer heights.** A drawer cabinet's fronts are all one height (an overlay front covers the top or the bottom, so the top and bottom boxes are a thickness shorter). Drawers over a door are each **Drawer face height** tall (6 in, 150 mm to start), stacked from the top, with the door under them and the shelves behind it.
 
 **Drawer box construction.**
 - The bottom slides in from the back, in grooves 13 mm up in the sides and the sub-front.
 - The box back sits on the bottom, so the runner passes under it: there is no runner notch to cut (Blum's "no notching" option). The bottom must be 6 mm (1/4 in) or thinner, or the rear hook hole breaks out of the back's bottom edge.
 - The bottom is 1/32 in short of the grooves' bottoms on each edge, and runs to the back of the box, where it is screwed up into the back.
 
-**Hardware.** Tick **Drill hardware holes** to drill what a flat-bed router can.
-- **Hinges:** a Blum CLIP top cup, 35 mm and 13 mm deep, in each door's back face. Its centre is 17.5 mm plus the **boring distance** (3 to 7 mm, 5 to start) from the hinge edge. The table says what overlay that gives on a 0 mm plate (Blum: 11 + boring distance, 16 mm at 5) against what the door covers (the side less half the gap), and the boring distance that matches. Hinges sit **in from the door's top and bottom** by the distance you set. A door gets two hinges to 900 mm tall, then three, four (over 1600) and five (over 2000), and never fewer than Blum's weight bands ask for (2 under 15 lb, 3 to 30, 4 to 45, 5 to 60; the door's plywood at 600 kg/m3); Blum's European chart adds one on a door over 600 mm wide, used with that catalogue. The table says how many and why, and warns when the top and bottom hinges are closer together than the door is wide. Each mounting plate gets two 5 mm holes 11.5 mm deep, 32 mm apart, 37 mm back, for plates with pre-mounted system screws (173L8100, 175L8100; the 173L6100 family takes wood screws instead). A plate that would sit on a shelf slides along the door, and the table says by how much.
+**Hardware.** Tick **Drill hinge, runner and pull holes** to drill what a flat-bed router can.
+- **Hinges:** a Blum CLIP top cup, 35 mm and 13 mm deep, in each door's back face. Its centre is 17.5 mm plus the **boring distance** (3 to 7 mm, 5 to start) from the hinge edge. The table says what overlay that gives on a 0 mm plate (Blum: 11 + boring distance, 16 mm at 5) against what the door covers (the side less half the gap), and the boring distance that matches. Hinges sit in from the door's top and bottom by the distance you set (**From top, bottom**, 3 1/2 in or 100 mm to start). A door gets two hinges to 900 mm tall, then three, four (over 1600) and five (over 2000), and never fewer than Blum's weight bands ask for (2 under 15 lb, 3 to 30, 4 to 45, 5 to 60; the door's plywood at 600 kg/m3); Blum's European chart adds one on a door over 600 mm wide, used with that catalogue. The table says how many and why, and warns when the top and bottom hinges are closer together than the door is wide. Each mounting plate gets two 5 mm holes 11.5 mm deep, 32 mm apart, 37 mm back, for plates with pre-mounted system screws (173L8100, 175L8100; the 173L6100 family takes wood screws instead). A plate that would sit on a shelf slides along the door, and the table says by how much.
 - **Door pull:** two through holes on the opening edge.
   - Vertical or horizontal.
   - Measured from the top (base cabinets) or the bottom (wall cabinets).
@@ -121,11 +121,11 @@ Only the System 32 screw holes are drilled; Blum's chipboard-only holes (4 x 15 
 - **Drawer pull:**
   - two through holes, centred or a set distance down from the top, at the spacing you set; or
   - **no pull:** a finger notch in the front's top edge, its width and depth yours to set. The sub-front behind it is cut 25 mm lower, so fingers reach behind the front. The notch needs no hardware ticked.
-- **Pull hole diameter** is 5 mm to start.
+- **Pull hole** is 3/16 in to start (5 mm in a metric document), 12 mm at most.
 - **Runner screws:** 5 mm x 13 mm holes in both sides, for Blum system screws.
 - **Rear hook holes:** 6 mm x 10 mm in the rear face of each drawer back, 7 mm from each end (the sides' inside faces) and 24 mm above the bottom of the box (Blum: 11 above the 13 mm notch line).
 - **Locking devices** (T51.1901 for TANDEM, T51.7601 for MOVENTO) each need two 2.5 mm pilot holes 10 mm deep at 75 degrees, drilled by hand with the T65.1600.01 template.
-- 5 and 6 mm holes are smaller than a 1/4 in bit: the table says to drill their layers with drill bits of their size.
+- 5 and 6 mm holes are smaller than a 1/4 in bit: the table lists them under **Change bit**. Bore each circle with a 1/8 in or 3 mm end mill; a drill bit of the hole's size works only in a spindle that has a collet for its shank and a speed slow enough for drilling ([CNC cabinets](../../docs/CNC-CABINETS.md#2-give-each-layer-its-toolpath)).
 
 The table lists every cut and how it is made. With inset fronts, the hinge plates and runner screws are listed but not drilled: they are left to Blum's inset tables.
 
