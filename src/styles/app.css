@@ -358,8 +358,8 @@ button.chip:hover{border-color:var(--accent)}
 /* ---- Lane 9: the Nesting section (cutting diagrams) and the Stock dialog ---- */
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .nesting{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
-.nest-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.nest-head h4{margin:0;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;text-transform:uppercase}
+.nest-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.nest-head h4{flex:1 1 auto;margin:0;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.03em;text-transform:uppercase}
 .nest-head .btn{padding:3px 8px;font-size:12px}
 .nest-controls input{width:62px;font:12px var(--mono);padding:2px 4px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);text-align:right}
 .nest-controls label.err input{border-color:var(--warn);outline:1px solid var(--warn)}
