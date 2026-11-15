@@ -137,7 +137,7 @@ A toolpath template keeps each toolpath with a rule for choosing its shapes: "al
 
 ## Each sheet
 
-**Nothing applies on import by itself.** The report found no setting that applies a template when a DXF is opened (§ 0.2, § 3). Every sheet takes these steps. Print the sheet's **job sheet** first: **CNC files** saves it beside the DXF under the same name ending in ` job.txt`, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
+**Nothing applies on import by itself.** The report found no setting that applies a template when a DXF is opened (§ 0.2, § 3). Every sheet takes these steps. Print the sheet's **job sheet** first: **CNC files** saves every sheet's job sheet in one text file after the DXFs, each named by its DXF, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
 
 1. **Make the job** ([Set up the job](#set-up-the-job)) with this sheet's measured thickness.
 2. **Import the DXF.** "The imported vectors will always be read in at the size and scale they were created in their original design software" (§ 1a).

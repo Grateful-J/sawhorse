@@ -132,7 +132,7 @@ Do not try to make a `.c2d` any other way: its format is not published and has c
 
 ## Each sheet
 
-Do this for every DXF, every time. Print the sheet's **job sheet** first: **CNC files** saves it beside the DXF under the same name ending in ` job.txt`, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
+Do this for every DXF, every time. Print the sheet's **job sheet** first: **CNC files** saves every sheet's job sheet in one text file after the DXFs, each named by its DXF, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
 
 1. **Open the template**, then save it at once under the sheet's name (the DXF's name with `.c2d`), so the template stays empty.
 2. **Set the stock thickness** to this sheet's measured thickness. A carcass sheet, a drawer-box sheet and a back sheet are not the same thickness.

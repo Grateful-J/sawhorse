@@ -343,7 +343,7 @@ You get one DXF for each sheet the router cuts (and for each board, when the mod
 
 A sheet has one number wherever it is named. `02` is its number in the whole nesting: the label inside the file says the same ("2. Sheet 1 of 2 - 4 x 4 sheet, 3/4 - Cabinet plywood"), and so does the PDF. `sheet 1 of 2` is its place among the sheets of its stock and material, as its diagram is titled in the Nesting section. A board's file says `board`. Characters a file system refuses are taken out of the name (the "/" in 3/4 becomes "-"), and a very long name is cut short.
 
-Each DXF is followed by its **job sheet**, a text file of the same name ending in ` job.txt` (`Kitchen 02 sheet 1 of 2 - … CNC job.txt`), so the two sort together and travel together. Where Sawhorse asks where to save each file, save the job sheet in the same folder as its DXF. [Job sheet and part labels](#job-sheet-and-part-labels) says what is on it.
+After the DXFs, **CNC files** saves one more file: the **job sheets** for every router sheet, as text, named for the model and the day (`Kitchen job sheets 2026-11-15.txt`). Save it with the DXFs. It names each sheet by its DXF's default name. Cancelling it leaves the DXFs saved, and the status line says so. [Job sheet and part labels](#job-sheet-and-part-labels) says what is on it.
 
 The status line then says how far apart the parts are (use a bit narrower than that) and whether the sheet has a margin.
 
@@ -429,29 +429,29 @@ If a size is off, look at the CAM job first: the scale, the bit's real diameter,
 
 ## Job sheet and part labels
 
-A DXF holds shapes and layer names. The job sheet is the rest of what goes into the CAM job for one router sheet, on one page you can print and tick. Every number on it comes from somewhere you can check: the sizes from the nesting and the parts' measured cuts, the feeds from **CNC setup** with their confidence, the rules from this guide and the [CAM guides](CAM-CARBIDE-CREATE.md). Where Sawhorse does not know something, the sheet says so.
+A DXF holds shapes and layer names. The job sheet is the rest of what goes into the CAM job for one router sheet, printed to tick off: usually two or three pages a sheet. Every number on it comes from somewhere you can check: the sizes from the nesting and the parts' measured cuts, the feeds from **CNC setup** with their confidence, the rules from this guide and the [CAM guides](CAM-CARBIDE-CREATE.md). Where Sawhorse does not know something, the sheet says so.
 
 ### Where to find it
 
-- **In the Nesting section:** each router sheet's caption has a **Job sheet** link. It opens the sheet's job sheet under its caption, with a box to tick for each layer, and is worked out again when the nesting or CNC setup changes. The ticks are for that screen only.
-- **Beside each DXF:** **CNC files** saves it as text, under the DXF's name ending in ` job.txt`.
-- **In the PDF:** after each router sheet's page, then the part labels at the end.
+- **In the Nesting section:** each router sheet's caption has a **Job sheet** link. It opens the sheet's job sheet under its caption, with a box to tick for each cut layer, and is worked out again when the nesting or CNC setup changes. The ticks are for that screen only, and start again when the nesting is worked out again.
+- **After the CNC files:** once every DXF is saved, **CNC files** saves one text file with every router sheet's job sheet, named for the model and the day (`Kitchen job sheets 2026-11-15.txt`). It names each sheet by the default name **CNC files** gives its DXF, and says so: if you saved a DXF under another name, find its sheet by the label inside the file, which the job sheet prints too. Cancelling this file leaves the DXFs as they are, and the status line says which were saved.
+- **In the PDF:** after each router sheet's page, then the part labels at the end. The job sheet and label pages are on the label paper set in **CNC setup > Job sheet** (letter or A4); the rest of the booklet stays letter.
 
 The track saw's sheets are not router sheets: they have no DXF and no job sheet. Each job sheet names them and points to their cut sequence and the hand work list.
 
 ### What is on it
 
-- **The sheet**, named exactly as its DXF's file name and its label inside the file ("2. Sheet 1 of 2 - 4 x 4 sheet, 3/4 - Cabinet plywood"); its stock.
+- **The sheet**, named exactly as its DXF's default file name and its label inside the file ("2. Sheet 1 of 2 - 4 x 4 sheet, 3/4 - Cabinet plywood"); its stock and the material its feeds are read for ([below](#material)).
 - **The thickness to type into the CAM job.** Measure the sheet with calipers and type what you measure. The stock's thickness on the sheet is only what was entered in **Stock…**, not a measurement.
 - **XY zero:** the sheet's lower-left corner is 0,0, and the outer `STOCK` rectangle's size in millimetres, to measure after import ([Check the scale](#1-check-the-scale)). **Z zero:** on the top of the sheet ([Set the depths from the top of the sheet](#4-set-the-depths-from-the-top-of-the-sheet)).
-- **A tick box for every layer in the file**, the file's own layers in its order, and no others. This is the printed form of the CAM guides' safety rule: every layer except `STOCK` and `LABELS` must have a toolpath. For each layer:
+- **The file's own layers, in its order, and no others.** Each cut layer has a box to tick: this is the printed form of the CAM guides' safety rule, every layer except `STOCK` and `LABELS` must have a toolpath. `STOCK` and `LABELS` are listed as reference, with no box. The DXF's layer table also always has layer `0`, empty: the sheet says it needs no toolpath. For each cut layer:
   - the toolpath (outside profile, inside profile for a cutout, pocket, or pocket the circle) and its depth: the number in the layer's name, or through: the measured thickness plus about 0.5 mm (0.02 in);
-  - the bit, from CNC setup ([below](#which-bit-each-layer-gets));
+  - the bit, from CNC setup ([below](#which-bit-each-layer-gets)), or **CHOOSE A BIT** when none is set;
   - the narrowest shape on that layer in this sheet, measured from the parts, and whether the bit is narrower than it;
-  - the dial and RPM, the chipload, the feed, the ramp and the depth per pass (for a compression bit, the first pass too), as **CNC setup > Feeds** works them out for that bit, the layer and the job sheet's material, each with its confidence and source;
+  - the dial and RPM, the chipload, the feed, the ramp and the depth per pass (for a compression bit, the first pass too), as **CNC setup > Feeds** works them out for that bit, the layer and the sheet's material, each with its confidence and sources;
   - every warning CNC setup gives for that bit and layer, as **Stop** or **Check**.
-- **The cut order and the tool changes:** drills and pockets first, cutouts next, profiles last ([Give each layer its toolpath](#2-give-each-layer-its-toolpath)). Within that order, the layers that share a bit are cut together, and the bits are put in the order with the fewest changes; the sheet says how many bits and how many changes. `FLIP_` layers come last, as a second setup. A layer with no bit is left out of the order and named.
-- **The parts, smallest first**, each with its size and which face is up ([below](#which-face-is-up)). Parts as narrow as the hold-down width or narrower are marked **Hold down** ([Hold the parts down](#6-hold-the-parts-down)).
+- **The cut order and the tool changes:** drills and pockets first, cutouts next, profiles last ([Give each layer its toolpath](#2-give-each-layer-its-toolpath)). Within that order, the layers that share a bit are cut together, and the bits are put in the order with the fewest changes; the sheet says how many bits and how many changes. `FLIP_` layers come last, as a second setup; when the second setup also changes the bit, it says both. Every cut layer is in the order: a layer with no bit is a numbered step reading **CHOOSE A BIT**, counted as a bit of its own (the count says how many are still to choose). A step whose bit does not fit a layer says **DOES NOT FIT** and names the layer.
+- **The parts, smallest first**, each with its size, which face is up ([below](#which-face-is-up)) and its grain. Parts as narrow as the hold-down width or narrower are marked **Hold down** ([below](#hold-down)).
 - **`FLIP_` notes:** which parts have cuts in the other face, and that a `FLIP_` shape is drawn where its cut is when you look down through the part from the face that is up.
 - **The compression bit's first pass**, whenever a layer is cut with a compression bit: it must be deeper than the bit's up-cut section, with the depth for that bit when its up-cut length is known.
 
@@ -461,34 +461,53 @@ Set in **CNC setup > Job sheet**:
 
 | Layer | Bit | Starts as |
 |---|---|---|
-| `PROFILE_THRU` | the **Profile bit** (CNC setup > Tools) | none chosen: the job sheet says so |
+| `PROFILE_THRU` | the **Profile bit** (CNC setup > Tools) | none chosen: the job sheet says **CHOOSE A BIT** |
 | `CUTOUT_THRU` | **Cutouts** | the profile bit |
 | `POCKET_…` | **Pockets** | the 1/4 in down-cut |
 | a `POCKET_…` layer with a shape narrower than the pocket bit | **Narrow grooves** | the 1/8 in end mill |
 | `DRILL_…` | **Holes** | the 1/8 in end mill |
 
-These follow the research's starting rows: a down-cut for dados and pockets, a 1/8 in end mill for 5 mm and 6 mm holes and fine features ([The starting values](#feeds)).
+These follow the research's starting rows: a compression bit to profile, a down-cut for dados and pockets, a 1/8 in end mill for 5 mm and 6 mm holes and fine features ([The starting values](#feeds)).
 
-**A bit must be narrower than the narrowest shape on its layer in that sheet.** Sawhorse measures each shape from the part: a groove's width, an L of two dados at its narrower arm, a hole's diameter, an opening's narrowest place, and for the outlines the gap between parts and any notch. A deeper pocket that crosses a shape, an opening, and the waste outside a notched part are cut anyway, so they do not count as narrow places. A shape with slanted edges is measured across its outline and says so: check its narrowest place on the drawing.
+**A bit must be narrower than the narrowest shape on its layer in that sheet.** Sawhorse measures each shape from the part:
+- a groove's width, an L of two dados at its narrower arm, a hole's diameter, an opening's narrowest place;
+- a pocket as the file draws it, so a dado that runs out of its part is measured past the edge, into the gap ([Leave the dados that cross the outline as they are](#3-leave-the-dados-that-cross-the-outline-as-they-are));
+- for the outlines, the gap between parts (Kerf), and a notch only across the way it is closed. A notch open on two sides (an outline corner, as on a stretcher or a bottom) puts no limit on the bit: only its inside corner keeps the bit's radius. A slot open on one side, in the middle of an edge, limits the bit to its width.
 
-When a pocket layer's shape is narrower than the pocket bit, the job sheet says so, names the shape, and cuts the layer with the narrow-groove bit if that fits. In a metric document the back's groove and the drawer bottoms' grooves are 6.2 mm wide: a 1/4 in (6.35 mm) bit does not fit, and the sheet says it. When the bit set for a layer does not fit, it names the smallest bit in your library that does, or says that none does.
+A deeper pocket that crosses a shape, an opening, and the waste outside a notched part are cut anyway, so they do not count as narrow places. A shape with slanted edges is measured across its outline and says so: check its narrowest place on the drawing. A bit exactly as wide as a shape does not fit: it could cut it only as a slot along its centre line (an on-line toolpath), and the sheet says that too.
+
+When a pocket layer's shape is narrower than the pocket bit, the job sheet says so, names the shape, and cuts the layer with the narrow-groove bit if that fits. In a metric document the back's groove and the drawer bottoms' grooves are 6.2 mm wide: a 1/4 in (6.35 mm) bit does not fit, and the sheet says it.
+
+**When the bit does not fit, or none is set,** the sheet names the largest bit in your library that does fit and whose flutes reach the layer's depth (for a through cut, the sheet's thickness plus 0.5 mm), of the layer's own type first: a compression bit for a profile or cutout in a faced sheet, a down-cut for pockets, an end mill for holes and narrow grooves. A bit of another type is named as such. A bit whose cutting length is not typed is never said to reach: the sheet names it as one that would fit if its flutes reach that deep. When no bit is suitable, it says so. When the bit set for a layer fits and a larger one in your library fits too, the sheet says so (fewer passes); it never changes the bit for you.
+
+### Material
+
+The feeds on each sheet are read for its material, set in **CNC setup > Job sheet**: one for every sheet, and one for each of the nesting's router stocks if you want ("4 x 4 sheet, 1/4": Baltic birch). It starts as laminate-faced Baltic birch, the most cautious of the materials, so the warnings for a laminate face show until you set it. Each job sheet prints its material and where it was set.
 
 ### Which face is up
 
-Read from each part's measured cuts, not from its name. Sawhorse draws each part with the face its cuts are in facing up ([Know which face is up](#5-know-which-face-is-up)), so:
+Read from each part's measured cuts, not from its name. Sawhorse draws each part with the face its cuts are in facing up ([Know which face is up](#5-know-which-face-is-up)), and the job sheet and the label say that face by its cuts:
 - a part with 35 mm hinge cups: its back is up (a door's show face is down);
-- a part with dados, grooves or blind holes: the face they are in is up (on a carcass part, the inside face);
+- a part with dados, grooves or blind holes: the face they are in, named by them ("the face with its dados or grooves and its 5 mm holes"). On a carcass part that is the inside face; on a drawer back the runner's rear hook holes are in its rear face, the outside of the drawer box. The sheet does not guess which: it names the cuts;
 - a part with no blind cuts (only holes through it, or none): either face. If its outline is notched, turned over it is its mirror image;
 - a part with cuts in both faces: the face with the most cuts first, then turn it over for the `FLIP_` layers;
 - a part whose cuts could not be measured: not known. Check the model.
 
 ### Hold-down
 
-The width under which a part is marked **Hold down** is **CNC setup > Job sheet > Hold-down width**. Left empty, it is 4 in (100 mm in a metric document): Sawhorse's own default, not a standard. No source found gives a width; [Hold the parts down](#6-hold-the-parts-down) names 3 in nailers and 4 in stretchers as the parts that need it most, and a part as wide as the width is marked too. Change it to suit how you hold sheets down.
+The width under which a part is marked **Hold down** is **CNC setup > Job sheet > Hold-down width**. Left empty, it is 5 in (125 mm in a metric document): Sawhorse's own default, not a standard. No source found gives a width; [Hold the parts down](#6-hold-the-parts-down) names 3 in nailers, 4 in stretchers and drawer sides as the parts that need it most, and 5 in takes all three, the 4 9/16 in drawer sides of the Base · drawer over 2 doors among them. A part as wide as the width is marked too. Change it to suit how you hold sheets down.
 
 ### Part labels
 
-The PDF's last pages are one label per part on the router's sheets, sheet by sheet. Each has the part's tag and name, its cabinet, its sheet's number ("2. Sheet 1 of 2"), its size (width × length × thickness), a grain arrow when it has grain, which face was up on the router, and a **Banding** line to write on: Sawhorse does not know edge banding yet. The first page of the PDF says which pages the labels are on.
+The PDF's last pages are one label per part on the router's sheets, sheet by sheet. Each has:
+- the part's tag and name;
+- its sheet's number ("2. Sheet 1 of 2") and its cabinet, in that order, so a long cabinet name is what is cut short, never the number;
+- its size (width × length × thickness);
+- its grain in words with the side it runs along ("Grain along the length (the 34 1/2 in side)"), and an arrow;
+- which face was up on the router;
+- a **Banding** line to write on: Sawhorse does not know edge banding yet.
+
+The first page of the PDF says which pages the labels are on.
 
 **CNC setup > Job sheet** sets the paper (letter or A4), the label size (4 × 2 in, the default; 4 × 3 1/3 in; or 105 × 74 mm) and cut lines round each label for plain paper. The labels are laid out edge to edge in a grid centred on the page: 4 × 2 in labels are 2 across and 5 down on letter. Sawhorse names no label product and has no source for any maker's layout, so print one page on plain paper and hold it against your label sheet before printing on labels. On plain paper, cut along the lines and tape each label to its part.
 
