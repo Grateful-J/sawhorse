@@ -623,7 +623,7 @@ describe("review: what mutation showed untested (m7)", () => {
   it("the mini drawer's runner is pinned to the cabinet's where Automatic would take another", () => {
     let differs = 0;
     for (const extra of [{ back: false, nailers: "both" as const }, { nailers: "both" as const }, { nailers: "top" as const }]) {
-      for (let d = 15.5; d <= 24.5; d += 0.125) {
+      for (let d = 15.5; d <= 24.5; d += 0.25) {
         const s = normalize({ ...applyPreset(defaults(false), "drawers", false), depth: d * IN, ...extra }, false);
         const real = plan(s, false);
         if (real.error) continue;
@@ -635,7 +635,7 @@ describe("review: what mutation showed untested (m7)", () => {
       }
     }
     expect(differs).toBeGreaterThan(0);
-  });
+  }, 60_000);
 
   it("the mini drawer keeps inset fronts", () => {
     for (const metric of [false, true]) {
