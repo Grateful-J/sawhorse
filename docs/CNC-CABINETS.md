@@ -533,7 +533,9 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 | **Hardware** | What each part carries, times how many of that part there are. Items with a part number are added up by part number; the rest by their words. |
 | **Tools** | A drilling template and its tool set: one each, however many cabinets need them. Shown only when a part asks for one. |
 
-The hardware rides on the parts, in the model. So a copied cabinet doubles its hardware and a deleted one takes it away. A part you untick in the cut list (left out of the totals) brings no hardware, and a line says so. With **Visible only**, hidden parts and their hardware are left out too.
+The hardware rides on the parts, in the model. So a copied cabinet doubles its hardware and a deleted one takes it away. Exploding a part (a door component) moves its hardware onto its solid, and the status line says so; nothing bought is dropped. A part you untick in the cut list (left out of the totals) still brings its hardware while **Count hardware on parts left out of the cut list** is ticked (the default: a missing hinge is worse than a spare), and a line names those parts. With **Visible only**, hidden parts and their hardware are left out. A copy scaled or mirrored by hand keeps the original's hardware: a line names it ("scaled copy: hardware counted as the original's; check the hinge count").
+
+While a change is being nested again, the sheet and board rows are greyed and say so; if the nesting fails, the reason is shown above the list even though the older sheets stay on screen. The list's **CSV** is off until the cut list and the nesting are both of the model as it is, so a file never mixes hardware from one moment with sheets from another. The nesting is worked out only while the Nesting or Shopping list section is open, three quarters of a second after the last change when only the Shopping list is (a run of edits is nested once).
 
 ### The hardware the Cabinet generator puts on each part
 
@@ -541,26 +543,26 @@ Part numbers are only those printed in Blum's catalogues. Anything Blum does not
 
 | Part | Each copy carries |
 |---|---|
-| A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: 0 mm with pre-mounted system screws, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe). If the Overlay row needs another plate height, the plate is named in words with that height. Two 3.5 x 17 mm screws per hinge, cup to door. A pull and its two screws, when the door has a pull. |
-| A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give. A pull and its two screws, when the front has one (not a finger notch). The drilling template (**T65.1600.01**, or **T65.1000.02** in Europe) and tool set **T65.9000** go on the Tools list once. |
+| A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: where the plate's holes are drilled (overlay doors, holes on) and the Overlay row settles on a 0 mm plate, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe), with pre-mounted system screws; otherwise (an inset door, holes drilled by hand, another plate height) the plate is named in words. Two screws per hinge, cup to door: **606N** (#6 x 5/8 in, Blum Inc.) or **609.1700** (3.5 x 17 mm, Blum Europe). A pull and its two screws, when the door has a pull. |
+| A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give (Blum names a 14.5 mm system screw for the 560H but no hole depth for it, and the holes here are 13 mm deep). A pull and its two screws, when the front has one (not a finger notch). A trash pull-out's bins, in words with the sizes from the maker's drawing (no order number). Once, on the Tools list: the drilling template (**T65.1600.01** with drill bits **DB-2.5mm** and **DB-6mm**, or **T65.1000.02** in Europe) and tool set **T65.9000**. |
 | A loose shelf | Four 5 mm shelf pins (Blum sells none: buy the ones that fit a 5 x 10 mm hole). |
 
-The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the runner screws are named in words for a pair of runners, because the holes are not drilled here.
+The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the plates and the runner screws are named in words, because their holes are not drilled here.
 
 ### Prices
 
 Every price field starts empty. Sawhorse ships no prices.
 
-- Type what you pay in a row's field. Sheets are priced per sheet, lumber per board foot of the boards you buy, hardware per piece or pair.
+- Type what you pay in a row's field, the way your browser's language writes numbers: in US English "1,250.50", in German "1.234,50". A number that could be read two ways ("1,25" in US English: 1.25 or 125?) is refused with how to write it, never guessed. Sheets are priced per sheet, lumber per board foot of the boards you buy, hardware per piece or pair.
 - A row with no price says **price not set**. It is left out of the total, never counted as 0. Under the totals, a line names every row the total leaves out.
 - **pack** (hardware) is how many pieces or pairs come in a pack; the price is then per pack. **roll** (banding) is the metres in a roll. Empty: sold singly, or by the metre. Blum gives no pack sizes, so none is filled in.
 - **Prices in** is the currency (a three-letter code: USD, CAD, EUR). It starts from your browser's region when that is a common one; empty writes plain numbers. Money is written the way your browser's language writes it.
 
-**Overage.** Each group has an overage percentage, added to what the parts need before rounding up. It starts at 10% for sheet goods, 20% for lumber, 15% for banding and 0% for hardware. These are assumptions, not facts: set your own. Tools have no overage.
+**Overage.** Each group has an overage percentage, added to what the parts need before rounding up, so it buys more only when it reaches past the next whole sheet, pair or pack (10% on 24 pins in packs of 50 is still one pack). It starts at 0% for sheet goods (the nesting's sheet count is exact; add overage for spares or mistakes), 20% for lumber, 15% for banding and 0% for hardware. These are assumptions, not facts: set your own. Tools have no overage.
 
 **Rounding.** What you buy is rounded up to what can be bought: whole sheets and boards, whole pairs, whole packs, whole rolls. Banding by the metre is rounded up to the next centimetre. A row says what it needs and what to buy ("Needs 3 sheets · buy 4 sheets (10% over; 3 sheets without)").
 
-**Totals.** Two tiles: the total with the overage, and without it. Both count priced rows only.
+**Totals.** Two tiles: the total with the overage, and without it. Both count priced rows only. Each row's cost is rounded to the cent and the totals add those, so a saved list adds up.
 
 **Labour you saved (for fun).** Hours times an hourly rate. It is not in the total.
 
@@ -570,7 +572,7 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 
 ### Files
 
-- **CSV** (in the list's header) saves every row: group, item, part number, material, needed, overage, to buy with and without it, unit price, price per, cost with and without overage, the parts it rides on, and notes. Then the total, the rows it leaves out, and the labour line. Money is written as plain numbers; the header names the currency.
+- **CSV** (in the list's header) saves every row (a cell that a spreadsheet would run as a formula, such as a name starting with "=", is written with a leading ' so it shows as text; every CSV Sawhorse writes does this): group, item, part number, material, needed, overage, to buy with and without it, unit price, price per, cost with and without overage, the parts it rides on, and notes. Then the total, the rows it leaves out, and the labour line. Money is written as plain numbers; the header names the currency.
 - With the Shopping list open, the Nesting **PDF** booklet has a shopping list page after its summary.
 
 ## Dialling in: what to change when something is off
@@ -617,4 +619,5 @@ Prices, pack sizes, overage, currency and the labour line are your shop's, not t
 - Adjustable shelves get a band of pin holes around each shelf (five holes), not the full height.
 - A base frame's dado clearance is fixed at 0.008 in (0.2 mm): it has no field.
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
-- The shopping list does not work out edge banding yet, and names no screw part numbers for Blum Europe's runners and locking devices (Blum's pages read do not give them).
+- The shopping list does not work out edge banding yet, and names no screw part numbers for Blum Europe's runners and locking devices (the pages read give none for the holes drilled here).
+- Hardware is put on parts, never on a whole cabinet: a cabinet is an assembly, and the cut list counts its parts.
