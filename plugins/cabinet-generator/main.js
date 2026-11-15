@@ -18,7 +18,7 @@
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
-import { applyPreset, BAND, bandList, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
 import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
@@ -503,7 +503,7 @@ function bandFields() {
   /** @type {Field[]} */
   const out = [
     { type: "checkbox", id: "band", label: "Band the edges", value: s.band },
-    help("Each banded edge is cut short by its band's thickness, so the part comes out at its size with the band on. Holes, dados and notches stay where they are in the finished part: Blum measures from the finished edge. No maker's rule for this was found: it is the geometry."),
+    help("Each banded edge is cut short by its band's thickness, so the part comes out at its size with the band on. Holes, dados and notches stay where they are in the finished part: Blum gives the boring distance from the door's edge and the 37 mm lines from the side's front edge, and with a band on, that edge is the band's face. No maker's rule for this was found: it is the geometry. The model shows the blanks: a banded edge stands a band short, and a size measured in the model is the cut size."),
   ];
   if (!s.band) return out;
   out.push(pick("bandCount", "Bands", String(s.bandCount), [["1", "One band"], ["2", "Two bands"], ["3", "Three bands"]]));
@@ -518,19 +518,19 @@ function bandFields() {
     if (size === "custom") out.push({ type: "number", id: `${id}Thick`, label: "Measured thickness", unit: "length", value: thick, min: BAND.minThick, max: BAND.maxThick });
     out.push({ type: "text", id: `${id}Name`, label: "Name or colour", value: name, placeholder: "White PVC" }, len(`${id}Width`, "Width", width));
   });
-  out.push(help(`Measure the band with calipers, as you did the plywood, and type what it measures: REHAU's 1 mm band is made to +-0.1 mm. REHAU sells 0.018 in, 1, 2 and 3 mm, 15/16 in wide among other widths. The band must be at least as wide as the stock it covers.`));
+  out.push(help(`Measure the band with calipers, as you did the plywood, and type what it measures: REHAU's 1 mm band is made to +-0.1 mm. REHAU sells 0.018 in (0.457 mm), 1, 2 and 3 mm, 15/16 in wide among other widths. Sawhorse's own limits, not sourced rules: at most 1/4 in thick, and at least as wide as the stock it covers.`));
   const list = bandList(s, planMetric());
   const which = [["none", "No banding"], ...list.map((b) => /** @type {[string, string]} */ ([String(b.n), `Band ${b.n} · ${b.label}`]))];
   out.push(heading("Which edges"));
   out.push(pick("bandFronts", "Doors and drawer fronts, all four edges", s.bandFronts, /** @type {[string, string][]} */ (which)));
   out.push(pick("bandCarcass", "Front edges of the sides, top, bottom, fixed shelves and front stretcher", s.bandCarcass, /** @type {[string, string][]} */ (which)));
   out.push(pick("bandShelves", "Adjustable shelves, front edge", s.bandShelves, /** @type {[string, string][]} */ (which)));
-  out.push(help("The starting choices follow the AWS standard (2009): a frameless cabinet bands the visible front edges of its sides, tops, bottoms, shelves and stretchers; an adjustable shelf's three hidden edges stay bare. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. Finished ends are not made by this plugin yet."));
+  out.push(help("The starting choices follow the AWS standard (2009): it counts the \"visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers\" as exposed, and an adjustable shelf's three hidden edges as concealed. Nailers are not banded here: they sit behind the back, at the rear edge. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. Finished ends are not made by this plugin yet."));
   out.push(heading("Edgebander and waste"));
   out.push(len("bandPremill", "Edgebander pre-mill", s.bandPremill));
   out.push(help("Edgebanders only: what the jointing cutter takes off each edge before the band goes on (Felder and SCM: 0 to 3 mm). Each banded edge's blank is cut that much larger. Iron-on banding: 0."));
-  out.push(len("bandWasteEnd", "Waste per banded side", s.bandWasteEnd), { type: "number", id: "bandWastePct", label: "Then add, %", unit: "none", value: s.bandWastePct, min: 0, max: BAND.maxWastePct });
-  out.push(help(`Microvellum's default, not a standard: ${metric() ? "25.4 mm" : "1 in"} per banded side, then 5%. The shopping list adds its own banding overage on top (15% to start): set that to 0% if this allowance is all you want.`));
+  out.push(len("bandWasteEnd", "Waste per banded side", s.bandWasteEnd));
+  out.push(help(`Microvellum's default, not a standard: ${metric() ? "25.4 mm" : "1 in"} per banded side, then 5% of the total. Each part carries the ${metric() ? "25.4 mm" : "1 in"} a side; the 5% is the shopping list's banding overage, added once. An edge with a notch at its end (the toe kick, a rail's tongues) counts its whole run: the band runs across the notch and is trimmed by hand at its inside corner.`));
   out.push(heading("Banded parts"), { type: "table", id: "bandRows", columns: ["Part", "Qty", "Banded edges", "Band", "Finished", "Cut", "Band each"], rows: [], align: ["left", "right", "left", "left", "right", "right", "right"] });
   out.push({ type: "note", id: "bandTotal", text: "" });
   return out;
@@ -550,7 +550,8 @@ function explainBand(fields, planned) {
     rows: banded.map((p) => {
       const on = /** @type {import("./cabinet.js").PartBand[]} */ (p.bands);
       const metres = (p.bom ?? []).filter((x) => x.unit === "m").reduce((t, x) => t + x.qty, 0);
-      return [p.name, p.copies.length, on.length === 4 ? "all four" : on.map((e) => e.edge).join(", "), [...new Set(on.map((e) => e.band))].map((n) => `Band ${n}`).join(", "), face(/** @type {[number, number, number]} */ (p.finished)), face(p.blank), `${metres.toFixed(3)} m`];
+      const notched = on.some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9);
+      return [p.name, p.copies.length, `${on.length === 4 ? "all four" : on.map((e) => e.edge).join(", ")}${notched ? " (notched end: trim by hand)" : ""}`, [...new Set(on.map((e) => e.band))].map((n) => `Band ${n}`).join(", "), face(/** @type {[number, number, number]} */ (p.finished)), face(p.blank), `${metres.toFixed(3)} m`];
     }),
   };
   /** @type {Map<string, number>} */
@@ -559,7 +560,7 @@ function explainBand(fields, planned) {
   fields.bandTotal = {
     text: planned
       ? banded.length
-        ? `In all, with waste: ${[...total].map(([item, q]) => `${q.toFixed(2)} m of ${item.replace(/^Edge banding, /, "")}`).join("; ")}. Cut sizes are what the CNC files draw; the shopping list counts the band.`
+        ? `In all, with waste: ${[...total].map(([item, q]) => `${q.toFixed(2)} m of ${item.replace(/^Edge banding, /, "")}`).join("; ")}. Cut sizes are what the CNC files draw, and what the model shows; the shopping list counts the band.${banded.some((p) => (p.bands ?? []).some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9)) ? ` ${END_NOTCH}.` : ""}`
         : "No part of this cabinet is banded: pick a band for a kind of part above."
       : "",
   };

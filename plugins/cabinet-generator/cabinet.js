@@ -46,7 +46,7 @@ const MM = 0.001;
 /** Blum CLIP top hinges with BLUMOTION (soft close) or self-closing (a spring, no damper).
  * @typedef {"soft" | "self"} HingeClose */
 /** A band's thickness: one REHAU sells (0.018 in, 1, 2, 3 mm), or measured and typed.
- * @typedef {"0.45" | "1" | "2" | "3" | "custom"} BandSize */
+ * @typedef {"0.018in" | "1" | "2" | "3" | "custom"} BandSize */
 /** Which band a kind of part takes: none, or band 1 to 3 of the list. @typedef {"none" | "1" | "2" | "3"} BandPick */
 /**
  * @typedef {{
@@ -72,7 +72,7 @@ const MM = 0.001;
  *   band2Size: BandSize, band2Thick: number, band2Name: string, band2Width: number,
  *   band3Size: BandSize, band3Thick: number, band3Name: string, band3Width: number,
  *   bandFronts: BandPick, bandCarcass: BandPick, bandShelves: BandPick,
- *   bandPremill: number, bandWasteEnd: number, bandWastePct: number,
+ *   bandPremill: number, bandWasteEnd: number,
  * }} Sizes
  */
 /** @typedef {import("./mesh.js").Prism} Prism */
@@ -100,7 +100,9 @@ const MM = 0.001;
  * bottom or top edge, as it stands in the cabinet), the band (1 to 3, its thickness, width and
  * name), and the edge's banded length, finished, from `span[0]` to `span[1]` along it (a notch at
  * an end shortens it: a rail's tongues, a side's toe kick).
- * @typedef {{ edge: EdgeName, band: number, thickness: number, width: number, name: string, length: number, span: [number, number] }} PartBand */
+ * `run` is the edge's whole length, notches and all: an edgebander runs the band across a notch at
+ * an end and it is trimmed off by hand at the notch's inside corner, so the band bought is the run.
+ * @typedef {{ edge: EdgeName, band: number, thickness: number, width: number, name: string, length: number, span: [number, number], run: number }} PartBand */
 /** @typedef {"front" | "left" | "right" | "bottom" | "top"} EdgeName */
 /** What is bought for each copy of a part beyond its wood, for the shopping list: the kernel's
  * part attribute `bom` (docs/format.md), sent with `set_bom`. Part numbers only where this
@@ -396,22 +398,28 @@ const FINGER_ROOM = 25 * MM;
  * The rule is geometry, not a maker's: a part is designed at its finished size, and each banded
  * edge's blank is cut short by that band's thickness, so blank plus band comes out at the size
  * designed. No edgeband or machine maker's rule for deducting the band from the cut size was
- * found; trade software (Mozaik, OptiCut, Promob, Microvellum) does deduct it. Every cut (holes,
- * dados, notches) stays where it is in the finished part: Blum measures the cup's boring distance
- * and the 37 mm setbacks from the finished edge. On the blank each cut is then the band's
- * thickness nearer the raw edge, and the planner's 3 mm of wood (WEB) is kept to that raw edge.
+ * found. Of the trade software read, OptiCut deducts the edging thickness "when working in net
+ * dimensions"; Mozaik's help says to set the band to 0 mm when the bander pre-mills it, "to
+ * ensure Mozaik is not deducting anything"; Promob's worked example subtracts the band; Microvellum
+ * offers pre-mill modes. Every cut (holes, dados, notches) stays where it is in the finished part:
+ * Blum gives the cup's boring distance from the door's edge, and the plates and runner screws
+ * 37 mm from the side's front edge; with a band on, that edge is the band's face. On the blank
+ * each cut is then the band's thickness nearer the raw edge, and the planner's 3 mm of wood (WEB)
+ * is kept to that raw edge (after any pre-mill).
  *
- * - Thicknesses: REHAU's stock sizes, 0.018 in, 1 mm, 2 mm and 3 mm, in 15/16 in among other
- *   widths (REHAU edgeband technical data, p. 2); Ostermann's standard widths include 23 mm.
+ * - Thicknesses: REHAU's stock sizes, .018 in (0.457 mm), 1 mm, 2 mm and 3 mm, in 15/16 in among
+ *   other widths (REHAU edgeband technical data, p. 2); Ostermann's standard widths include 23 mm.
  *   Measure your band with calipers: REHAU's tolerance is +-0.10 to +-0.15 mm.
  * - Which edges (AWI/AWMAC/WI Architectural Woodwork Standards, 2009, sec. 10): frameless
  *   "TYPE A" cabinets band the front edges of the body; the "visible front edges of stretchers,
- *   ends, divisions, tops, bottoms, shelves" are exposed; "the three non-visible edges of
- *   adjustable shelves" are concealed. Doors and drawer fronts: one owner's spec (University of
- *   Maryland, section 123200) bands "all exposed edges", 3 mm PVC at doors and drawer fronts and
- *   1 mm elsewhere: one spec, not a standard.
+ *   ends, divisions, tops, bottoms, shelves, and nailers" are exposed; "the three non-visible
+ *   edges of adjustable shelves" are concealed. Nailers are not banded here: they sit behind the
+ *   back, at the rear edge, and show no front edge. Doors and drawer fronts: one owner's spec
+ *   (University of Maryland, section 123200) bands "all exposed edges", 3 mm PVC at doors and
+ *   drawer fronts and 1 mm elsewhere: one spec, not a standard.
  * - Waste: Microvellum's edgeband report adds 1 in per banded side, then 5%: a software default,
- *   not a standard.
+ *   not a standard. Each part carries the 1 in per banded side (the end trim, per edge); the 5% is
+ *   the shopping list's banding overage, applied once to the total.
  * - Pre-mill: an edgebander's jointing cutter takes 0 to 3 mm off the edge before the band goes
  *   on (Felder tempora F1000 0-3, SCM olimpic K360 up to 3); the blank is cut that much larger.
  *   An iron-on band takes none.
@@ -419,33 +427,34 @@ const FINGER_ROOM = 25 * MM;
 export const BAND = {
   /** The thicknesses offered, mm, with what the select says. */
   sizes: /** @type {[Exclude<BandSize, "custom">, number, string][]} */ ([
-    ["0.45", 0.45, "0.45 mm (0.018 in)"],
+    // REHAU prints the thin band as .018 in, not in millimetres: 0.4572 mm.
+    ["0.018in", 0.018 * 25.4, "0.018 in (0.457 mm)"],
     ["1", 1, "1 mm"],
     ["2", 2, "2 mm"],
     ["3", 3, "3 mm"],
   ]),
-  /** A typed thickness: at least this... */
+  /** A typed thickness: at least this... (Sawhorse's limit, not a sourced rule) */
   minThick: 0.1 * MM,
-  /** ... and at most 1/4 in: thicker is solid-wood edging, not a band. */
+  /** ... and at most 1/4 in: Sawhorse's limit, not a sourced rule (thicker is solid-wood edging). */
   maxThick: 0.25 * IN,
   /** The widest band: 4 in (Ostermann cuts edging to any width from 12 to 100 mm). */
   maxWidth: 4 * IN,
   /** The deepest edgebander pre-mill (Felder tempora F1000, SCM olimpic K360). */
   maxPremill: 3 * MM,
-  /** A waste allowance per banded side of at most a foot, and of at most 100%. */
+  /** A waste allowance per banded side of at most a foot. */
   maxWasteEnd: 12 * IN,
-  maxWastePct: 100,
   /** The longest name a band may have. */
   maxName: 40,
-  /** Microvellum's default waste: 1 in per banded side, then 5%. */
+  /** Microvellum's default waste per banded side: 1 in. (Its 5% is the shopping list's overage.) */
   wasteEnd: 1 * IN,
-  wastePct: 5,
 };
 /** Where each edge is on a part's blank: its axis, and the low (0) or high (1) end of it. Fronts
  * are [width, thickness, height]; sides [thickness, depth, height]; rails and shelves
  * [length, depth, thickness]: a front edge is low on the depth.
  * @type {Record<EdgeName, [0 | 1 | 2, 0 | 1]>} */
 export const EDGE_AXES = { front: [1, 0], left: [0, 0], right: [0, 1], bottom: [2, 0], top: [2, 1] };
+/** What a banded edge with a notch at an end asks of you. */
+export const END_NOTCH = "The edge has a notch at its end (the toe kick, or the tongues): on an edgebander the band runs across the notch; trim it off by hand at the notch's inside corner (the band counted is the edge's whole run)";
 /** The four edges of a door or drawer front. @type {EdgeName[]} */
 const FRONT_EDGES = ["left", "right", "bottom", "top"];
 /** Parts that move: a band on a front is never "against" them, nor theirs against the carcass. */
@@ -568,7 +577,7 @@ function bandDefaults(width) {
     band2Size: /** @type {BandSize} */ ("3"), band2Thick: 3 * MM, band2Name: "", band2Width: width,
     band3Size: /** @type {BandSize} */ ("2"), band3Thick: 2 * MM, band3Name: "", band3Width: width,
     bandFronts: /** @type {BandPick} */ ("1"), bandCarcass: /** @type {BandPick} */ ("1"), bandShelves: /** @type {BandPick} */ ("1"),
-    bandPremill: 0, bandWasteEnd: BAND.wasteEnd, bandWastePct: BAND.wastePct,
+    bandPremill: 0, bandWasteEnd: BAND.wasteEnd,
   };
 }
 
@@ -726,11 +735,10 @@ export function normalize(saved, metric) {
     bandShelves: pick("bandShelves", /** @type {const} */ (["none", "1", "2", "3"])),
     bandPremill: num("bandPremill"),
     bandWasteEnd: num("bandWasteEnd"),
-    bandWastePct: num("bandWastePct"),
   };
 }
 
-const BAND_SIZES = /** @type {const} */ (["0.45", "1", "2", "3", "custom"]);
+const BAND_SIZES = /** @type {const} */ (["0.018in", "1", "2", "3", "custom"]);
 /** A band's name or colour as typed: text without control characters, trimmed, at most 40
  * characters (it goes into the shopping list's item, which takes 128). @param {unknown} v */
 const bandName = (v) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, BAND.maxName).trim() : "");
@@ -1014,7 +1022,7 @@ export function bandList(s, metric) {
   return raw.slice(0, count).map((b, i) => {
     const preset = BAND.sizes.find((x) => x[0] === b.size);
     const thickness = preset ? preset[1] * MM : b.thick;
-    const thick = preset ? `${preset[1]} mm` : `${Math.round((thickness / MM) * 100) / 100} mm`;
+    const thick = preset ? (preset[0] === "0.018in" ? "0.018 in" : `${preset[1]} mm`) : `${Math.round((thickness / MM) * 100) / 100} mm`;
     return { n: i + 1, thickness, width: b.width, name: b.name, label: `${thick} x ${exactThickness(b.width, metric)}${b.name ? `, ${b.name}` : ""}` };
   });
 }
@@ -1030,16 +1038,18 @@ export function bandFor(s, kind, metric) {
 }
 
 /** "Band 1 (1 mm)": how a message names a band. @param {Band} b */
-const bandWord = (b) => `Band ${b.n} (${Math.round((b.thickness / MM) * 100) / 100} mm)`;
+const bandWord = (b) => `Band ${b.n} (${Math.round((b.thickness / MM) * 1000) / 1000} mm)`;
 
 /** The edge banding settings, checked: null, or what is wrong. Off, nothing is checked.
  * @param {Sizes} s @param {boolean} metric @returns {string | null} */
 function bandIssue(s, metric) {
   if (!s.band) return null;
+  // Nothing picked: nothing is banded, and nothing of the list is used.
+  if (s.bandFronts === "none" && s.bandCarcass === "none" && s.bandShelves === "none") return null;
   if (!Number.isInteger(s.bandCount) || s.bandCount < 1 || s.bandCount > 3) return "Edge banding: list 1 to 3 bands.";
   const list = bandList(s, metric);
   for (const b of list) {
-    if (!(b.thickness >= BAND.minThick - 1e-9 && b.thickness <= BAND.maxThick + 1e-9)) return `Band ${b.n} must be at least 0.1 mm and at most 6.35 mm (1/4 in) thick: thicker is solid-wood edging, not a band.`;
+    if (!(b.thickness >= BAND.minThick - 1e-9 && b.thickness <= BAND.maxThick + 1e-9)) return `Band ${b.n} must be at least 0.1 mm and at most 6.35 mm (1/4 in) thick, Sawhorse's limits: thicker is solid-wood edging, not a band.`;
     if (!(b.width > 0 && b.width <= BAND.maxWidth + 1e-9)) return `Band ${b.n} must be more than 0 and at most 101.6 mm (4 in) wide.`;
   }
   const hasDoor = s.layout === "doors" || s.layout === "mixed";
@@ -1055,11 +1065,10 @@ function bandIssue(s, metric) {
     if (pick === "none") continue;
     const b = list[Number(pick) - 1];
     if (!b) return `${what} take Band ${pick}, but the list has ${list.length === 1 ? "one band" : `${list.length} bands`}: pick another, or list more.`;
-    if (applies && b.width < stock - 1e-9) return `Band ${b.n} is ${both(b.width)} wide: too narrow to cover the ${exactThickness(stock, metric)} edges of ${of}. Use a band at least as wide as the stock.`;
+    if (applies && b.width < stock - 1e-9) return `Band ${b.n} is ${both(b.width)} wide: too narrow to cover the ${exactThickness(stock, metric)} edges of ${of}. Use a band at least as wide as the stock (Sawhorse's rule: a narrower band leaves the edge bare).`;
   }
   if (!(s.bandPremill >= 0 && s.bandPremill <= BAND.maxPremill + 1e-9)) return "The edgebander pre-mill must be 0 to 3 mm (the most Felder's and SCM's edgebanders take off). Iron-on banding: 0.";
   if (!(s.bandWasteEnd >= 0 && s.bandWasteEnd <= BAND.maxWasteEnd + 1e-9)) return "The banding waste per banded side must be 0 to 12 in (305 mm).";
-  if (!(s.bandWastePct >= 0 && s.bandWastePct <= BAND.maxWastePct)) return "The banding waste must be 0 to 100%.";
   // A blind dado stops short of the side's front edge; under a band, the wood in front of it is
   // the band's thickness less, and the planner keeps 3 mm there.
   const carcass = bandFor(s, "carcass", metric);
@@ -1127,7 +1136,7 @@ export function bandPart(name, size, prisms, holes, edges, premill) {
     }
     for (const h of holes) if (h.axis === k && Math.abs(h.at - (hi ? size[k] : 0)) < 1e-9) throw new Error(`${name}: a hole is drilled into its ${edge} edge, where a band would cover it. Bands go only on exposed edges.`);
     if (!(z - a > 1e-9)) throw new Error(`${name}: its ${edge} edge is all notches, with nothing to band.`);
-    bands.push({ edge, band: band.n, thickness: b, width: band.width, name: band.name, length: z - a, span: [a, z] });
+    bands.push({ edge, band: band.n, thickness: b, width: band.width, name: band.name, length: z - a, span: [a, z], run: size[long] });
   }
   /** What comes off each axis's low and high end. @param {(b: Band) => number} off */
   const trims = (off) => {
@@ -1199,6 +1208,10 @@ export function bandPart(name, size, prisms, holes, edges, premill) {
  * length and the part's thickness. Doors and drawer fronts move: they never count against a
  * carcass part's edge (an overlay door closes in front of the sides), but every part counts
  * against a front's edge.
+ *
+ * No edge the panel offers can be banded into a joint (each is a front edge, or a front's edge,
+ * that nothing sits against), so from plan() this never fires today: it is a safety net for part
+ * kinds added later, and has its own tests.
  * @param {Part[]} parts @returns {string | null}
  */
 export function bandClash(parts) {
@@ -1370,14 +1383,16 @@ function build(s, metric) {
   const edgesIn = (band, which) => (band ? which.map((edge) => ({ edge, band })) : []);
   const bandSet = bandList(s, metric);
   /**
-   * Each band a part takes, by the metre for each copy: every banded edge's length plus the
-   * waste per banded side, then the waste percentage (Microvellum's default to start), rounded up
-   * to the millimetre. @param {PartBand[]} on @returns {BomItem[]}
+   * Each band a part takes, by the metre for each copy: every banded edge's whole run (an
+   * edgebander runs the band across a notch at an end, a side's toe kick or a rail's tongue, and
+   * it is trimmed off by hand there) plus the waste per banded side (Microvellum's 1 in to start),
+   * rounded up to the millimetre. Microvellum's 5% is the shopping list's banding overage, applied
+   * once to the total. @param {PartBand[]} on @returns {BomItem[]}
    */
   const bandBom = (on) =>
     [...new Set(on.map((e) => e.band))].map((n) => {
       const edges = on.filter((e) => e.band === n);
-      const metres = edges.reduce((m, e) => m + e.length + s.bandWasteEnd, 0) * (1 + s.bandWastePct / 100);
+      const metres = edges.reduce((m, e) => m + e.run + s.bandWasteEnd, 0);
       return /** @type {BomItem} */ ({ item: `Edge banding, ${bandSet[n - 1].label}`, qty: Math.ceil(metres * 1000 - 1e-6) / 1000, unit: "m" });
     });
   let drilled = 0;
@@ -2117,7 +2132,7 @@ function build(s, metric) {
   if (banded.length) {
     const clash = bandClash(parts);
     if (clash) throw new Error(clash);
-    note("Edge banding", `Each banded edge's blank is cut short by its band${s.bandPremill > 0 ? ` less the ${both(s.bandPremill)} the edgebander pre-mills off` : ""}, so blank plus band is the size designed. Holes, dados and notches stay where they are in the finished part, each the band's thickness nearer the raw edge (Blum measures from the finished edge). Band after the router; type the thickness your band measures`, "-", "-", "Hand");
+    note("Edge banding", `Each banded edge's blank is cut short by its band${s.bandPremill > 0 ? ` less the ${both(s.bandPremill)} the edgebander pre-mills off` : ""}, so blank plus band is the size designed. Holes, dados and notches stay where they are in the finished part, each the band's thickness nearer the raw edge (Blum gives the boring distance from the door's edge and the 37 mm lines from the side's front edge; with a band on, that edge is the band's face). Band after the router; type the thickness your band measures. The model shows the blanks, so a banded edge stands a band short of its neighbours and a size measured in the model is the cut size`, "-", "-", "Hand");
     for (const p of banded) {
       const fin = /** @type {V3} */ (p.finished);
       const thin = fin.indexOf(Math.min(...fin));
@@ -2126,7 +2141,10 @@ function build(s, metric) {
       const where = on.length === 4 ? "all four edges" : on.length === 1 ? `the ${on[0].edge} edge` : `${on.map((e) => e.edge).join(", ")} edges`;
       const which = [...new Set(on.map((e) => e.band))].map((n) => bandSet[n - 1].label).join("; ");
       const metres = (p.bom ?? []).filter((x) => x.unit === "m").map((x) => x.qty).reduce((m, q) => m + q, 0);
-      note(p.name, `Edge band ${where} (${which}): finished ${pairText(fin[a], fin[b], metric)}, cut ${pairText(p.blank[a], p.blank[b], metric)}; ${Math.round(metres * 1000) / 1000} m of band each, with waste`, "-", "-", "Edge band");
+      // A notch at an end of a banded edge (a side's toe kick, a rail's tongues): an edgebander
+      // runs the band across it, and it is trimmed off by hand at the notch's inside corner.
+      const notched = on.some((e) => e.span[0] > 1e-9 || e.span[1] < e.run - 1e-9);
+      note(p.name, `Edge band ${where} (${which}): finished ${pairText(fin[a], fin[b], metric)}, cut ${pairText(p.blank[a], p.blank[b], metric)}; ${Math.round(metres * 1000) / 1000} m of band each, with waste${notched ? `. ${END_NOTCH}` : ""}`, "-", "-", "Edge band");
     }
   }
 

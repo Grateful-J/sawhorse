@@ -28,7 +28,7 @@ export type Grain = "length" | "width" | "none";
 export type HingeClose = "soft" | "self";
 /** What is bought for each copy of a part beyond its wood (the kernel's part attribute `bom`). */
 /** A band's thickness: one REHAU sells (0.018 in, 1, 2, 3 mm), or measured and typed. */
-export type BandSize = "0.45" | "1" | "2" | "3" | "custom";
+export type BandSize = "0.018in" | "1" | "2" | "3" | "custom";
 /** Which band a kind of part takes: none, or band 1 to 3 of the list. */
 export type BandPick = "none" | "1" | "2" | "3";
 /** A part's edge: the front edge of a carcass part or shelf; a door's or drawer front's left, right, bottom or top. */
@@ -43,6 +43,8 @@ export interface PartBand {
   name: string;
   length: number;
   span: [number, number];
+  /** The edge's whole length, notches and all: the band an edgebander runs along it (and the band counted). */
+  run: number;
 }
 /** One band of the list: its number, thickness and width (metres), name, and how a row or the shopping list names it. */
 export interface Band {
@@ -160,9 +162,8 @@ export interface Sizes {
   bandShelves: BandPick;
   /** What an edgebander's jointing cutter takes off each banded edge (metres, 0 to 3 mm; iron-on 0). */
   bandPremill: number;
-  /** The waste allowance: this much per banded side (metres), then this percentage (Microvellum's default: 1 in, 5%). */
+  /** The waste allowance per banded side (metres; Microvellum's default, 1 in). Microvellum's 5% is the shopping list's banding overage. */
   bandWasteEnd: number;
-  bandWastePct: number;
 }
 export interface Part {
   name: string;
@@ -250,12 +251,12 @@ export const BAND: {
   maxWidth: number;
   maxPremill: number;
   maxWasteEnd: number;
-  maxWastePct: number;
   maxName: number;
   wasteEnd: number;
-  wastePct: number;
 };
 /** Where each edge is on a part's blank: its axis, and the low (0) or high (1) end. */
+/** What a banded edge with a notch at an end asks of you (a row of Cuts and holes says it). */
+export const END_NOTCH: string;
 export const EDGE_AXES: Record<EdgeName, [0 | 1 | 2, 0 | 1]>;
 /** The bands listed (1 to bandCount), each with its thickness. */
 export function bandList(s: Sizes, metric: boolean): Band[];
