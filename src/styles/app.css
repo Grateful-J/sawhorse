@@ -385,8 +385,8 @@ button.chip:hover{border-color:var(--accent)}
 .job-layers,.job-order{margin:4px 0;padding-left:18px}
 .job-layers > li{margin:6px 0;padding-top:6px;border-top:1px solid var(--line)}
 .job-layers > li[data-fits="false"] > label b{color:var(--warn)}
-.job-layers label.check{display:flex;align-items:center;gap:5px}
-.job-layers label.check small{color:var(--muted)}
+.job-layers .check{display:flex;align-items:center;gap:5px}
+.job-layers .check small{color:var(--muted)}
 .job-what{color:var(--muted)}
 .job-detail{display:grid;grid-template-columns:max-content 1fr;gap:2px 8px;margin:4px 0}
 .job-detail dt{color:var(--muted)}

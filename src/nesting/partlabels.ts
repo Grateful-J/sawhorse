@@ -26,6 +26,8 @@ export interface PartLabel {
   sheet: string;
   size: string;
   grain: Grain;
+  /** "Grain along the length (the 350 mm side)". */
+  grainText: string;
   faceUp: string;
   /** Edge banding (null: a line to write on). */
   banding: string | null;
@@ -33,7 +35,7 @@ export interface PartLabel {
 
 /** One label per part on each sheet, sheet by sheet, in the order of each job sheet's parts. */
 export function partLabels(sheets: JobSheet[]): PartLabel[] {
-  return sheets.flatMap((js) => js.parts.map((p) => ({ tag: p.tag, name: p.name, cabinet: p.cabinet, sheet: js.number, size: p.size, grain: p.grain, faceUp: p.faceUp, banding: p.banding })));
+  return sheets.flatMap((js) => js.parts.map((p) => ({ tag: p.tag, name: p.name, cabinet: p.cabinet, sheet: js.number, size: p.size, grain: p.grain, grainText: p.grainText, faceUp: p.faceUp, banding: p.banding })));
 }
 
 export interface LabelGrid {
@@ -80,8 +82,6 @@ function wrap(s: string, size: number, width: number, max: number): string[] {
   return out;
 }
 
-const GRAIN_WORDS: Record<Grain, string> = { length: "Grain along the length", width: "Grain across the width", none: "No grain" };
-
 /** One label drawn with its lower-left corner at (x, y). */
 function drawLabel(p: PdfPage, l: PartLabel, x: number, y: number, w: number, h: number, outline: boolean) {
   if (outline) p.rect(x, y, w, h, { stroke: 0.82, width: 0.3 });
@@ -90,27 +90,25 @@ function drawLabel(p: PdfPage, l: PartLabel, x: number, y: number, w: number, h:
   let top = y + h - pad - 10;
   p.text(x + pad, top, fit(`${l.tag}  ${l.name}`, 12, inner, true), 12, { bold: true });
   top -= 14;
-  p.text(x + pad, top, fit([l.cabinet, l.sheet].filter(Boolean).join(" · "), 9, inner), 9);
+  // The sheet's number first: a long cabinet name is what is cut short, never the number.
+  p.text(x + pad, top, fit([l.sheet, l.cabinet].filter(Boolean).join(" · "), 9, inner), 9);
   top -= 12;
   p.text(x + pad, top, fit(l.size, 9, inner), 9);
   top -= 12;
   // The rest of the label, above the bottom line, for which face was up.
-  const room = Math.max(1, Math.floor((top - (y + pad + 12)) / 9.5));
+  // Room above the grain and banding lines.
+  const room = Math.max(1, Math.floor((top - (y + pad + 24)) / 9.5));
   for (const line of wrap(`Up on the CNC: ${l.faceUp}`, 7.5, inner, Math.min(3, room))) {
     p.text(x + pad, top, line, 7.5, { gray: 0.2 });
     top -= 9.5;
   }
   const base = y + pad;
-  p.text(x + pad, base, l.banding ? fit(`Banding: ${l.banding}`, 7.5, inner - 64) : "Banding: ______________", 7.5, { gray: 0.25 });
-  if (l.grain === "none") p.text(x + w - pad, base, GRAIN_WORDS.none, 7, { gray: 0.35, align: "right" });
-  else if (l.grain === "length") {
-    // Along the label for the length (the size reads width × length), up it for the width.
-    p.text(x + w - pad - 44, base + 6, "grain", 6.5, { gray: 0.35, align: "right" });
-    p.arrow(x + w - pad - 40, base + 3, x + w - pad, base + 3, 0.8, 4);
-  } else {
-    p.text(x + w - pad - 10, base + 6, "grain", 6.5, { gray: 0.35, align: "right" });
-    p.arrow(x + w - pad - 4, base - 2, x + w - pad - 4, base + 18, 0.8, 4);
-  }
+  p.text(x + pad, base, l.banding ? fit(`Banding: ${l.banding}`, 7.5, inner) : "Banding: ______________", 7.5, { gray: 0.25 });
+  // The grain in words, with the side it runs along, and an arrow beside them.
+  const gy = base + 10;
+  p.text(x + pad, gy, fit(l.grainText, 7, inner - 50), 7, { gray: 0.25 });
+  if (l.grain === "length") p.arrow(x + w - pad - 40, gy + 2, x + w - pad, gy + 2, 0.8, 4);
+  else if (l.grain === "width") p.arrow(x + w - pad - 6, gy - 4, x + w - pad - 6, gy + 14, 0.8, 4);
 }
 
 /** The labels on pages of their own, added to `doc`. Returns the first and last page

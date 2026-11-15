@@ -13,7 +13,7 @@ import { ShoppingSection } from "./components/ShoppingSection";
 import { StockDialog } from "./components/StockDialog";
 import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
-import { JOB_SHEET_TYPE, jobFileName, jobSheets, jobSheetText, type JobSheet } from "./nesting/jobsheet";
+import { JOB_SHEETS_TYPE, jobSheets, jobSheetsFileName, jobSheetsText, type JobSheet } from "./nesting/jobsheet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
@@ -2665,28 +2665,18 @@ export function App() {
         // Every file's text and the hand work list are made before the first save dialog, from
         // the one nesting and the one measurement the questions were asked about.
         const files = n.pieces.map((_, i) => ({ name: cncFileName(cutTitle, n, i, features?.features, ownerOf), text: nestingDxf(n, "lwpolyline", features?.features, { piece: i, overcut: true }) }));
-        // Each file's job sheet, from the same nesting and measurement, saved right after it
-        // under the same name ending in " job.txt", so the two travel together.
-        const jobs = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf).map((js) => ({ name: jobFileName(js.file), text: jobSheetText(js, cutTitle) }));
         const sawSheets = all.pieces.filter((p) => p.saw).length;
         const items = prepared.saw ? handWork(sawShare(all), prepared.saw.measured?.features, nestUnits) : [];
         const hand = prepared.saw ? { parts: items.length, saved: false, note: handWorkNote(prepared.saw.measured) } : null;
         let saved = 0;
-        let jobsSaved = 0;
         let stoppedAt: string | null = null;
-        for (const [i, f] of files.entries()) {
+        for (const f of files) {
           const res = await saveFile(f.name, new TextEncoder().encode(f.text), DXF_TYPE);
           if (!res) {
             stoppedAt = f.name;
             break;
           }
           saved += 1;
-          const job = jobs[i];
-          if (!(await saveFile(job.name, new TextEncoder().encode(job.text), JOB_SHEET_TYPE))) {
-            stoppedAt = job.name;
-            break;
-          }
-          jobsSaved += 1;
         }
         // The track saw's parts with dados and holes: a list of them to do by hand.
         if (stoppedAt === null && hand && items.length) {
@@ -2695,7 +2685,16 @@ export function App() {
         }
         // A save the questions were answered for is not an error: what the files get wrong is
         // in the notes, and was asked about before anything was written.
-        const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets, jobs: jobsSaved }, cncNotes(all, features, nestUnits));
+        // Then one file of job sheets for every router sheet, from the same nesting and
+        // measurement. Its own save: cancelling it leaves the CNC files as they are.
+        let jobs: { name: string; saved: boolean; sheets: number } | null = null;
+        if (stoppedAt === null && files.length) {
+          const sheets = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf);
+          const name = safeName(jobSheetsFileName(cutTitle, new Date()).replace(/\.txt$/, "")) + ".txt";
+          const res = await saveFile(name, new TextEncoder().encode(jobSheetsText(sheets, cutTitle)), JOB_SHEETS_TYPE);
+          jobs = { name: res?.name ?? name, saved: !!res, sheets: sheets.length };
+        }
+        const text = cncSaveMessage({ saved, total: files.length, stoppedAt, hand, sawSheets, jobSheets: jobs }, cncNotes(all, features, nestUnits));
         if (text) setMessage({ text, error: false });
       } catch (e) {
         setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
@@ -3391,7 +3390,7 @@ export function App() {
       {settingsOpen ? <SettingsDialog url={gate.url} status={gate.status} onUrl={gate.setUrl} onRecheck={gate.recheck} onClose={() => setSettingsOpen(false)} /> : null}
       {plugins.dialogs}
       <CutListReport list={printing ? cutList : null} title={cutTitle} />
-      {cncSetupOpen ? <CncSetupDialog units={units} onClose={() => setCncSetupOpen(false)} /> : null}
+      {cncSetupOpen ? <CncSetupDialog units={units} onClose={() => setCncSetupOpen(false)} stocks={nesting ? [...new Set(nesting.pieces.filter((p) => !p.saw).map((p) => p.stock))] : []} /> : null}
       {stockOpen && nesting ? (
         <StockDialog
           library={nesting.library}

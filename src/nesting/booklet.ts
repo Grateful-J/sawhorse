@@ -8,8 +8,8 @@ import type { Nesting, StockPiece } from "../kernel/types";
 import { fit, LETTER, PdfDoc, textWidth, winAnsi, type PdfPage } from "../cutlist/pdf";
 import { NOT_SOLID_NOTE } from "../cutlist/format";
 import type { JobPrefs } from "../cam/jobs";
-import { bitName, feedText, orderSummary, stepText, type JobSheet } from "./jobsheet";
-import { labelPages, partLabels } from "./partlabels";
+import { bitName, feedText, LAYER_ZERO, narrowestText, orderSummary, stepBefore, stepText, type JobSheet } from "./jobsheet";
+import { labelPages, paperSize, partLabels } from "./partlabels";
 import { amountText, BANDING_PLACEHOLDER, boughtText, moneyText, ROUNDING_NOTE, SHOP_CATEGORIES, type PricedList, type ShopPrefs } from "../cutlist/shopping";
 import { diagram } from "./diagram";
 import { area, cutText, dims, glueText, len, nestNote, nestSummary, pct, pieceNumber, pieceTitle, pieceYield, placedSize, reasonText, settingsText, sizeUnit, stockSize, stripText, type Units } from "./format";
@@ -226,16 +226,16 @@ function piecePages(doc: PdfDoc, n: Nesting, piece: StockPiece, title: string, r
 
 /** A router sheet's job sheet, on portrait pages: the same as its text file, with a box to
  * tick for each layer. */
-function jobPages(doc: PdfDoc, js: JobSheet, title: string) {
-  const [W, H] = LETTER;
+function jobPages(doc: PdfDoc, js: JobSheet, title: string, size: [number, number]) {
+  const [W, H] = size;
   const left = 48;
   const right = W - 48;
   const bottom = 48;
-  let p: PdfPage = doc.page();
+  let p: PdfPage = doc.page(size);
   let y = H - 52;
   const need = (h: number) => {
     if (y - h < bottom) {
-      p = doc.page();
+      p = doc.page(size);
       y = H - 52;
       p.text(left, y, `Job sheet: ${js.number} (continued)`, 11, { bold: true });
       y -= 22;
@@ -269,42 +269,49 @@ function jobPages(doc: PdfDoc, js: JobSheet, title: string) {
   field("DXF", js.file);
   field("Label in file", js.label);
   field("Stock", js.stock);
+  field("Material", js.material);
   field("Thickness", js.thickness);
   field("XY zero", js.datum);
   field("Z zero", js.zZero);
   field("Feeds", js.setup);
   for (const n of js.notes) para(`! ${n}`, 9, left, { bold: true });
-  head(`Layers (${js.layers.length}): tick each one when it has its toolpath`);
+  head(`Layers (${js.layers.length}): tick each cut layer when it has its toolpath`);
   para("Every layer except STOCK and LABELS must have a toolpath: a layer with shapes and no toolpath is a cut that will not be made. These are the file's own layers, in its order.", 8.5, left, { gray: 0.3 });
   for (const l of js.layers) {
     y -= 5;
     need(28);
-    p.rect(left, y - 2, 9, 9, { stroke: 0, width: 0.8 });
-    p.text(left + 15, y, `${l.name}${l.cut ? `  (${l.shapes} shape${l.shapes === 1 ? "" : "s"})` : ""}`, 10, { bold: true });
-    y -= 14;
     const x = left + 15;
+    // A box to tick for each cut layer; STOCK and LABELS are reference, with none.
+    if (l.cut) p.rect(left, y - 2, 9, 9, { stroke: 0, width: 0.8 });
+    p.text(x, y, l.cut ? `${l.name}  (${l.shapes} shape${l.shapes === 1 ? "" : "s"})` : `${l.name}  (reference: no toolpath)`, 10, { bold: true });
+    y -= 14;
+    if (!l.cut) {
+      field("What", l.toolpath.replace(/^Reference: no toolpath\. /, ""), x);
+      continue;
+    }
     field("Toolpath", l.toolpath, x);
-    if (!l.cut) continue;
     if (l.depth) field("Depth", l.depth, x);
-    field("Bit", l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : l.toolWhy, x);
-    if (l.narrowest) field("Narrowest", `${l.narrowest.tag} ${l.narrowest.name}, ${l.narrowest.what}: ${js.metric ? `${(l.narrowest.width * 1000).toFixed(2)} mm` : `${(l.narrowest.width / 0.0254).toFixed(3)} in (${(l.narrowest.width * 1000).toFixed(2)} mm)`}${l.fits === true ? " (the bit fits)" : ""}`, x);
+    field("Bit", l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : `CHOOSE A BIT: ${l.toolWhy}`, x);
+    if (l.narrowest) field("Narrowest", narrowestText(l, js.metric), x);
     for (const t of l.fitNotes) field("Fit", t, x);
     for (const f of l.feeds) field(f.label, feedText(f), x);
     for (const w of l.warnings) field(w.level === "stop" ? "STOP" : "Check", w.text, x);
   }
+  y -= 4;
+  para(LAYER_ZERO, 8.5, left, { gray: 0.3 });
   head(`Cut order: ${orderSummary(js)}`);
   para("Drills and pockets first, cutouts next, profiles last, so the parts stay held down while their inside cuts are made. Within that, the layers that share a bit are cut together.", 8.5, left, { gray: 0.3 });
   js.order.forEach((s, k) => {
-    if (s.secondSetup || s.change) para(s.secondSetup ? "Second setup: turn the parts over" : "Change the bit", 8, left + 15, { gray: 0.4 });
-    para(stepText(s, k, js.metric), 9, left + 6);
+    for (const b of stepBefore(s)) para(b.replace(/^\w/, (c) => c.toUpperCase()), 8, left + 15, { gray: 0.4 });
+    para(stepText(s, k, js.metric), 9, left + 6, { bold: !s.tool || s.misfit.length > 0 });
   });
-  if (js.unordered.length) para(`Not in the order, no bit: ${js.unordered.join(", ")}.`, 9, left, { bold: true });
   head(`Parts (${js.parts.length}), smallest first`);
   para(js.holdDown, 8.5, left, { gray: 0.3 });
   for (const q of js.parts) {
     y -= 3;
     para(`${q.holdDown ? "HOLD DOWN  " : ""}${q.tag} ${q.name}${q.cabinet ? ` (${q.cabinet})` : ""}: ${q.size}`, 9.5, left, { bold: true });
     field("Face up", q.faceUp, left + 15);
+    field("Grain", q.grainText, left + 15);
   }
   head("FLIP_ layers");
   if (js.flip.length) for (const t of js.flip) para(t);
@@ -437,7 +444,9 @@ export function nestingPdf(n: Nesting, title: string, r: Units, shop?: BookletSh
   for (const piece of n.pieces) {
     piecePages(doc, n, piece, title, r);
     const js = jobs?.sheets.find((j) => j.index === piece.index);
-    if (js && !piece.saw) jobPages(doc, js, title);
+    // The job sheets are printed on the label paper's size (letter or A4); the rest of the
+    // booklet stays letter, as it was.
+    if (js && !piece.saw) jobPages(doc, js, title, paperSize(jobs!.prefs.labels.paper));
   }
   if (jobs) {
     const pages = labelPages(doc, partLabels(jobs.sheets), jobs.prefs);

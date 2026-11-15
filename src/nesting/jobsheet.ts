@@ -18,15 +18,15 @@
 import type { Grain, Nesting, Placement, StockPiece } from "../kernel/types";
 import { confidenceOf, CHART_DEPTH, COMMUNITY, type Sourced } from "../cam/data";
 import { bothUnits, chiploadText, ipmToMmMin, lowest, type FeedsResult, type Warning } from "../cam/feeds";
-import { holdDownOf, JOB_KINDS, type JobKind } from "../cam/jobs";
+import { holdDownOf, JOB_KINDS, materialFor, type JobKind } from "../cam/jobs";
 import { layerJob } from "../cam/layers";
 import { SOURCES, type Confidence, type Source, type SourceId } from "../cam/sources";
 import { feedsForLayer, machineOf, profileTool, routerOf, tableOf, toolById, type Shop } from "../cam/shop";
 import { seedField, type Tool } from "../cam/tools";
-import { MATERIALS } from "../cam/chipload";
+import { MATERIALS, type BitType } from "../cam/chipload";
 import { dxfLayers, featureLayers, overcutLoop, pieceLabel, pocketOvercut } from "./dxf";
 import { cncFileName, notchRectangles, routerShare, spacingNeeded } from "./cnc";
-import { dims, exactU, fineU, len, pieceNumber, placedSize, sizeUnit, type Units } from "./format";
+import { dims, exactU, fineU, len, lenU, pieceNumber, placedSize, sizeUnit, type Units } from "./format";
 import type { BlankFeatures } from "./machine";
 import type { MeasuredNest } from "./measure";
 
@@ -153,6 +153,7 @@ export function narrowestWidth(loop: readonly P2[], others: readonly (readonly P
 
 /** A shape on a layer in this sheet, and how narrow it is. */
 export interface LayerShape {
+  /** The part's tag and name ("" for the gap between parts, which is no one part's). */
   tag: string;
   name: string;
   width: number;
@@ -199,8 +200,11 @@ export interface JobLayer {
 }
 
 export interface CutStep {
-  tool: Tool;
+  /** The bit (null: none is set for these layers yet: choose one). */
+  tool: Tool | null;
   layers: string[];
+  /** Layers in this step that the bit does not fit (see each layer). */
+  misfit: string[];
   phase: string;
   /** A tool change before this step (not before the first). */
   change: boolean;
@@ -218,6 +222,8 @@ export interface JobPart {
   length: number;
   thickness: number;
   grain: Grain;
+  /** The grain in words, with the side it runs along: "Grain along the length (the 350 mm side)". */
+  grainText: string;
   /** Which face is up on the router, and why. */
   faceUp: string;
   /** As narrow as the hold-down width or narrower. */
@@ -242,11 +248,12 @@ export interface JobSheet {
   datum: string;
   zZero: string;
   setup: string;
+  /** The material the sheet's feeds are read for, and where that is set. */
+  material: string;
   layers: JobLayer[];
   order: CutStep[];
+  /** Bit changes in the order, counting each layer with no bit as a bit of its own. */
   changes: number;
-  /** Layers with no bit, left out of the order. */
-  unordered: string[];
   parts: JobPart[];
   holdDown: string;
   flip: string[];
@@ -284,8 +291,8 @@ const num = (v: number) => Math.round(v).toLocaleString("en-US");
 function toolpathOf(name: string): { toolpath: string; kind: LayerKind | null; cut: boolean } {
   const flip = name.startsWith("FLIP_");
   const n = flip ? name.slice(5) : name;
-  if (n === "STOCK") return { toolpath: "None: the sheet's outline and its trim line, for measuring. Do not cut.", kind: null, cut: false };
-  if (n === "LABELS") return { toolpath: "None: the parts' tags and the sheet's title. Do not cut.", kind: null, cut: false };
+  if (n === "STOCK") return { toolpath: "Reference: no toolpath. The sheet's outline and its trim line, for measuring. Do not cut.", kind: null, cut: false };
+  if (n === "LABELS") return { toolpath: "Reference: no toolpath. The parts' tags and the sheet's title. Do not cut.", kind: null, cut: false };
   if (n === "PROFILE_THRU") return { toolpath: "Outside profile, through the sheet", kind: "profile", cut: true };
   if (n === "CUTOUT_THRU") return { toolpath: "Inside profile (cutout), through the sheet", kind: "cutout", cut: true };
   if (n.startsWith("POCKET_")) return { toolpath: flip ? "Pocket, in the other face" : "Pocket", kind: "pocket", cut: true };
@@ -300,6 +307,19 @@ function depthText(m: number, metric: boolean): string {
 }
 
 const THROUGH = "Through: this sheet's measured thickness plus about 0.5 mm (0.02 in), into the spoilboard";
+/** How far past the sheet a through cut goes (docs: "about 0.5 mm, 0.02 in"). */
+const THROUGH_EXTRA = 0.0005;
+
+/** A depth as a bit must reach it: "12.50 mm", or "0.492 in (12.50 mm)" in an inch document. */
+function reachText(m: number, metric: boolean): string {
+  const mm = `${(m * 1000).toFixed(2)} mm`;
+  return metric ? mm : `${(m / 0.0254).toFixed(3)} in (${mm})`;
+}
+
+/** Where a shape is: "12a Drawer side, the hole", or "the gap between parts (Kerf)". */
+export function shapeWhere(s: LayerShape): string {
+  return s.tag ? `${s.tag} ${s.name}, ${s.what}` : s.what;
+}
 
 /** A bit as the job sheet names it: "1/4 in down-cut (0.25 in, 6.35 mm)". */
 export function bitName(t: Tool, metric: boolean): string {
@@ -307,6 +327,31 @@ export function bitName(t: Tool, metric: boolean): string {
   const inch = `${Number((t.diameter / 0.0254).toFixed(4))} in`;
   const mm = `${Number((t.diameter * 1000).toFixed(2))} mm`;
   return `${t.name} (${metric ? `${mm}, ${inch}` : `${inch}, ${mm}`})`;
+}
+
+/** Past this, a notch puts no limit on the bit: it is open on two sides (an outline corner). */
+const OPEN = 0.5;
+
+/**
+ * How narrow each notch in a part's outline is, for the outside profile's bit. A notch is cut
+ * from outside the part, so the bit's room in it runs on past the blank's edge: a notch open
+ * on two sides (a corner, as on a stretcher or a bottom) puts no limit on the bit (only its
+ * inside corner keeps the bit's radius), and one open on one side (a slot in mid-edge) only
+ * across the way it is closed. A notch made of several rectangles is measured as one.
+ */
+export function notchWidths(profile: readonly P2[], dx: number, dy: number): number[] {
+  const rects = notchRectangles(profile, dx, dy) ?? [];
+  const B = 1;
+  const box = (u0: number, v0: number, u1: number, v1: number): P2[] => [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ];
+  // The air round the blank: a run goes on through it.
+  const air = [box(-B, -B, dx + B, 0), box(-B, dy, dx + B, dy + B), box(-B, 0, 0, dy), box(dx, 0, dx + B, dy)];
+  const loops = rects.map((r) => box(r.u0, r.v0, r.u1, r.v1));
+  return loops.map((l, i) => narrowestWidth(l, [...loops.filter((_, k) => k !== i), ...air]).width).filter((w) => w < OPEN);
 }
 
 /** Each shape on each cut layer of a sheet, with how narrow it is. */
@@ -317,11 +362,9 @@ function layerShapes(piece: StockPiece, measured: MeasuredNest | null): Map<stri
   // Every part's outline, and the gap the bit runs in between parts.
   for (const q of piece.placements) {
     const f = measured?.features.get(q.tag);
-    if (piece.placements.length > 1) add("PROFILE_THRU", { tag: q.tag, name: q.name, width: piece.kerf, approx: false, what: "the gap between parts" });
+    if (piece.placements.length > 1) add("PROFILE_THRU", { tag: "", name: "", width: piece.kerf, approx: false, what: "the gap between parts (Kerf)" });
     else add("PROFILE_THRU", { tag: q.tag, name: q.name, width: Infinity, approx: false, what: "its outline" });
-    if (f?.profile) {
-      for (const r of notchRectangles(f.profile, q.dx, q.dy) ?? []) add("PROFILE_THRU", { tag: q.tag, name: q.name, width: Math.min(r.u1 - r.u0, r.v1 - r.v0), approx: false, what: "a notch in its outline" });
-    }
+    if (f?.profile) for (const w of notchWidths(f.profile, q.dx, q.dy)) add("PROFILE_THRU", { tag: q.tag, name: q.name, width: w, approx: false, what: "a notch in its outline" });
     if (!f) continue;
     const l = featureLayers(f);
     const outside = f.profile && f.profile.length >= 3 ? f.profile : null;
@@ -367,10 +410,41 @@ function bitFor(shop: Shop, kind: LayerKind): { tool: Tool | null; why: string }
 
 const fitsIn = (t: Tool | null, w: number) => (t && t.diameter !== null ? t.diameter < w - 1e-9 : null);
 
-/** The smallest bit in the library narrower than `w`, or null. */
-function smallestFit(shop: Shop, w: number): Tool | null {
-  const ok = shop.tools.filter((t) => t.diameter !== null && t.diameter < w - 1e-9);
-  return ok.sort((a, b) => a.diameter! - b.diameter!)[0] ?? null;
+/** The bit types each kind of layer takes first: a compression bit through a faced sheet (it
+ * keeps both faces; the research's profile row), a down-cut for pockets (its dado row), an end
+ * mill for holes and narrow grooves (its small-parts row). Any other bit comes after. */
+function preferred(kind: LayerKind, faced: boolean): BitType[] {
+  if (kind === "profile" || kind === "cutout") return faced ? ["compression"] : ["compression", "downcut", "upcut"];
+  if (kind === "pocket") return ["downcut", "endmill"];
+  return ["endmill", "downcut"];
+}
+
+const typeWord = (t: BitType) => (t === "compression" ? "a compression bit" : t === "downcut" ? "a down-cut" : t === "endmill" ? "an end mill" : t === "upcut" ? "an up-cut" : "an O-flute");
+
+/** Bits narrower than `w`, the layer's own types first, then the largest. */
+function fitting(shop: Shop, w: number, prefer: BitType[], except?: Tool | null): Tool[] {
+  const rank = (t: Tool) => (prefer.includes(t.type) ? prefer.indexOf(t.type) : prefer.length);
+  return shop.tools.filter((t) => t !== except && t.diameter !== null && t.diameter < w - 1e-9).sort((a, b) => rank(a) - rank(b) || b.diameter! - a.diameter!);
+}
+
+/**
+ * What to cut a layer with when its bit does not fit or none is set: the largest bit in the
+ * library narrower than the narrowest shape whose flutes reach the layer's depth, the layer's
+ * own type first. A bit whose flute length is not typed is never said to reach: it is named as
+ * one that would, if its flutes do. Says plainly when no bit is suitable.
+ */
+function suggestion(shop: Shop, w: number, reach: number, prefer: BitType[], metric: boolean): string {
+  const ok = fitting(shop, w, prefer);
+  const deep = ok.filter((t) => t.cuttingLength !== null && t.cuttingLength >= reach - 1e-9);
+  const unknown = ok.filter((t) => t.cuttingLength === null);
+  const width = Number.isFinite(w) ? bothUnits(w, metric, 3) : null;
+  const d = reachText(reach, metric);
+  if (deep.length) {
+    const t = deep[0];
+    return `Largest bit in your library that fits${width ? ` (narrower than ${width})` : ""} and reaches ${d} deep: ${bitName(t, metric)}${prefer.includes(t.type) ? "" : `, though not ${typeWord(prefer[0])}`}.`;
+  }
+  const would = unknown.length ? ` ${unknown.map((t) => bitName(t, metric)).join(", ")} would fit if ${unknown.length === 1 ? "its" : "their"} flutes reach ${d}: type ${unknown.length === 1 ? "its" : "their"} cutting length in CNC setup > Tools.` : " Add one in CNC setup > Tools.";
+  return `No bit in your library is narrower than ${width ?? "the shapes here"} with flutes at least ${d} long.${would}`;
 }
 
 /** A sourced value's confidence and its source, in words. */
@@ -418,23 +492,28 @@ function feedLines(res: FeedsResult, tool: Tool, shop: Shop, metric: boolean): F
 
 /** The cut order: drills and pockets, then cutouts, then profiles, then the FLIP_ layers in a
  * second setup; within each, the layers that share a bit together, the bits ordered so the
- * fewest changes are made (each phase's order tried; few bits, so it is quick). */
-function cutOrder(layers: JobLayer[]): { order: CutStep[]; changes: number; unordered: string[] } {
+ * fewest changes are made (each phase's order tried; few bits, so it is quick). Every cut layer
+ * is in it: a layer with no bit is a step of its own, to choose a bit for, counted as a bit. */
+function cutOrder(layers: JobLayer[]): { order: CutStep[]; changes: number } {
   const phases: { label: string; flip: boolean; test: (l: JobLayer) => boolean }[] = [
     { label: "drills and pockets", flip: false, test: (l) => !l.flip && (l.kind === "pocket" || l.kind === "narrow" || l.kind === "hole") },
     { label: "cutouts", flip: false, test: (l) => !l.flip && l.kind === "cutout" },
     { label: "profiles", flip: false, test: (l) => !l.flip && l.kind === "profile" },
     { label: "second setup: the other face", flip: true, test: (l) => l.flip },
   ];
-  const unordered = layers.filter((l) => l.cut && !l.tool).map((l) => l.name);
-  type Group = { tool: Tool; layers: string[] };
+  type Group = { key: string; tool: Tool | null; layers: string[]; misfit: string[] };
   const groups = phases.map((ph) => {
     const gs: Group[] = [];
     for (const l of layers) {
-      if (!l.cut || !l.tool || !ph.test(l)) continue;
-      const g = gs.find((x) => x.tool.id === l.tool!.id);
-      if (g) g.layers.push(l.name);
-      else gs.push({ tool: l.tool, layers: [l.name] });
+      if (!l.cut || !l.kind || !ph.test(l)) continue;
+      const key = l.tool ? l.tool.id : `none:${l.name}`;
+      let g = gs.find((x) => x.key === key);
+      if (!g) {
+        g = { key, tool: l.tool, layers: [], misfit: [] };
+        gs.push(g);
+      }
+      g.layers.push(l.name);
+      if (l.fits === false) g.misfit.push(l.name);
     }
     return gs;
   });
@@ -449,8 +528,8 @@ function cutOrder(layers: JobLayer[]): { order: CutStep[]; changes: number; unor
     const next = new Map<string, { last: string | null; cost: number; seq: Group[][] }>();
     for (const s of states) {
       for (const p of perms(gs)) {
-        const cost = s.cost + (s.last !== null && s.last !== p[0].tool.id ? 1 : 0) + p.length - 1;
-        const last = p[p.length - 1].tool.id;
+        const cost = s.cost + (s.last !== null && s.last !== p[0].key ? 1 : 0) + p.length - 1;
+        const last = p[p.length - 1].key;
         const had = next.get(last);
         if (!had || cost < had.cost) next.set(last, { last, cost, seq: [...s.seq, p] });
       }
@@ -465,23 +544,30 @@ function cutOrder(layers: JobLayer[]): { order: CutStep[]; changes: number; unor
     for (const g of gs) {
       const second = phases[k].flip && !flipped;
       if (second) flipped = true;
-      order.push({ tool: g.tool, layers: g.layers, phase: phases[k].label, change: prev !== null && prev !== g.tool.id, secondSetup: second });
-      prev = g.tool.id;
+      order.push({ tool: g.tool, layers: g.layers, misfit: g.misfit, phase: phases[k].label, change: prev !== null && prev !== g.key, secondSetup: second });
+      prev = g.key;
     }
   });
-  return { order, changes: best.cost, unordered };
+  return { order, changes: best.cost };
 }
 
 /** Which face is up on the router, from the part's measured cuts (src/nesting/machine.ts
- * draws each part with the face its cuts are in up), in the docs' words ("Know which face is
- * up"): a door's hinge cups are in its back, a carcass part's dados and holes in its inside. */
+ * draws each part with the face its cuts are in up), said by those cuts: a door's hinge cups
+ * are in its back (docs, "Know which face is up"); otherwise the face with its dados or holes,
+ * named as such and never assumed to be the inside (a drawer back's runner hook holes are in
+ * its rear face). */
 export function faceUp(f: BlankFeatures | undefined, measured: boolean): string {
   if (!measured) return "Not known: its cuts could not be measured. Check the model before cutting.";
   if (!f) return "Either face: no cuts in its faces.";
-  const blind = f.pockets.length + f.drills.filter((d) => !d.through).length;
+  const blindHoles = f.drills.filter((d) => !d.through);
   const flip = f.flip.pockets.length + f.flip.drills.length ? " Then turn it over for the cuts on FLIP_ layers." : "";
-  if (f.drills.some((d) => !d.through && Math.abs(d.diameter - 0.035) < 1e-5)) return `Back face up: its 35 mm hinge cups are in it, so the show face is down.${flip}`;
-  if (blind) return `The face with its dados, grooves and holes up (on a carcass part, the inside face).${flip}`;
+  if (blindHoles.some((d) => Math.abs(d.diameter - 0.035) < 1e-5)) return `Back face up: its 35 mm hinge cups are in it, so the show face is down.${flip}`;
+  if (f.pockets.length || blindHoles.length) {
+    const sizes = [...new Set(blindHoles.map((d) => Number((d.diameter * 1000).toFixed(2))))].sort((a, b) => a - b);
+    const holes = sizes.length ? `${sizes.map((x) => `${x} mm`).join(" and ")} holes` : "";
+    const what = [f.pockets.length ? "dados or grooves" : "", holes].filter(Boolean).join(" and its ");
+    return `The face with its ${what} up.${flip}`;
+  }
   if (flip) return `The face with no cuts up first.${flip}`;
   return f.profile ? "Either face: no cuts in its faces. Turned over, its notched outline is its mirror image." : "Either face: no cuts in its faces.";
 }
@@ -494,7 +580,8 @@ export function jobSheet(input: JobSheetInput): JobSheet {
   const features = measured?.features;
   const names = dxfLayers(n, "lwpolyline", features, { piece: index });
   const shapes = layerShapes(piece, measured);
-  const material = MATERIALS.find((m) => m.id === shop.jobs.material)!;
+  const materialId = materialFor(shop.jobs, piece.stock);
+  const material = MATERIALS.find((m) => m.id === materialId)!;
   const thick = `${exactU(piece.thickness, units)}${metric ? "" : ` (${Number((piece.thickness * 1000).toFixed(2))} mm)`}`;
   const notes: string[] = [];
   if (!measured) notes.push("The cuts inside the parts could not be measured: the file has their outlines only, and so has this sheet.");
@@ -513,9 +600,11 @@ export function jobSheet(input: JobSheetInput): JobSheet {
     const depth = !cut ? "" : !job ? "" : job.depth === null ? THROUGH : `${depthText(job.depth, metric)}, from the top of the sheet (the number in the layer's name)`;
     const layer: JobLayer = { name, cut, toolpath, depth, flip, kind, tool: null, toolWhy: "", shapes: count, narrowest, fits: null, tooWide: null, fitNotes: [], feeds: [], warnings: [] };
     if (!cut || !kind) return layer;
+    const reach = job && job.depth !== null ? job.depth : piece.thickness + THROUGH_EXTRA;
+    const prefer = preferred(kind, material.faced);
     let pick = bitFor(shop, kind);
     const w = narrowest?.width ?? Infinity;
-    const where = narrowest ? `${narrowest.tag} ${narrowest.name}, ${narrowest.what}` : "";
+    const where = narrowest ? shapeWhere(narrowest) : "";
     const wide = (t: Tool) => `${bitName(t, metric)} is not narrower than the narrowest shape on this layer: ${bothUnits(w, metric, 3)} (${where}${narrowest?.approx ? ", measured across its widest outline: check the drawing" : ""}).`;
     // A pocket too narrow for the pocket bit is a narrow groove: the narrow-groove bit's.
     if (kind === "pocket" && pick.tool && fitsIn(pick.tool, w) === false) {
@@ -532,16 +621,23 @@ export function jobSheet(input: JobSheetInput): JobSheet {
     layer.toolWhy = pick.why;
     layer.fits = narrowest ? fitsIn(pick.tool, w) : pick.tool && pick.tool.diameter !== null ? true : null;
     if (pick.tool && layer.fits === false && layer.tooWide !== pick.tool) layer.fitNotes.push(`${layer.kind === "narrow" ? "The narrow-groove bit, " : "This bit, "}${wide(pick.tool)}`);
-    if (layer.fits === false || (!pick.tool && narrowest)) {
-      const s = smallestFit(shop, w);
-      layer.fitNotes.push(s ? `The smallest bit in your library that fits: ${bitName(s, metric)}.` : `No bit in your library is narrower than ${bothUnits(w, metric, 3)}: add one in CNC setup > Tools.`);
+    // A bit as wide as the shape: Sawhorse keeps "narrower than", and says why.
+    if ([layer.tooWide, pick.tool].some((t) => t && t.diameter !== null && Number.isFinite(w) && Math.abs(t.diameter - w) <= 1e-6)) {
+      layer.fitNotes.push(`A bit exactly as wide as the shape (${bothUnits(w, metric, 3)}) cuts it only as a slot along its centre line (an on-line toolpath), not as a ${kind === "profile" || kind === "cutout" ? "profile beside it" : "pocket"}: Sawhorse counts it as not fitting.`);
+    }
+    if (layer.fits === false || !pick.tool) layer.fitNotes.push(suggestion(shop, w, reach, prefer, metric));
+    else if (layer.fits && pick.tool.diameter !== null) {
+      // A larger bit that fits takes fewer passes: say so (never in place of the bit set).
+      const own = pick.tool;
+      const bigger = fitting(shop, w, prefer, own).find((t) => t.diameter! > own.diameter! + 1e-9 && (t.cuttingLength === null || t.cuttingLength >= reach - 1e-9));
+      if (bigger) layer.fitNotes.push(`${bitName(bigger, metric)} is larger and also fits${bigger.cuttingLength === null ? `, if its flutes reach ${reachText(reach, metric)}` : ""}: fewer passes. Set it in CNC setup > Job sheet to use it.`);
     }
     if (pick.tool && pick.tool.diameter === null) layer.fitNotes.push(`Type ${pick.tool.name}'s cutting diameter (CNC setup > Tools): Sawhorse cannot check it fits.`);
     if (kind === "profile" && pick.tool && pick.tool.diameter !== null && piece.placements.length > 1 && piece.kerf < spacingNeeded(pick.tool.diameter) - 1e-9 && layer.fits !== false) {
       layer.fitNotes.push(`The parts are ${fineU(piece.kerf, units)} apart; the spacing check wants the bit plus 1/16 in, ${fineU(spacingNeeded(pick.tool.diameter), units)}: the CAM program may cut around neighbouring parts as one.`);
     }
     if (!pick.tool) return layer;
-    const res = feedsForLayer(pick.tool, shop.jobs.material, name, { thickness: piece.thickness, metric }, shop);
+    const res = feedsForLayer(pick.tool, materialId, name, { thickness: piece.thickness, metric }, shop);
     if (res) {
       layer.feeds = feedLines(res, pick.tool, shop, metric);
       layer.warnings = res.warnings;
@@ -549,7 +645,7 @@ export function jobSheet(input: JobSheetInput): JobSheet {
     return layer;
   });
 
-  const { order, changes, unordered } = cutOrder(layers);
+  const { order, changes } = cutOrder(layers);
   const threshold = holdDownOf(shop.jobs, metric);
   const parts: JobPart[] = piece.placements
     .map((q) => {
@@ -565,6 +661,7 @@ export function jobSheet(input: JobSheetInput): JobSheet {
         length: Math.max(w, l),
         thickness: q.size[0],
         grain: q.grain,
+        grainText: q.grain === "length" ? `Grain along the length (the ${lenU(l, units)} side)` : q.grain === "width" ? `Grain across the width (along the ${lenU(w, units)} side)` : "No grain",
         faceUp: faceUp(f, known),
         holdDown: Math.min(w, l) <= threshold + 1e-9,
         flip: !!f && f.flip.pockets.length + f.flip.drills.length > 0,
@@ -603,11 +700,11 @@ export function jobSheet(input: JobSheetInput): JobSheet {
     thickness: `Measure this sheet with calipers and type what you measure as the job's thickness. ${thick} is only what was entered for the stock, not a measurement.`,
     datum: `The sheet's lower-left corner is 0,0: set the job's X and Y zero at that corner of the real sheet, square to the machine. The outer rectangle on STOCK is the sheet, ${Number((piece.length * 1000).toFixed(2))} x ${Number((piece.width * 1000).toFixed(2))} mm (X by Y): measure it after the import. The file is in millimetres.`,
     zZero: "On the top of the sheet. Pocket and hole depths are measured down from the face that is up.",
-    setup: `Feeds for ${material.label} (CNC setup > Job sheet), on the ${machine.name}, ${router ? `${router.name}${router.tables.length > 1 && table ? ` (${table.label})` : ""}` : `your router at ${shop.rpm ? `${num(shop.rpm)} RPM` : "an RPM not typed yet"}`}. Every value is a starting point: the scrap test in CNC setup > Feeds finds yours.`,
+    setup: `Feeds for the material above, on the ${machine.name}, ${router ? `${router.name}${router.tables.length > 1 && table ? ` (${table.label})` : ""}` : `your router at ${shop.rpm ? `${num(shop.rpm)} RPM` : "an RPM not typed yet"}`}. Every value is a starting point: the scrap test in CNC setup > Feeds finds yours.`,
+    material: `${material.label}${shop.jobs.materials[piece.stock] ? `, set for ${piece.stock}` : ", the shop's material"} (CNC setup > Job sheet)`,
     layers,
     order,
     changes,
-    unordered,
     parts,
     holdDown: `Flagged: ${fineU(threshold, units)} wide or narrower, the hold-down width in CNC setup > Job sheet${shop.jobs.holdDown === null ? " (Sawhorse's default, not a standard: none was found)" : ""}. The last pass of a profile frees each part: give every profile tabs or a skin, or hold every part with a vacuum table. Put screws and clamps only where nothing is cut.`,
     flip,
@@ -643,9 +740,17 @@ function field(label: string, value: string, pad = 4): string[] {
   return wrapText(value, 92 - head.length).map((l, i) => `${i ? " ".repeat(head.length) : head}${l}`);
 }
 
-/** One line of the cut order: "3. Amana 46170 (6.35 mm): PROFILE_THRU (profiles)". */
+/** One line of the cut order: "3. Amana 46170 (6.35 mm): PROFILE_THRU (profiles)", or
+ * "3. CHOOSE A BIT: PROFILE_THRU (profiles)", and "DOES NOT FIT: see …" when the bit does not
+ * fit a layer in the step. */
 export function stepText(s: CutStep, k: number, metric: boolean): string {
-  return `${k + 1}. ${bitName(s.tool, metric)}: ${s.layers.join(", ")} (${s.phase})`;
+  const misfit = s.misfit.length ? `. DOES NOT FIT: see ${s.misfit.join(", ")}` : "";
+  return `${k + 1}. ${s.tool ? bitName(s.tool, metric) : "CHOOSE A BIT"}: ${s.layers.join(", ")} (${s.phase})${misfit}`;
+}
+
+/** What comes before a step: a second setup, a bit change, or both. */
+export function stepBefore(s: CutStep): string[] {
+  return [s.secondSetup ? "second setup: turn the parts over" : "", s.change ? "change the bit" : ""].filter(Boolean);
 }
 
 /** A warning as the job sheet prints it: "Stop: ..." or "Check: ...". */
@@ -658,13 +763,23 @@ export function feedText(f: FeedLine): string {
   return `${f.value}${f.conf ? ` [${f.conf}${f.from ? `: ${f.from}` : ""}]` : f.from ? ` [${f.from}]` : ""}`;
 }
 
-/** The order's summary: "3 bits, 2 tool changes". */
+/** The order's summary: "3 bits, 2 tool changes", and how many bits are still to choose (each
+ * layer with no bit counted as a bit of its own). */
 export function orderSummary(js: JobSheet): string {
-  const bits = new Set(js.order.map((s) => s.tool.id)).size;
-  return `${plural(bits, "bit")}, ${plural(js.changes, "tool change")}`;
+  const keys = new Set(js.order.map((s) => (s.tool ? s.tool.id : `none:${s.layers.join()}`)));
+  const open = js.order.filter((s) => !s.tool).length;
+  return `${plural(keys.size, "bit")}${open ? ` (${open} still to choose)` : ""}, ${plural(js.changes, "tool change")}${open ? ", counting each layer with no bit as a bit of its own" : ""}`;
 }
 
-/** The job sheet as a plain-text file, to travel beside the sheet's DXF. */
+/** What the job sheet says about the layer the DXF's layer table always has. */
+export const LAYER_ZERO = "Layer 0 is in every DXF's layer table, empty: a DXF's default layer. It needs no toolpath.";
+
+/** A narrowest shape as the job sheet prints it. */
+export function narrowestText(l: JobLayer, metric: boolean): string {
+  return l.narrowest ? `${bothUnits(l.narrowest.width, metric, 3)}: ${shapeWhere(l.narrowest)}${l.fits === true ? " (the bit fits)" : ""}` : "";
+}
+
+/** One sheet's job sheet as plain text. */
 export function jobSheetText(js: JobSheet, title: string): string {
   const out: string[] = [];
   const rule = "-".repeat(92);
@@ -674,40 +789,46 @@ export function jobSheetText(js: JobSheet, title: string): string {
   out.push(`${"DXF".padEnd(15)}${js.file}`);
   out.push(...field("Label in file", js.label, 0));
   out.push(...field("Stock", js.stock, 0));
+  out.push(...field("Material", js.material, 0));
   out.push(...field("Thickness", js.thickness, 0));
   out.push(...field("XY zero", js.datum, 0));
   out.push(...field("Z zero", js.zZero, 0));
   out.push(...field("Feeds", js.setup, 0));
   for (const n of js.notes) out.push(...wrapText(`! ${n}`, 92, "  "));
 
-  head(`Layers (${js.layers.length}): tick each one when it has its toolpath`);
+  const cut = js.layers.filter((l) => l.cut).length;
+  head(`Layers (${js.layers.length}): tick each of the ${cut} cut layers when it has its toolpath`);
   out.push(...wrapText("Every layer except STOCK and LABELS must have a toolpath: a layer with shapes and no toolpath is a cut that will not be made. This list is the file's own layers, in its order.", 92));
   for (const l of js.layers) {
-    out.push("", `[ ] ${l.name}${l.cut ? ` (${plural(l.shapes, "shape")})` : ""}`);
+    if (!l.cut) {
+      out.push("", `    ${l.name} (reference: no toolpath)`);
+      out.push(...field("What", l.toolpath.replace(/^Reference: no toolpath\. /, "")));
+      continue;
+    }
+    out.push("", `[ ] ${l.name} (${plural(l.shapes, "shape")})`);
     out.push(...field("Toolpath", l.toolpath));
-    if (!l.cut) continue;
     if (l.depth) out.push(...field("Depth", l.depth));
-    out.push(...field("Bit", l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : l.toolWhy));
-    if (l.narrowest) out.push(...field("Narrowest", `${bothUnits(l.narrowest.width, js.metric, 3)}: ${l.narrowest.tag} ${l.narrowest.name}, ${l.narrowest.what}${l.fits === true ? " (the bit fits)" : ""}`));
+    out.push(...field("Bit", l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : `CHOOSE A BIT: ${l.toolWhy}`));
+    if (l.narrowest) out.push(...field("Narrowest", narrowestText(l, js.metric)));
     for (const t of l.fitNotes) out.push(...field("Fit", t));
     for (const f of l.feeds) out.push(...field(f.label, feedText(f)));
     for (const w of l.warnings) out.push(...field(w.level === "stop" ? "STOP" : "Check", w.text));
   }
+  out.push("", ...wrapText(LAYER_ZERO, 92));
 
   head(`Cut order: ${orderSummary(js)}`);
   out.push(...wrapText("Drills and pockets first, cutouts next, profiles last, so the parts stay held down while their inside cuts are made. Within that, the layers that share a bit are cut together.", 92));
   js.order.forEach((s, k) => {
-    if (s.secondSetup) out.push("    -- second setup: turn the parts over --");
-    else if (s.change) out.push("    -- change the bit --");
+    for (const b of stepBefore(s)) out.push(`    -- ${b} --`);
     out.push(...wrapText(stepText(s, k, js.metric), 92, "     "));
   });
-  if (js.unordered.length) out.push(...wrapText(`Not in the order, no bit: ${js.unordered.join(", ")}.`, 92));
 
   head(`Parts (${js.parts.length}), smallest first`);
   out.push(...wrapText(js.holdDown, 92));
   for (const p of js.parts) {
     out.push("", `${p.holdDown ? "HOLD DOWN " : ""}${p.tag} ${p.name}${p.cabinet ? ` (${p.cabinet})` : ""}: ${p.size}`);
     out.push(...field("Face up", p.faceUp));
+    out.push(...field("Grain", p.grainText));
   }
 
   head("FLIP_ layers");
@@ -724,12 +845,28 @@ export function jobSheetText(js: JobSheet, title: string): string {
   return out.join("\n");
 }
 
-/** The job sheet's file: plain text, beside the sheet's DXF. */
-export const JOB_SHEET_TYPE = { description: "Job sheet (text)", mime: "text/plain", extensions: [".txt"] };
+/** The job sheets' file: plain text, one for every router sheet, saved after the DXFs. */
+export const JOB_SHEETS_TYPE = { description: "Job sheets (text)", mime: "text/plain", extensions: [".txt"] };
 
-/** The job sheet's file name: the DXF's, with " job.txt" for ".dxf", so the two sort together. */
-export function jobFileName(dxf: string): string {
-  return `${dxf.replace(/\.dxf$/i, "")} job.txt`;
+/** The job sheets file's name: the model's and the day's, "Kitchen job sheets 2026-11-15.txt". */
+export function jobSheetsFileName(title: string, day: Date): string {
+  const d = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  return `${title} job sheets ${d}.txt`;
+}
+
+/** Every router sheet's job sheet in one text file, each named by the name CNC files gives
+ * its DXF, which the file says it assumes. */
+export function jobSheetsText(sheets: JobSheet[], title: string): string {
+  const head = [
+    `${title}: job sheets for ${plural(sheets.length, "router sheet")}`,
+    "",
+    ...wrapText("Each sheet is named by the default name CNC files gives its DXF. If a DXF was saved under another name, find its sheet by the label inside the file (\"2. Sheet 1 of 2 - ...\"), which is printed with each sheet below.", 92),
+    "",
+    ...sheets.map((js) => `  ${js.number}: ${js.file}`),
+    "",
+  ];
+  // A page break (form feed) before each sheet, so each prints on pages of its own.
+  return [head.join("\n"), ...sheets.map((js) => jobSheetText(js, title))].join("\n\f\n");
 }
 
 /** Every router sheet's job sheet, each named for the DXF that CNC files writes for it.

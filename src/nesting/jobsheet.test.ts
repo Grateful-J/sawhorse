@@ -7,13 +7,13 @@ import { describe, expect, it } from "vitest";
 import type { Nesting, Placement, StockPiece } from "../kernel/types";
 import { defaultShop, type Shop } from "../cam/store";
 import { readJobs } from "../cam/jobs";
-import { readPdf } from "../cutlist/pdf";
+import { readPdf, winAnsi } from "../cutlist/pdf";
 import { nestingDxf } from "./dxf";
 import type { BlankFeatures, MachineDrill, MachineLoop } from "./machine";
 import type { MeasuredNest } from "./measure";
 import { cncSaveMessage } from "./exportGuard";
 import { nestingPdf } from "./booklet";
-import { faceUp, jobFileName, jobSheet, jobSheetText, narrowestWidth, type JobSheet } from "./jobsheet";
+import { faceUp, jobSheet, jobSheetsFileName, jobSheetsText, jobSheetText, narrowestWidth, orderSummary, stepText, type JobSheet } from "./jobsheet";
 import { labelAt, labelGrid, partLabels } from "./partlabels";
 
 const IN = 0.0254;
@@ -144,7 +144,7 @@ function shopWith(patch: (s: Shop) => void): Shop {
 }
 
 describe("each layer's bit, checked against the narrowest shape on it in this sheet", () => {
-  it("the metric 6.2 mm groove against a 1/4 in bit is flagged, and the smallest bit that fits is named", () => {
+  it("the metric 6.2 mm groove against a 1/4 in bit is flagged, and the bit that would fit is named", () => {
     const { n, measured } = drawerSheet();
     const js = build(n, measured, shopWith((s) => (s.jobs.tools.narrow = null)));
     const groove = js.layers.find((l) => l.name === "POCKET_6MM")!;
@@ -153,7 +153,8 @@ describe("each layer's bit, checked against the narrowest shape on it in this sh
     expect(groove.tool?.id).toBe("seed-downcut");
     expect(groove.fits).toBe(false);
     expect(groove.fitNotes.join(" ")).toContain("6.20 mm");
-    expect(groove.fitNotes.join(" ")).toContain("The smallest bit in your library that fits: 1/8 in end mill");
+    // The built-in end mill's flute length is not known: it is named as one that would fit.
+    expect(groove.fitNotes.join(" ")).toMatch(/1\/8 in end mill \(.*\) would fit if its flutes reach 6\.00 mm/);
   });
 
   it("with a narrow-groove bit set (the default), the groove goes to it", () => {
@@ -180,8 +181,9 @@ describe("each layer's bit, checked against the narrowest shape on it in this sh
     const groove = js.layers.find((l) => l.name === "POCKET_6MM")!;
     expect(groove.fits).toBe(false);
     expect(groove.fitNotes.join(" ")).toContain("No bit in your library is narrower than 6.20 mm");
-    // A hole with no bit: named, and left out of the cut order.
-    expect(js.unordered).toEqual(expect.arrayContaining(["DRILL_D5MM_13MM", "DRILL_D6MM_10MM"]));
+    // The holes have no bit: each is a step to choose one, in the order.
+    const choose = js.order.filter((st) => !st.tool).flatMap((st) => st.layers);
+    expect(choose).toEqual(expect.arrayContaining(["DRILL_D5MM_13MM", "DRILL_D6MM_10MM"]));
   });
 
   it("a 1/4 in end mill set for holes cannot pocket a 5 mm hole: flagged, and the feeds' own warning rendered", () => {
@@ -220,13 +222,13 @@ describe("each layer's bit, checked against the narrowest shape on it in this sh
     for (const l of js.layers.filter((x) => x.cut)) expect(l.feeds.map((f) => f.label)).toEqual(expect.arrayContaining(["Feed"]));
   });
 
-  it("no profile bit chosen: said so, and the profile is left out of the order", () => {
+  it("no profile bit chosen: said so, and the profile is a step to choose a bit for", () => {
     const { n, measured } = drawerSheet();
     const js = build(n, measured, shopWith((s) => (s.profileTool = null)));
     const p = js.layers.find((l) => l.name === "PROFILE_THRU")!;
     expect(p.tool).toBeNull();
     expect(p.toolWhy).toContain("no profile bit is chosen");
-    expect(js.unordered).toContain("PROFILE_THRU");
+    expect(js.order.find((st) => st.layers.includes("PROFILE_THRU"))?.tool).toBeNull();
   });
 });
 
@@ -254,7 +256,7 @@ describe("the cut order and its tool changes", () => {
     expect(phases.indexOf("cutouts")).toBeGreaterThan(phases.lastIndexOf("drills and pockets"));
     expect(phases.indexOf("profiles")).toBeGreaterThan(phases.lastIndexOf("cutouts"));
     // The end mill takes the holes and the narrow back groove in one step.
-    const em = js.order.find((s) => s.tool.id === "seed-endmill")!;
+    const em = js.order.find((s) => s.tool?.id === "seed-endmill")!;
     expect(em.layers.sort()).toEqual(["DRILL_D5MM_10MM", "POCKET_7.94MM"]);
     // End mill, down-cut, then the compression bit for the cutout and the profile: 2 changes.
     expect(js.changes).toBe(2);
@@ -265,7 +267,7 @@ describe("the cut order and its tool changes", () => {
     const { n, measured } = carcass();
     // Cutouts with the end mill: down-cut first, then the end mill runs on into the cutout.
     const js = build(n, measured, shopWith((s) => (s.jobs.tools.cutout = "seed-endmill")), "sixteenth");
-    expect(js.order.map((s) => [s.tool.id, s.phase])).toEqual([
+    expect(js.order.map((s) => [s.tool?.id, s.phase])).toEqual([
       ["seed-downcut", "drills and pockets"],
       ["seed-endmill", "drills and pockets"],
       ["seed-endmill", "cutouts"],
@@ -291,20 +293,20 @@ describe("the cut order and its tool changes", () => {
 describe("hold-down: the parts, smallest first, those this narrow or narrower flagged", () => {
   const parts = () => nesting([sheet([part("1", "Side", 0.02, 0.02, 23.25 * IN, 34.5 * IN), part("5", "Stretcher", 0.02, 0.7, 4 * IN, 22.5 * IN), part("7", "Nailer", 0.02, 0.85, 3 * IN, 22.5 * IN), part("8", "Rail", 0.4, 0.85, 4.125 * IN, 22.5 * IN)])]);
 
-  it("Sawhorse's default is 4 in: a 3 in nailer and a 4 in stretcher are flagged, 4 1/8 in is not", () => {
+  it("Sawhorse's default is 5 in: the 3 in nailer, the 4 in stretcher and a 4 1/8 in rail are flagged, a side is not", () => {
     const js = build(parts(), { features: new Map(), skipped: [], flipped: [] }, shopWith(() => {}), "sixteenth");
     expect(js.parts.map((p) => p.tag)).toEqual(["7", "5", "8", "1"]);
-    expect(js.parts.filter((p) => p.holdDown).map((p) => p.name)).toEqual(["Nailer", "Stretcher"]);
-    expect(js.holdDown).toContain("4 in wide or narrower");
+    expect(js.parts.filter((p) => p.holdDown).map((p) => p.name)).toEqual(["Nailer", "Stretcher", "Rail"]);
+    expect(js.holdDown).toContain("5 in wide or narrower");
     expect(js.holdDown).toContain("Sawhorse's default, not a standard");
   });
 
-  it("in a metric document the default is 100 mm, and a width typed in CNC setup wins", () => {
+  it("in a metric document the default is 125 mm, and a width typed in CNC setup wins; a part as wide as it is flagged", () => {
     let js = build(parts(), { features: new Map(), skipped: [], flipped: [] }, shopWith(() => {}), "half_mm");
-    expect(js.parts.filter((p) => p.holdDown).map((p) => p.name)).toEqual(["Nailer"]);
-    expect(js.holdDown).toContain("100 mm wide or narrower");
-    js = build(parts(), { features: new Map(), skipped: [], flipped: [] }, shopWith((s) => (s.jobs.holdDown = 4.2 * IN)), "sixteenth");
     expect(js.parts.filter((p) => p.holdDown).map((p) => p.name)).toEqual(["Nailer", "Stretcher", "Rail"]);
+    expect(js.holdDown).toContain("125 mm wide or narrower");
+    js = build(parts(), { features: new Map(), skipped: [], flipped: [] }, shopWith((s) => (s.jobs.holdDown = 4 * IN)), "sixteenth");
+    expect(js.parts.filter((p) => p.holdDown).map((p) => p.name)).toEqual(["Nailer", "Stretcher"]);
     expect(js.holdDown).not.toContain("Sawhorse's default");
   });
 });
@@ -312,7 +314,7 @@ describe("hold-down: the parts, smallest first, those this narrow or narrower fl
 describe("which face is up on the router, from the part's measured cuts", () => {
   it("a door: its back, where the hinge cups are; a carcass part: the face with its dados and holes", () => {
     expect(faceUp(feat({ drills: [hole(0.1, 0.1, 35 * MM, 13 * MM), hole(0.1, 0.3, 4.76 * MM, 18 * MM, true)] }), true)).toMatch(/^Back face up: its 35 mm hinge cups/);
-    expect(faceUp(feat({ pockets: [pocket(rect(0, 0, 0.1, 0.02), 6.35 * MM)] }), true)).toMatch(/^The face with its dados, grooves and holes up \(on a carcass part, the inside face\)/);
+    expect(faceUp(feat({ pockets: [pocket(rect(0, 0, 0.1, 0.02), 6.35 * MM)], drills: [hole(0.05, 0.05, 5 * MM, 10 * MM)] }), true)).toBe("The face with its dados or grooves and its 5 mm holes up.");
   });
 
   it("a part with only holes through it (a drawer face), or none: either face", () => {
@@ -342,7 +344,7 @@ describe("part labels", () => {
     expect(labels).toHaveLength(2);
     expect(labels[0]).toMatchObject({ tag: "13", name: "Drawer back", cabinet: "Drawer base 1", sheet: "1. Sheet 1 of 1", grain: "length", banding: null });
     expect(labels[0].size).toBe("120 × 350 × 12 mm");
-    expect(labels[0].faceUp).toMatch(/inside face/);
+    expect(labels[0].faceUp).toBe("The face with its 6 mm holes up.");
   });
 
   it("the grid: 4 x 2 in on letter is 2 by 5, 105 x 74 mm on A4 2 by 4, centred", () => {
@@ -375,12 +377,8 @@ describe("part labels", () => {
   });
 });
 
-describe("the text file beside each DXF", () => {
-  it("has the DXF's name with job.txt for .dxf, so the two sort together", () => {
-    expect(jobFileName("Kitchen 02 sheet 1 of 2 - Base 1 Left side - 4 x 4 sheet, 3-4 - profile CNC.dxf")).toBe("Kitchen 02 sheet 1 of 2 - Base 1 Left side - 4 x 4 sheet, 3-4 - profile CNC job.txt");
-  });
-
-  it("names its DXF and label, says to measure the thickness, and has a tick box per layer", () => {
+describe("a sheet's job sheet as text", () => {
+  it("names its DXF and label, says to measure the thickness, and has a tick box per cut layer", () => {
     const { n, measured } = drawerSheet();
     const js: JobSheet = build(n, measured, shopWith(() => {}));
     const text = jobSheetText(js, "Kitchen");
@@ -388,14 +386,274 @@ describe("the text file beside each DXF", () => {
     expect(text).toContain("1. Sheet 1 of 1 - 1220 x 1220 sheet, 12 mm - Drawer box plywood");
     expect(text).toContain("12 mm is only what was entered for the stock, not a measurement");
     expect(text).toContain("1220 x 1220 mm (X by Y)");
-    for (const l of js.layers) expect(text).toContain(`[ ] ${l.name}`);
+    for (const l of js.layers) expect(text).toContain(l.cut ? `[ ] ${l.name}` : `    ${l.name} (reference: no toolpath)`);
     // Wrapped at 92 characters, but for the DXF's name, which stays whole on its line.
     expect(text.split("\n").filter((l) => !l.startsWith("DXF ")).every((l) => l.length <= 92 || !l.includes(" "))).toBe(true);
     expect(text).toContain(`DXF            ${js.file}\n`);
   });
+});
 
-  it("the status line says each file has its job sheet, or how many do", () => {
-    expect(cncSaveMessage({ saved: 3, total: 3, stoppedAt: null, hand: null, sawSheets: 0, jobs: 3 }, [])).toContain("Each has its job sheet beside it (the same name, ending in job.txt).");
-    expect(cncSaveMessage({ saved: 2, total: 3, stoppedAt: "x job.txt", hand: null, sawSheets: 0, jobs: 1 }, [])).toContain("1 of their 2 job sheets was saved.");
+// ---------------------------------------------------------------------------------------
+// The independent review of feat/job-sheet: one block per finding, each failing before its fix.
+
+/** A tool like the seeded ones, with its own id, size and flute length. */
+function bit(id: string, type: Shop["tools"][number]["type"], dia: number, cuttingLength: number | null): Shop["tools"][number] {
+  return { id, name: id, type, diameter: dia, flutes: 2, shank: 0.25 * IN, cuttingLength, upcut: type === "compression" ? 0.2756 * IN : null, upcutTol: type === "compression" ? 0.01 * IN : null, from: {} };
+}
+
+describe("review C1: every cut layer is in the cut order, a layer with no bit as a step to choose one", () => {
+  it("no profile bit: PROFILE_THRU is a numbered step reading CHOOSE A BIT, and counted", () => {
+    const { n, measured } = drawerSheet();
+    const js = build(n, measured, shopWith((s) => (s.profileTool = null)));
+    const step = js.order.find((s) => s.layers.includes("PROFILE_THRU"));
+    expect(step, "PROFILE_THRU is in the order").toBeDefined();
+    expect(step!.tool).toBeNull();
+    const k = js.order.indexOf(step!);
+    expect(stepText(step!, k, true)).toMatch(new RegExp(`^${k + 1}\\. CHOOSE A BIT: PROFILE_THRU`));
+    // End mill (holes, groove), then the profile's bit to choose: 2 bits, 1 still to choose.
+    expect(orderSummary(js)).toMatch(/^2 bits \(1 still to choose\), 1 tool change/);
+    expect(jobSheetText(js, "K")).toContain("CHOOSE A BIT: PROFILE_THRU");
+  });
+
+  it("a through layer's suggestion needs flutes that reach through the sheet, and prefers a compression bit in a faced sheet", () => {
+    const { n, measured } = drawerSheet();
+    // 12 mm sheet: the bit must reach 12.5 mm. The end mill's flutes are 10 mm: not suggested.
+    const shop = shopWith((s) => {
+      s.profileTool = null;
+      s.jobs.material = "laminate-bb";
+      s.tools = [bit("em", "endmill", 0.125 * IN, 10 * MM), bit("up", "upcut", 0.25 * IN, 25 * MM), bit("comp", "compression", 0.25 * IN, 22 * MM)];
+    });
+    const p = build(n, measured, shop).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(p.fitNotes.join(" ")).toMatch(/fits .* and reaches 12\.50 mm deep: comp/);
+    // Without the compression bit, the up-cut is offered, and said not to be a compression bit.
+    shop.tools = shop.tools.filter((t) => t.id !== "comp");
+    const q = build(n, measured, shop).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(q.fitNotes.join(" ")).toMatch(/: up \(.*\), though not a compression bit/);
+    // With only the short end mill, none is suitable, and it says so plainly.
+    shop.tools = shop.tools.filter((t) => t.id === "em");
+    const r = build(n, measured, shop).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(r.fitNotes.join(" ")).toContain("No bit in your library is narrower than");
+    expect(r.fitNotes.join(" ")).toContain("with flutes at least 12.50 mm long");
+  });
+
+  it("a bit whose flute length is not typed is never suggested as reaching; it is named as one that would if its flutes do", () => {
+    const { n, measured } = drawerSheet();
+    const shop = shopWith((s) => {
+      s.profileTool = null;
+      s.tools = [bit("em", "endmill", 0.125 * IN, null)];
+    });
+    const p = build(n, measured, shop).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(p.fitNotes.join(" ")).toContain("No bit in your library is narrower than");
+    expect(p.fitNotes.join(" ")).toMatch(/em \(.*\) would fit if its flutes reach 12\.50 mm/);
+  });
+});
+
+/** One part with a notched outline, alone on its sheet (so the gap between parts plays no part). */
+function notched(profile: P2[], dx: number, dy: number) {
+  const q = part("4", "Front stretcher", 0.02, 0.02, dy, dx, 18 * MM);
+  const features = new Map<string, BlankFeatures>([["4", feat({ profile })]]);
+  return { n: nesting([sheet([q], 1, { thickness: 18 * MM })]), measured: { features, skipped: [], flipped: [] } as MeasuredNest };
+}
+
+describe("review M1: a notch limits the bit only across the way it is closed", () => {
+  it("corner notches (open on two sides), as on every stretcher and bottom, put no limit on the 1/4 in bit", () => {
+    // The base's front stretcher: 0.23 x 0.75 in notches at both ends of one edge.
+    const dx = 23.023 * IN;
+    const dy = 4 * IN;
+    const { n, measured } = notched(
+      [
+        [dx, dy],
+        [0, dy],
+        [0, 0.75 * IN],
+        [0.23 * IN, 0.75 * IN],
+        [0.23 * IN, 0],
+        [dx - 0.23 * IN, 0],
+        [dx - 0.23 * IN, 0.75 * IN],
+        [dx, 0.75 * IN],
+      ],
+      dx,
+      dy,
+    );
+    const p = build(n, measured, shopWith(() => {}), "sixteenth").layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(p.fits).toBe(true);
+    expect(p.fitNotes).toEqual([]);
+  });
+
+  it("a slot in the middle of an edge (open on one side) limits it to its width", () => {
+    // A 5 mm slot 30 mm deep into the bottom edge.
+    const dx = 0.5;
+    const dy = 0.1;
+    const { n, measured } = notched(
+      [
+        [0, 0],
+        [0.2475, 0],
+        [0.2475, 0.03],
+        [0.2525, 0.03],
+        [0.2525, 0],
+        [dx, 0],
+        [dx, dy],
+        [0, dy],
+      ],
+      dx,
+      dy,
+    );
+    const p = build(n, measured, shopWith(() => {})).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(p.narrowest?.width).toBeCloseTo(5 * MM, 9);
+    expect(p.narrowest?.what).toContain("notch");
+    expect(p.fits).toBe(false);
+  });
+
+  it("the gap between parts limits the profile bit, and is said to be between parts, not one part's", () => {
+    const { n, measured } = drawerSheet();
+    n.pieces[0] = { ...n.pieces[0], kerf: 5 * MM };
+    const p = build(n, measured, shopWith(() => {})).layers.find((l) => l.name === "PROFILE_THRU")!;
+    expect(p.fits).toBe(false);
+    expect(p.narrowest?.width).toBeCloseTo(5 * MM, 9);
+    expect(p.narrowest?.tag).toBe("");
+    expect(p.fitNotes.join(" ")).toContain("the gap between parts");
+    expect(p.fitNotes.join(" ")).not.toContain("12a Drawer side, the gap");
+  });
+});
+
+describe("review M2: the bit that fits, and what the job sheet says about it", () => {
+  it("a bit exactly as wide as the groove does not fit (strict), and needs an on-line slot toolpath", () => {
+    const side = part("12a", "Drawer side", 0.02, 0.02, 0.15, 0.5, 12 * MM);
+    const features = new Map<string, BlankFeatures>([["12a", feat({ pockets: [pocket(rect(0.05, 0.05, 0.45, 0.05 + 0.25 * IN), 6 * MM)] })]]);
+    const js = build(nesting([sheet([side])]), { features, skipped: [], flipped: [] }, shopWith((s) => (s.jobs.tools.narrow = null)));
+    const g = js.layers.find((l) => l.name === "POCKET_6MM")!;
+    expect(g.fits).toBe(false);
+    expect(g.fitNotes.join(" ")).toContain("on-line");
+  });
+
+  it("the suggestion is the LARGEST bit that fits and reaches, not the smallest", () => {
+    const { n, measured } = drawerSheet();
+    const shop = shopWith((s) => {
+      s.tools = [...s.tools, bit("em3", "endmill", 0.125 * IN, 12 * MM), bit("em316", "endmill", 0.1875 * IN, 12 * MM)];
+      s.jobs.tools.narrow = null;
+    });
+    const g = build(n, measured, shop).layers.find((l) => l.name === "POCKET_6MM")!;
+    expect(g.fitNotes.join(" ")).toMatch(/Largest bit in your library that fits .*: em316/);
+  });
+
+  it("a pocket that reaches the part's edge is measured as drawn, past the edge into the gap", () => {
+    // 4 mm in from the left edge, 18 mm across: drawn 4.75 mm past the edge (Kerf 10 mm), so
+    // 8.75 mm, and the 1/4 in down-cut fits.
+    const side = part("2", "Side", 0.02, 0.02, 0.3, 0.6, 18 * MM);
+    const features = new Map<string, BlankFeatures>([["2", feat({ pockets: [pocket(rect(0, 0.1, 0.004, 0.118), 6.35 * MM)] })]]);
+    const js = build(nesting([sheet([side], 1, { thickness: 18 * MM })]), { features, skipped: [], flipped: [] }, shopWith(() => {}));
+    const p = js.layers.find((l) => l.name === "POCKET_6.35MM")!;
+    expect(p.narrowest?.width).toBeCloseTo(8.75 * MM, 6);
+    expect(p.tool?.id).toBe("seed-downcut");
+  });
+
+  it("a step whose bit does not fit says so in the cut order", () => {
+    const { n, measured } = drawerSheet();
+    const js = build(n, measured, shopWith((s) => (s.jobs.tools.narrow = null)));
+    const k = js.order.findIndex((s) => s.layers.includes("POCKET_6MM"));
+    expect(stepText(js.order[k], k, true)).toContain("DOES NOT FIT: see POCKET_6MM");
+  });
+
+  it("a larger bit in the library that also fits is noted (the 35 mm cups and the 1/4 in down-cut)", () => {
+    const door = part("1", "Door", 0.02, 0.02, 0.6, 0.76, 18 * MM);
+    const features = new Map<string, BlankFeatures>([["1", feat({ drills: [hole(0.1, 0.1, 35 * MM, 13 * MM)] })]]);
+    const js = build(nesting([sheet([door], 1, { thickness: 18 * MM })]), { features, skipped: [], flipped: [] }, shopWith(() => {}));
+    const cups = js.layers.find((l) => l.name === "DRILL_D35MM_13MM")!;
+    expect(cups.tool?.id).toBe("seed-endmill");
+    expect(cups.fitNotes.join(" ")).toMatch(/1\/4 in down-cut .* is larger and also fits/);
+  });
+});
+
+describe("review M3: one job sheets file for every router sheet, after the DXFs", () => {
+  it("is named for the model and the date, names each sheet by its DXF's default name, and says it assumes those names", () => {
+    const { n, measured } = drawerSheet();
+    const js = build(n, measured, shopWith(() => {}));
+    expect(jobSheetsFileName("Kitchen", new Date(2026, 10, 15))).toBe("Kitchen job sheets 2026-11-15.txt");
+    const text = jobSheetsText([js, { ...js, number: "2. Sheet 1 of 1", file: "Kitchen 2 CNC.dxf" }], "Kitchen");
+    expect(text).toContain("Kitchen 1 sheet 1 of 1 - x CNC.dxf");
+    expect(text).toContain("Kitchen 2 CNC.dxf");
+    expect(text).toMatch(/default names?/);
+    // The list of sheets, then each sheet after a page break of its own.
+    const parts = text.split("\n\f\n");
+    expect(parts).toHaveLength(3);
+    expect(parts[1]).toMatch(/^Kitchen: job sheet for 1\. Sheet 1 of 1/);
+    expect(parts[2]).toMatch(/^Kitchen: job sheet for 2\. Sheet 1 of 1/);
+  });
+
+  it("the status line says exactly what was saved: the DXFs, and the job sheets file or not", () => {
+    const saved = cncSaveMessage({ saved: 3, total: 3, stoppedAt: null, hand: null, sawSheets: 0, jobSheets: { name: "K job sheets 2026-11-15.txt", saved: true, sheets: 3 } }, [])!;
+    expect(saved).toContain("Saved 3 CNC files");
+    expect(saved).toContain("Saved the job sheets for 3 sheets as K job sheets 2026-11-15.txt.");
+    const cancelled = cncSaveMessage({ saved: 3, total: 3, stoppedAt: null, hand: null, sawSheets: 0, jobSheets: { name: "K job sheets 2026-11-15.txt", saved: false, sheets: 3 } }, [])!;
+    expect(cancelled).toContain("Saved 3 CNC files");
+    expect(cancelled).toContain("The job sheets were not saved");
+  });
+});
+
+describe("review: the smaller findings", () => {
+  it("the shop's material starts as laminate-faced Baltic birch, a stock can have its own, and each sheet prints its material", () => {
+    expect(defaultShop().jobs.material).toBe("laminate-bb");
+    const { n, measured } = drawerSheet();
+    let js = build(n, measured, shopWith(() => {}));
+    expect(js.material).toContain("Laminate-faced Baltic birch");
+    js = build(n, measured, shopWith((s) => (s.jobs.materials = { "1220 x 1220 sheet, 12 mm": "baltic-birch" })));
+    expect(js.material).toMatch(/^Baltic birch/);
+    expect(jobSheetText(js, "K")).toContain("Material       Baltic birch");
+  });
+
+  it("a second setup that also changes the bit prints both", () => {
+    const p = part("4", "Odd part", 0.02, 0.02, 0.3, 0.6);
+    const features = new Map<string, BlankFeatures>([["4", feat({ flip: { pockets: [], drills: [hole(0.2, 0.1, 5 * MM, 10 * MM)] } })]]);
+    const js = build(nesting([sheet([p])]), { features, skipped: [], flipped: ["Odd part"] }, shopWith(() => {}));
+    const text = jobSheetText(js, "K");
+    expect(text).toContain("-- second setup: turn the parts over --");
+    expect(text).toContain("-- change the bit --");
+  });
+
+  it("STOCK and LABELS have no tick box: reference, no toolpath", () => {
+    const { n, measured } = drawerSheet();
+    const text = jobSheetText(build(n, measured, shopWith(() => {})), "K");
+    expect(text).not.toContain("[ ] STOCK");
+    expect(text).not.toContain("[ ] LABELS");
+    expect(text).toContain("STOCK (reference: no toolpath)");
+    // Layer 0, in every DXF's layer table, is named as empty.
+    expect(text).toMatch(/Layer 0 .* empty/);
+  });
+
+  it("a drawer back's hook holes are in its rear face: the face up is said by its cuts, not called the inside", () => {
+    const up = faceUp(feat({ drills: [hole(0.03, 0.06, 6 * MM, 10 * MM)] }), true);
+    expect(up).toContain("6 mm holes");
+    expect(up).not.toContain("inside");
+  });
+
+  it("± and every other character a job sheet prints is one the PDF's font has", () => {
+    expect(winAnsi("±")).toEqual([0xb1]);
+  });
+
+  it("a label says the grain in words with the side it runs along, and never drops the sheet number for a long cabinet name", () => {
+    const { n, measured } = drawerSheet();
+    const js = jobSheet({ n, index: 0, measured, shop: shopWith(() => {}), units: "half_mm", file: "x.dxf", ownerOf: () => "A cabinet with a very long name indeed, longer than any label could hold on one line" });
+    const labels = partLabels([js]);
+    expect(labels[0].grainText).toBe("Grain along the length (the 350 mm side)");
+    const text = readPdf(nestingPdf(n, "K", "half_mm", undefined, { sheets: [js], prefs: defaultShop().jobs })).text.flat().join("\n");
+    expect(text).toContain("Grain along the length (the 350 mm side)");
+    expect(text).toMatch(/1\. Sheet 1 of 1 · A cabinet with/);
+  });
+
+  it("with A4 label paper, the job sheet and label pages are A4", () => {
+    const { n, measured } = drawerSheet();
+    const shop = shopWith((s) => (s.jobs.labels = { paper: "a4", size: "105x74mm", outlines: false }));
+    const js = build(n, measured, shop);
+    const pdf = new TextDecoder("latin1").decode(nestingPdf(n, "K", "half_mm", undefined, { sheets: [js], prefs: shop.jobs }));
+    const a4 = pdf.match(/MediaBox \[0 0 595\.28 841\.89\]/g)?.length ?? 0;
+    expect(a4).toBeGreaterThanOrEqual(2);
+  });
+
+  it("hold-down defaults to 5 in (125 mm): the docs name drawer sides, 4 9/16 in, among the parts that need it most", () => {
+    const n = nesting([sheet([part("7", "Drawer side", 0.02, 0.02, 4.5625 * IN, 20 * IN), part("1", "Side", 0.3, 0.02, 23.25 * IN, 34.5 * IN)])]);
+    let js = build(n, { features: new Map(), skipped: [], flipped: [] }, shopWith(() => {}), "sixteenth");
+    expect(js.parts.find((p) => p.name === "Drawer side")?.holdDown).toBe(true);
+    expect(js.holdDown).toContain("5 in wide or narrower");
+    js = build(n, { features: new Map(), skipped: [], flipped: [] }, shopWith(() => {}), "half_mm");
+    expect(js.holdDown).toContain("125 mm wide or narrower");
   });
 });

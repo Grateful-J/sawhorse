@@ -6,7 +6,7 @@
 // click: select it), the cuts in order underneath; and the SVG, DXF and PDF exports.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { onShop } from "../cam/shop";
-import { bitName, orderSummary, stepText, type JobSheet } from "../nesting/jobsheet";
+import { bitName, LAYER_ZERO, narrowestText, orderSummary, stepBefore, stepText, type JobSheet } from "../nesting/jobsheet";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
@@ -178,9 +178,10 @@ function PieceDiagram({ piece, rounding, lit, onHover, onSelect }: { piece: Stoc
   );
 }
 
-/** A router sheet's job sheet, as CNC files writes it beside the sheet's DXF: a box to tick
- * for each of the file's layers, its bit and feeds, the cut order, the parts. Worked out
- * again when the nesting or CNC setup changes. The ticks are for this screen only. */
+/** A router sheet's job sheet, as CNC files writes it in the job sheets file: a box to tick for
+ * each of the file's cut layers, its bit and feeds, the cut order, the parts. Worked out again
+ * when the nesting or CNC setup changes. The ticks are for this screen only, and start again
+ * with each nesting (the view is keyed by it). */
 function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockPiece) => Promise<JobSheet | null> }) {
   const [js, setJs] = useState<JobSheet | null | undefined>(undefined);
   const [shopTick, setShopTick] = useState(0);
@@ -216,6 +217,8 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
         <dd>{js.label}</dd>
         <dt>Stock</dt>
         <dd>{js.stock}</dd>
+        <dt>Material</dt>
+        <dd data-testid="job-material">{js.material}</dd>
         <dt>Thickness</dt>
         <dd>{js.thickness}</dd>
         <dt>XY zero</dt>
@@ -239,10 +242,16 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
       <ol className="job-layers">
         {js.layers.map((l) => (
           <li key={l.name} data-layer={l.name} data-cut={l.cut ? "true" : "false"} data-fits={l.fits === null ? undefined : String(l.fits)}>
-            <label className="check">
-              <input type="checkbox" checked={ticked.has(l.name)} onChange={() => toggle(l.name)} disabled={!l.cut} aria-label={`${l.name} has its toolpath`} />
-              <b>{l.name}</b> {l.cut ? <small>{`${l.shapes} shape${l.shapes === 1 ? "" : "s"}`}</small> : null}
-            </label>
+            {l.cut ? (
+              <label className="check">
+                <input type="checkbox" checked={ticked.has(l.name)} onChange={() => toggle(l.name)} aria-label={`${l.name} has its toolpath`} />
+                <b>{l.name}</b> <small>{`${l.shapes} shape${l.shapes === 1 ? "" : "s"}`}</small>
+              </label>
+            ) : (
+              <div className="check">
+                <b>{l.name}</b> <small>reference: no toolpath</small>
+              </div>
+            )}
             <div className="job-what">{l.toolpath}</div>
             {l.cut ? (
               <dl className="job-detail">
@@ -253,24 +262,23 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
                   </>
                 ) : null}
                 <dt>Bit</dt>
-                <dd data-testid="job-bit">{l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : l.toolWhy}</dd>
+                <dd data-testid="job-bit">{l.tool ? `${bitName(l.tool, js.metric)}: ${l.toolWhy}` : `CHOOSE A BIT: ${l.toolWhy}`}</dd>
                 {l.narrowest ? (
                   <>
                     <dt>Narrowest</dt>
-                    <dd>
-                      {js.metric ? `${(l.narrowest.width * 1000).toFixed(2)} mm` : `${(l.narrowest.width / 0.0254).toFixed(3)} in (${(l.narrowest.width * 1000).toFixed(2)} mm)`}: <span className="tag">{l.narrowest.tag}</span> {l.narrowest.name}, {l.narrowest.what}
-                    </dd>
+                    <dd>{narrowestText(l, js.metric)}</dd>
                   </>
                 ) : null}
+                {/* A div groups each dt with its dd: the only element a dl may hold besides them. */}
                 {l.feeds.map((f) => (
-                  <span key={f.label} className="job-feed">
+                  <div key={f.label} className="job-feed">
                     <dt>{f.label}</dt>
                     <dd>
                       {f.value}
                       {f.conf ? <span className="cam-src" data-conf={f.conf} title={f.from}>{f.conf}</span> : null}
                       {f.from ? <small>{f.from}</small> : null}
                     </dd>
-                  </span>
+                  </div>
                 ))}
               </dl>
             ) : null}
@@ -295,13 +303,14 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
       <p className="note">Drills and pockets first, cutouts next, profiles last, so the parts stay held down while their inside cuts are made. Layers that share a bit are cut together.</p>
       <ol className="job-order">
         {js.order.map((st, k) => (
-          <li key={k} data-change={st.change ? "true" : undefined}>
-            {st.secondSetup ? <small>Second setup: turn the parts over.</small> : st.change ? <small>Change the bit.</small> : null}
+          <li key={k} data-change={st.change ? "true" : undefined} data-choose={st.tool ? undefined : "true"} data-misfit={st.misfit.length ? "true" : undefined}>
+            {stepBefore(st).map((b) => (
+              <small key={b}>{b.replace(/^\w/, (c) => c.toUpperCase())}.</small>
+            ))}
             {stepText(st, k, js.metric).replace(/^\d+\. /, "")}
           </li>
         ))}
       </ol>
-      {js.unordered.length ? <p className="note err">Not in the order, no bit: {js.unordered.join(", ")}.</p> : null}
       <h5>Parts, smallest first</h5>
       <p className="note">{js.holdDown}</p>
       <ul className="job-parts">
@@ -310,6 +319,7 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
             {q.holdDown ? <b className="job-hold">Hold down</b> : null} <span className="tag">{q.tag}</span> {q.name}
             {q.cabinet ? ` (${q.cabinet})` : ""}: {q.size}
             <small>Face up: {q.faceUp}</small>
+            <small>{q.grainText}</small>
           </li>
         ))}
       </ul>
@@ -325,7 +335,8 @@ function JobSheetView({ piece, load }: { piece: StockPiece; load: (piece: StockP
       ) : null}
       {js.compression ? <p className="note job-compression">{js.compression}</p> : null}
       {js.saw ? <p className="note">{js.saw}</p> : null}
-      <small className="note">CNC files saves this beside the sheet's DXF as a text file (the same name, ending in job.txt), and the PDF has it after the sheet's page, with the part labels at the end.</small>
+      <p className="note">{LAYER_ZERO}</p>
+      <small className="note">CNC files saves every router sheet's job sheet in one text file after the DXFs, and the PDF has this one after the sheet's page, with the part labels at the end.</small>
     </section>
   );
 }
@@ -532,7 +543,7 @@ export function NestingSection(p: NestingSectionProps) {
                   </button>
                 ) : null}
               </figcaption>
-              {p.jobSheetOf && jobFor === piece.index && !piece.saw ? <JobSheetView piece={piece} load={p.jobSheetOf} /> : null}
+              {p.jobSheetOf && jobFor === piece.index && !piece.saw ? <JobSheetView key={`${n.hash}:${piece.index}`} piece={piece} load={p.jobSheetOf} /> : null}
               <PieceDiagram
                 piece={piece}
                 rounding={r}

@@ -16,7 +16,8 @@ import { nestingDxf } from "./dxf";
 import { measureNest, type MeasuredNest } from "./measure";
 import { overflowOps, sheetSetOps } from "./sheetset";
 import { cncFileName, routerShare } from "./cnc";
-import { jobFileName, jobSheet, jobSheetText } from "./jobsheet";
+import { jobSheet, jobSheetText } from "./jobsheet";
+import { winAnsi } from "../cutlist/pdf";
 
 const pkg = path.resolve(__dirname, "../wasm/pkg");
 const built = existsSync(path.join(pkg, "sawhorse_wasm_bg.wasm"));
@@ -88,13 +89,20 @@ run("a sheet's job sheet, through the real kernel", () => {
           // The file's name and label, as the DXF says them.
           expect(js.file).toBe(file);
           expect(dxf).toContain(`\n${js.label}\n`);
-          expect(jobFileName(file)).toBe(file.replace(/\.dxf$/, " job.txt"));
           // Every cut layer has a bit (the built-in bits and a profile bit), and none of them
           // is left out of the order; the text has a tick box per layer.
           for (const l of js.layers) if (l.cut) expect(l.tool, `${id} ${l.name}: no bit`).not.toBeNull();
-          expect(js.unordered).toEqual([]);
+          expect(js.order.every((st) => st.tool)).toBe(true);
+          // Every cut layer is a step of the order.
+          expect(js.order.flatMap((st) => st.layers).sort()).toEqual(js.layers.filter((l) => l.cut).map((l) => l.name).sort());
           const text = jobSheetText(js, "Kitchen");
-          for (const l of js.layers) expect(text).toContain(`[ ] ${l.name}`);
+          for (const l of js.layers) expect(text).toContain(l.cut ? `[ ] ${l.name}` : `${l.name} (reference: no toolpath)`);
+          // The 1/4 in compression bit fits every sheet's outlines: the stretchers' and bottoms'
+          // corner notches are open on two sides and put no limit on it.
+          expect(js.layers.find((l) => l.name === "PROFILE_THRU")?.fits, `${id} ${metric ? "metric" : "inch"} sheet ${i}: ${js.layers.find((l) => l.name === "PROFILE_THRU")?.fitNotes.join(" ")}`).toBe(true);
+          // Every character it prints, the PDF's font has (a "?" in the PDF is a character lost).
+          const lost = [...text].filter((ch) => ch >= " " && ch !== "?" && winAnsi(ch)[0] === 63);
+          expect([...new Set(lost)], `${id}: characters the PDF cannot print`).toEqual([]);
           // Each part is on it, once.
           expect(js.parts.map((p) => p.tag).sort()).toEqual(n.pieces[i].placements.map((q) => q.tag).sort());
         });
@@ -114,6 +122,7 @@ run("a sheet's job sheet, through the real kernel", () => {
       expect(l.narrowest!.width).toBeCloseTo(0.0062, 5);
       expect(l.tooWide?.id).toBe("seed-downcut");
       expect(l.fitNotes.join(" ")).toMatch(/1\/4 in down-cut \(6\.35 mm, 0\.25 in\) is not narrower than the narrowest shape on this layer: 6\.20 mm/);
+      expect(l.tooWide?.diameter).toBeCloseTo(0.25 * IN, 9);
       expect(l.tool?.id).toBe("seed-endmill");
       expect(l.kind).toBe("narrow");
       expect(l.fits).toBe(true);
@@ -140,7 +149,7 @@ run("a sheet's job sheet, through the real kernel", () => {
       // The holes take the end mill, which is smaller than every hole.
       for (const l of js.layers.filter((x) => x.name.startsWith("DRILL_"))) expect(l.fits).toBe(true);
     }
-    // The 4 in stretchers are flagged at Sawhorse's 4 in default.
+    // The 4 in stretchers are flagged at Sawhorse's 5 in default.
     const parts = sheets.flatMap((js) => js.parts);
     const stretchers = parts.filter((p) => /stretcher/i.test(p.name));
     expect(stretchers.length).toBeGreaterThan(0);
@@ -148,6 +157,25 @@ run("a sheet's job sheet, through the real kernel", () => {
     expect(parts.filter((p) => /side/i.test(p.name)).every((p) => !p.holdDown)).toBe(true);
     // The door's back is up; the sides' inside faces are.
     expect(parts.find((p) => p.name === "Door")?.faceUp).toMatch(/^Back face up/);
-    expect(parts.find((p) => p.name === "Left side")?.faceUp).toMatch(/inside face/);
+    expect(parts.find((p) => p.name === "Left side")?.faceUp).toBe("The face with its dados or grooves and its 5 mm holes up.");
+  }, 120_000);
+
+  it("drawer over 2 doors, inch: the drawer back's rear hook holes are named as the face up, and its 4 9/16 in drawer sides are on hold-down", async () => {
+    const { all, n, measured } = await preset("mixed", false);
+    const shop = defaultShop();
+    shop.profileTool = "seed-compression";
+    const parts = n.pieces.flatMap((_, i) => jobSheet({ n, index: i, measured, shop, units: "sixteenth", file: `sheet ${i}.dxf`, ownerOf: () => null, all }).parts);
+    const backs = parts.filter((p) => p.name === "Drawer back");
+    expect(backs.length).toBeGreaterThan(0);
+    for (const p of backs) {
+      expect(p.faceUp).toBe("The face with its 6 mm holes up.");
+      expect(p.faceUp).not.toContain("inside");
+    }
+    const sides = parts.filter((p) => p.name === "Drawer side");
+    expect(sides.length).toBeGreaterThan(0);
+    for (const p of sides) {
+      expect(p.width / IN, `${p.tag} ${p.size}`).toBeCloseTo(4.5625, 3);
+      expect(p.holdDown, `${p.tag} ${p.size}`).toBe(true);
+    }
   }, 120_000);
 });
