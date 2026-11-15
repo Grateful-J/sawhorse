@@ -18,6 +18,8 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
   Review fixes: Confirmat needs 13 mm stock; a clearer message when a joint hole meets the back's groove; dowel length wording; nailers say they're not fastened.
 
+  Stretchers widen to 117 mm (4-5/8 in) with dowels or Confirmat, the least that takes Häfele's three, instead of being refused; the cut list says when they were widened.
+
 ### Added (CNC cabinets, edge banding, 2026-11-15)
 
 - **Edge banding in the cabinet generator** (cabinet generator 1.10.0). The cabinet panel's new **10 · Edge banding** group starts off, so every cabinet is cut as before until **Band the edges** is ticked.

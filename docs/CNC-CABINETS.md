@@ -233,7 +233,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 - one 37 mm from the joint's front edge and one 37 mm from its back edge (the rail's own edges: a fixed shelf behind an inset door starts further back, and its holes with it);
 - at least 3 a joint up to 18 in (457.2 mm) deep, at least 4 up to 24 in (609.6 mm). Sawhorse drills exactly that many. Häfele gives no count past 24 in, so a deeper joint is refused rather than guessed;
 - the ones between on the 32 mm grid counted from the front one, the grid points nearest to evenly spaced, each keeping 3 mm of wood to the back one. AWS says dowel joints are "often based on" 32 mm spacing: a description, not a rule. The 23 1/4 in base's bottom gets 37, 197, 389 and 553.6 mm; a 12 in wall cabinet's top and bottom 37, 165 and 267.8 mm.
-- A joint too shallow for its count is refused with the least depth: 117 mm (4.607 in) for three, so a base's 4 in stretchers need widening to 117 mm, or a full top.
+- Stretchers narrower than 117 mm (4.607 in) are made at least 117 mm (4-5/8 in) wide with dowels or Confirmat; the cut list says when they were widened. Any other joint too shallow for its count is refused with the least depth.
 
 | | Dowels | Confirmat screws |
 |---|---|---|
