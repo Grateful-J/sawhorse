@@ -359,6 +359,17 @@ Faces drawn loose, outside any group or component, are never parts. The line abo
 
 Each file is offered through the same save dialog as an export, named after your model ("Bookshelf cut list.csv", "Bookshelf labels.pdf").
 
+**Shopping list.** **Shopping list ›**, beside **Nesting ›**, opens what to buy, under the list:
+- **Sheet goods** and **solid lumber** are the sheets and boards the nesting uses (it is worked out while the list is open), one row per stock and material; the track saw's sheets are marked. Parts on no stock are not in it, and a line says how many.
+- **Hardware** is what each part carries (set on the part in the model: the Cabinet generator puts hinges and plates on each door, runners and locking devices on each drawer front, pins on each loose shelf), times how many of that part there are. Copy a cabinet and its hardware doubles; delete it and its hardware goes. Items with a part number are added up by part number, the rest by their words. A part left out of the totals brings no hardware.
+- **Edge banding** is a placeholder until banding is worked out. **Tools** (a drilling template) are bought once, however many parts ask for them.
+- Every price starts empty: Sawhorse ships no prices. Type yours: per sheet, per board foot of the boards bought, per piece or pair, or per pack once you set a pack size. A row with no price says **price not set** and is left out of the total, and a line under the totals names every row it leaves out.
+- Each group has an **Overage** percentage, added before rounding up (10% sheet goods, 20% lumber, 15% banding, 0% hardware to start: assumptions, not facts; change them). What to buy is rounded up to whole sheets, boards, pairs, packs and rolls. The totals are shown with and without overage.
+- **Labour you saved** (for fun): hours times your hourly rate, not in the total.
+- **Prices in**: the currency code; money is written the way your browser's language writes it.
+- Prices, pack sizes, overage, currency and the labour line are kept on this device, by stock, part number or item, for every model. Typing one never changes the model (no undo step, no unsaved mark).
+- **CSV** saves the list with your prices; with the list open, the Nesting **PDF** booklet has a shopping list page. Step by step, with the cabinet hardware part by part: [CNC cabinets](CNC-CABINETS.md#shopping-list-and-pricing).
+
 **The bookshelf as components.** This builds the bookshelf the cut list tests use. Sizes in inches; typed values need no click first.
 1. The back panel, while there is room: `R`, `34 1/2, 71 1/4`, Enter; `P`, `1/4`, Enter. Double-click it, `Q`, Right arrow, click its corner at the origin, click along its long edge, type `90` (or `-90` if it turned down into the ground): it stands up. Move it (`M`) 3/4 along red and back along green to 11. Edit > Make Component, `Back panel`.
 2. Sides: `R`, `3/4, 11 1/4`; `P`, `71 1/4`. Double-click it, Make Component `Side`. `M`, tap Ctrl, click its front bottom corner, Right arrow, `35 1/4`.

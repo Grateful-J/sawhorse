@@ -4,6 +4,19 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added (shopping list, 2026-11-14)
+
+- **A shopping list with your own prices.** **Shopping list ›**, beside **Nesting ›** under the cut list, lists what to buy:
+  - sheet goods and solid lumber from the nesting, by stock and material (the track saw's sheets marked; parts on no stock said, not counted);
+  - hardware from the parts, times each part's quantity, added up by part number or by name: a copied cabinet doubles its hardware, a deleted one takes it away;
+  - edge banding as a placeholder until banding is worked out; tools (a drilling template) once for the shop.
+
+  Every price starts empty and Sawhorse ships none. A row with no price says "price not set" and is left out of the total, which names what it leaves out. An overage per group (10% sheet goods, 20% lumber, 15% banding, 0% hardware to start, stated as assumptions) is added before rounding up to whole sheets, boards, pairs, packs and rolls; totals with and without it. A labour line, hours times your rate, for fun. Prices, pack sizes, overage and currency are kept on this device, never in the model, and money is written with the browser's locale in the currency you set. CSV export; with the list open, the nesting booklet gains a shopping list page.
+- **A part carries what is bought for it.** Part attributes gain `bom`, a list of `{ item, sku?, qty, unit: each | pair | m, once? }` (at most 32 per part, checked on every edit and on open), set with the new `set_bom` op and saved in `scene.json`. It is left out when empty and hashed only when present, so every older file, cut list and golden keeps its hash. The cut list's rows, and a plugin's `model.cutList()`, carry it.
+- **The Cabinet generator puts the Blum hardware on each part** (plugin 1.9.0): on each door its hinges (the planner's own count; CLIP top BLUMOTION 110° 71B3550, 71B3750 inset, or self-closing 71T3550 / 71T3750 from a new **Hinges** choice), one 0 mm system-screw plate per hinge (173L8100 US, 175L8100 Europe), cup screws and a pull; on each drawer front its runner pair, locking devices (T51.1901 or T51.7601 R and L; T51.1700.04 or T51.7601 in Europe), their screws (606N and 662.1150.HG with Blum Inc.) and a pull, and the drilling template and T65.9000 tool set once; four 5 mm pins on each loose shelf. Part numbers are only those printed in Blum's catalogues, cited in the code; the rest is in words.
+
+  How: `crates/kernel/src/cutlist.rs` (`BomItem`, `bom_problem`), `model.rs` (`Op::SetBom`), `snapshot.rs`; `plugins/cabinet-generator/cabinet.js` (`HARDWARE`, `build`), `main.js`, `keep.js`; `src/cutlist/shopping.ts`, `shop-store.ts`, `src/components/ShoppingSection.tsx`, `src/nesting/booklet.ts`, `src/App.tsx`. Tests: `crates/kernel/tests/cutlist.rs` (hardware counted per copy, refused when it cannot be kept, through the snapshot), `crates/kernel/src/cutlist.rs` (validation, written only when present, hashes), `crates/shz/src/lib.rs` (saved and opened), `src/cutlist/shopping.wasm.test.ts` (through the real kernel: a copied cabinet doubles its hardware, a deleted one removes it, undo brings it back), `src/cutlist/shopping.test.ts` (aggregation, rounding to whole sheets, pairs and packs, unpriced rows left out and named, overage, CSV, booklet), `src/components/ShoppingSection.test.tsx`, `src/plugins/cabinet-bom.test.ts` (only Blum's printed part numbers, the planner's hinge count on each door), e2e `shopping-list.spec.ts`.
+
 ### Fixed (CNC cabinets, 2026-11-14)
 
 - **Blum part numbers and hinge counts checked against Blum's current catalogues.**

@@ -17,9 +17,10 @@ The reference behind every setting is in the [User guide](USER-GUIDE.md) (Cut li
 8. [Set up the CAM job](#set-up-the-cam-job)
 9. [Parts too big for the bed: the track saw](#parts-too-big-for-the-bed-the-track-saw)
 10. [Read the cut list by assembly](#read-the-cut-list-by-assembly)
-11. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
-12. [What is kept with the model](#what-is-kept-with-the-model)
-13. [Limits](#limits)
+11. [Shopping list and pricing](#shopping-list-and-pricing)
+12. [Dialling in: what to change when something is off](#dialling-in-what-to-change-when-something-is-off)
+13. [What is kept with the model](#what-is-kept-with-the-model)
+14. [Limits](#limits)
 
 ## Why this exists
 
@@ -514,6 +515,60 @@ The right side's list is the left's mirror image: its notch is at 80 to 84 from 
 
 In the **Cut list**, tick **By assembly** to put a heading over each cabinet, base frame and other named group or component, with its parts under it and a count of pieces. A part used in two assemblies (a cleat in two cabinets) is listed under each with its share of the quantity and board feet. Parts in no assembly come last. Click a part under a heading to select that assembly's pieces in the model. The choice is remembered on this device.
 
+## Shopping list and pricing
+
+**Shopping list ›**, beside **Nesting ›** at the bottom of the Cut list, opens what to buy for the whole model, with your prices.
+
+### What it lists
+
+| Group | Where the numbers come from |
+|---|---|
+| **Sheet goods** | The nesting: the sheets it lays the parts out on, one row per stock and material. The track saw's 4 x 8 sheets are marked **track saw**. Parts the nesting puts on no stock are not in the list; a line says how many. |
+| **Solid lumber** | The nesting's boards, with their board feet (on the nominal thickness, as the yard sells them). |
+| **Edge banding** | Not worked out yet. A part that says how much banding it takes (an item in metres) will be listed here. |
+| **Hardware** | What each part carries, times how many of that part there are. Items with a part number are added up by part number; the rest by their words. |
+| **Tools** | A drilling template and its tool set: one each, however many cabinets need them. Shown only when a part asks for one. |
+
+The hardware rides on the parts, in the model. So a copied cabinet doubles its hardware and a deleted one takes it away. A part you untick in the cut list (left out of the totals) brings no hardware, and a line says so. With **Visible only**, hidden parts and their hardware are left out too.
+
+### The hardware the Cabinet generator puts on each part
+
+Part numbers are only those printed in Blum's catalogues. Anything Blum does not number is named in words.
+
+| Part | Each copy carries |
+|---|---|
+| A door | Its hinges, the planner's own count from Blum's chart (the "N hinges" row): CLIP top BLUMOTION 110° screw-on, **71B3550** for an overlay door, **71B3750** for an inset one. **6 · Hardware** > **Hinges** > **Self-closing** names **71T3550** / **71T3750** instead; the holes are the same. One mounting plate per hinge: 0 mm with pre-mounted system screws, **173L8100** (Blum Inc.) or **175L8100** (Blum Europe). If the Overlay row needs another plate height, the plate is named in words with that height. Two 3.5 x 17 mm screws per hinge, cup to door. A pull and its two screws, when the door has a pull. |
+| A drawer front | The runner pair (the length the planner picked, e.g. **563H5330B**). Blum Inc.: a right and a left locking device (**T51.1901 R** and **L** for TANDEM, **T51.7601 R** and **L** for MOVENTO), four **606N** screws for them, and one **662.1150.HG** system screw per drilled runner hole. Blum Europe: **T51.1700.04** or **T51.7601**, ordered left and right, and the screws in words, as Blum's instructions give. A pull and its two screws, when the front has one (not a finger notch). The drilling template (**T65.1600.01**, or **T65.1000.02** in Europe) and tool set **T65.9000** go on the Tools list once. |
+| A loose shelf | Four 5 mm shelf pins (Blum sells none: buy the ones that fit a 5 x 10 mm hole). |
+
+The hardware is listed whether or not **Drill hinge, runner and pull holes** is on: a door needs its hinges either way. With inset fronts or holes off, the runner screws are named in words for a pair of runners, because the holes are not drilled here.
+
+### Prices
+
+Every price field starts empty. Sawhorse ships no prices.
+
+- Type what you pay in a row's field. Sheets are priced per sheet, lumber per board foot of the boards you buy, hardware per piece or pair.
+- A row with no price says **price not set**. It is left out of the total, never counted as 0. Under the totals, a line names every row the total leaves out.
+- **pack** (hardware) is how many pieces or pairs come in a pack; the price is then per pack. **roll** (banding) is the metres in a roll. Empty: sold singly, or by the metre. Blum gives no pack sizes, so none is filled in.
+- **Prices in** is the currency (a three-letter code: USD, CAD, EUR). It starts from your browser's region when that is a common one; empty writes plain numbers. Money is written the way your browser's language writes it.
+
+**Overage.** Each group has an overage percentage, added to what the parts need before rounding up. It starts at 10% for sheet goods, 20% for lumber, 15% for banding and 0% for hardware. These are assumptions, not facts: set your own. Tools have no overage.
+
+**Rounding.** What you buy is rounded up to what can be bought: whole sheets and boards, whole pairs, whole packs, whole rolls. Banding by the metre is rounded up to the next centimetre. A row says what it needs and what to buy ("Needs 3 sheets · buy 4 sheets (10% over; 3 sheets without)").
+
+**Totals.** Two tiles: the total with the overage, and without it. Both count priced rows only.
+
+**Labour you saved (for fun).** Hours times an hourly rate. It is not in the total.
+
+### Where the prices are kept
+
+Prices, pack sizes, overage, currency and the labour line are your shop's, not the model's. They are kept on this device (the browser's storage) by stock and material, part number or item, so the same prices serve every model. Typing a price never changes the model: no undo step, no unsaved mark. A private window, or cleared site data, forgets them.
+
+### Files
+
+- **CSV** (in the list's header) saves every row: group, item, part number, material, needed, overage, to buy with and without it, unit price, price per, cost with and without overage, the parts it rides on, and notes. Then the total, the rows it leaves out, and the labour line. Money is written as plain numbers; the header names the currency.
+- With the Shopping list open, the Nesting **PDF** booklet has a shopping list page after its summary.
+
 ## Dialling in: what to change when something is off
 
 | What you see | What to change |
@@ -545,6 +600,8 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 - A model can come from anyone, so everything read back is checked before it is used. An entry that does not make sense is ignored.
 - The stock library, the nesting settings (kerf, trim, CNC spacing, the track saw) and per-part grain are saved with the model too.
 - The cabinet panel's last settings are kept for the next cabinet. The **By assembly** choice is kept on this device.
+- The hardware each part takes (its `bom`, [format.md](format.md#part-attributes-cut-list)) is saved on the part in the model, so the shopping list counts copies and deletions. It is not in the plugin's 64 KB store, where it could be dropped.
+- Shopping list prices are kept on this device, not in the model.
 
 ## Limits
 
@@ -556,3 +613,4 @@ In the **Cut list**, tick **By assembly** to put a heading over each cabinet, ba
 - Adjustable shelves get a band of pin holes around each shelf (five holes), not the full height.
 - A base frame's dado clearance is fixed at 0.008 in (0.2 mm): it has no field.
 - A dado that runs out of a part is cut square only when the parts have a gap between them and the sheet has a margin.
+- The shopping list does not work out edge banding yet, and names no screw part numbers for Blum Europe's runners and locking devices (Blum's pages read do not give them).

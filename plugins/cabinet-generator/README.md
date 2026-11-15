@@ -14,7 +14,7 @@ The step-by-step guide, from a cabinet to the CAM job (shop setup, rows, base fr
    - **3 · Fronts and pulls:** full overlay or inset, the reveal gap, and where the door and drawer pulls go.
    - **4 · Materials:** the measured thickness of each sheet.
    - **5 · Construction:** blind dados or butt joints, a full top or two stretchers, the back (in a groove, between the sides, or none) and rear nailers.
-   - **6 · Hardware:** drill the hinge, runner and pull holes or not; Blum TANDEM or MOVENTO runners from Blum Inc.'s catalogue (inch lengths) or Blum's European one (mm lengths), and their length; the hinges' inset and boring distance.
+   - **6 · Hardware:** drill the hinge, runner and pull holes or not; Blum TANDEM or MOVENTO runners from Blum Inc.'s catalogue (inch lengths) or Blum's European one (mm lengths), and their length; the hinges' inset and boring distance; BLUMOTION or self-closing hinges (for the shopping list).
    - **7 · CNC:** the bit's diameter and the joint clearance.
    - **8 · Cuts and holes:** every cut and hole, and how it is made.
    - **Generate cabinet**, with what it will add and one line on what it comes to: parts, thicknesses, holes, and the runner's part number.
@@ -128,6 +128,13 @@ Only the System 32 screw holes are drilled; Blum's chipboard-only holes (4 x 15 
 - 5 and 6 mm holes are smaller than a 1/4 in bit: the table lists them under **Change bit**, and dados narrower than the bit too. Bore each circle with a 1/8 in or 3 mm end mill; a drill bit of the hole's size works only in a spindle that has a collet for its shank and a speed slow enough for drilling ([CNC cabinets](../../docs/CNC-CABINETS.md#2-give-each-layer-its-toolpath)).
 
 The table lists every cut and how it is made. With inset fronts, the hinge plates and runner screws are listed but not drilled: they are left to Blum's inset tables.
+
+**For the shopping list.** Each part carries the hardware bought for it, saved on the part in the model (its `bom`), so the cut list's **Shopping list** counts a copied cabinet twice and a deleted one not at all. Part numbers are only those printed in Blum's catalogues (cited in `cabinet.js`, `HARDWARE`); anything Blum does not number is named in words.
+- **Each door:** one hinge per hinge the table counts: CLIP top BLUMOTION 110° screw-on, 71B3550 (overlay) or 71B3750 (inset), or self-closing 71T3550 / 71T3750 when **Hinges** says so. One 0 mm mounting plate with pre-mounted system screws per hinge: 173L8100 with Blum Inc.'s catalogue, 175L8100 with Blum Europe's (a plate the Overlay row needs at another height is named in words). Two 3.5 x 17 mm screws per hinge, cup to door. A pull and two pull screws, when the door has a pull.
+- **Each drawer front:** the runner pair from the runner table. With Blum Inc.: T51.1901 R and L (TANDEM) or T51.7601 R and L (MOVENTO), four 606N screws for them, and one 662.1150.HG system screw per drilled runner hole. With Blum Europe: T51.1700.04 or T51.7601, left and right, and the screws in words. A pull and two screws, unless the front has a finger notch. The drilling template (T65.1600.01, or T65.1000.02) and tool set T65.9000, once for the shop.
+- **Each loose shelf:** four 5 mm shelf pins (Blum sells none).
+
+With holes off or inset fronts, the hardware is still listed (a door needs its hinges); the runner screws are named in words, since the holes are not drilled here.
 
 **Changing it.** Select the cabinet, or double-click into it, and change anything: it is rebuilt in place, where it stands (moved or turned), one undo step ("Update cabinet") per change. A cabinet open for editing is rebuilt from inside: new parts in, old ones out, the same cabinet. The whole cabinet is one undo step ("Generate cabinet") when it is made.
 - Undo puts the cabinet back and the panel follows it, also inside an open cabinet. A change typed for one cabinet goes to that cabinet even when you click another before it is built.
