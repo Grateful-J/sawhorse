@@ -321,7 +321,7 @@ describe("checks, at their cited boundaries", () => {
 describe("the settings are kept", () => {
   it("a cabinet that leaves them alone stores none of them; one that sets them gets them back", () => {
     for (const m of [false, true]) {
-      const d = normalize(defaults(m), m);
+      const d = normalize({ ...defaults(m) } as Partial<Sizes> & Record<string, unknown>, m);
       const kept = pack(d, m).d;
       for (const k of Object.keys(trimDefaults(m))) expect(kept).not.toHaveProperty(k);
       const s: Sizes = { ...d, endLeft: "panel", endRight: "scribe", endStock: "doors", endDown: "box", endFront: "carcass", endBand: "frontTopBottom", endScribe: 0.02, fillerLeft: 0.04, fillerRight: 0.06, openLeft: "fridge", openRight: "range-slide", openLeftWidth: 0.9, openRightWidth: 0.762, kickSkin: "back", sinkWidth: 0.8, sinkApron: true, otr: true };
