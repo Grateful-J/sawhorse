@@ -5,7 +5,7 @@ import type { Nesting, Placement, StockPiece } from "../kernel/types";
 import type { BlankFeatures } from "./machine";
 import { diffU, exactU, finePrecision, fineStep, fineSteps, fineU, kindWord, pieceNumber, sizeUnit, type Units } from "./format";
 import type { MeasuredNest } from "./measure";
-import { pocketOvercut, reachesEdge } from "./dxf";
+import { featureLayers, overcutLoop, pocketOvercut, reachesEdge } from "./dxf";
 
 /** 0.1 mm: a part drawn thinner or thicker than this from its sheet is named. */
 export const THICKNESS_TOLERANCE = 1e-4;
@@ -566,7 +566,7 @@ export function cncFileName(title: string, n: Nesting, index: number, features: 
 }
 
 export interface NestProblem {
-  kind: "unplaced" | "glued" | "material" | "spacing" | "thickness" | "cuts" | "footprint";
+  kind: "unplaced" | "glued" | "material" | "spacing" | "thickness" | "cuts" | "footprint" | "toolfit";
   tag: string;
   name: string;
   text: string;
@@ -683,6 +683,37 @@ export function routerSheetProblems(n: Nesting, units: Units): NestProblem[] {
 
 /** The bit a CNC export assumes when it checks the spacing: 1/4 in, the usual for sheet goods. */
 export const CNC_BIT = 0.25 * 0.0254;
+
+/** Flag features whose bounding box (or hole diameter) cannot accommodate the assumed bit.
+ * A bounding box wider than the bit does not prove a pocket is machinable. */
+export function toolFitProblems(n: Nesting, measured: MeasuredNest | null, units: Units, bit = CNC_BIT): NestProblem[] {
+  if (!measured || !Number.isFinite(bit) || bit <= 0) return [];
+  const out: NestProblem[] = [];
+  for (const piece of n.pieces) for (const q of piece.placements) {
+    const f = measured.features.get(q.tag);
+    if (!f) continue;
+    const names = featureLayers(f);
+    const narrow = new Map<string, number>();
+    const record = (name: string, width: number) => {
+      if (Number.isFinite(width) && width > 0 && width <= bit + 1e-9) narrow.set(name, Math.min(width, narrow.get(name) ?? Infinity));
+    };
+    const pockets = (list: BlankFeatures["pockets"], layers: string[]) => list.forEach((p, i) => {
+      const loop = overcutLoop(p.loop, q.dx, q.dy, pocketOvercut(piece));
+      if (loop.length < 3 || loop.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) return;
+      const xs = loop.map(([x]) => x), ys = loop.map(([, y]) => y);
+      record(layers[i], Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)));
+    });
+    pockets(f.pockets, names.pockets);
+    pockets(f.flip.pockets, names.flipPockets);
+    f.drills.forEach((d, i) => record(names.drills[i], d.diameter));
+    f.flip.drills.forEach((d, i) => record(names.flipDrills[i], d.diameter));
+    if (narrow.size) {
+      const details = [...narrow].map(([layer, width]) => `${layer} (at most ${exactU(width, units)} across)`).join(", ");
+      out.push({ kind: "toolfit", tag: q.tag, name: q.name, text: `${details}: at or below the assumed ${exactU(bit, units)} bit diameter. In CAM pocket with a suitable smaller cutter, or use a matching drill only if suitable for your spindle. Check the tool's cutting length, collet and every toolpath; an empty toolpath leaves the cut out. Sawhorse does not know which tools you own or select in CAM` });
+    }
+  }
+  return out;
+}
 
 /**
  * Parts too close together for a router bit. An outside profile runs half the bit outside each

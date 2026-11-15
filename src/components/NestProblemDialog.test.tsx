@@ -24,6 +24,15 @@ describe("nest problem dialog", () => {
 });
 
 describe("nest problem dialog with a fix", () => {
+  it("shows a tool warning before saving and does not offer unrelated stock settings", () => {
+    const onSave = vi.fn();
+    const view = render(<NestProblemDialog req={{ what: "the DXF", problems: [{ kind: "toolfit", tag: "1", name: "Side", text: "POCKET_7.94MM: check cutter size in CAM" }], onSave, onStock: () => {} }} onClose={() => {}} />);
+    expect(view.container.textContent).toContain("Check cutter sizes in CAM");
+    expect(within(view.container).queryByRole("button", { name: "Open Stock..." })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(within(view.container).getByRole("button", { name: "Save the DXF anyway" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
   it("offers the fix first, and no Open Stock... for spacing alone", () => {
     const run = vi.fn();
     const onSave = vi.fn();

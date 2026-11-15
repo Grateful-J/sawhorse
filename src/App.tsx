@@ -14,7 +14,7 @@ import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
 import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
-import { cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { cncFileName, cncNotes, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, toolFitProblems, type HandWork, type NestProblem } from "./nesting/cnc";
 import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, stampOf, type NestStamp } from "./nesting/exportGuard";
 import { assemblyIndex } from "./lib/assembly";
 import { applyFromLibrary, ownStockMaterials, patchSettings, type NestSettingsPatch } from "./nesting/settingsQueue";
@@ -2444,6 +2444,7 @@ export function App() {
           // For the router too: a sheet among its files that is not the size it is set to (a
           // material kept on its own stock), which "nest on 4 x 4" did not move.
           const problems = [...nestProblems(n, nestUnits, reasonText), ...(kind === "cnc" ? routerSheetProblems(n, nestUnits) : []), ...(m ? cutProblems(share, m.cuts, nestUnits) : [])];
+          if (m) problems.push(...toolFitProblems(share, m.cuts, nestUnits));
           // For the router: parts too close for the bit cut as one blob in the CAM program.
           const spacing = kind === "cnc" ? spacingProblem(n, nestUnits) : null;
           if (spacing) problems.unshift(spacing);
