@@ -28,9 +28,9 @@ A wrong click in a CAM program can ruin a sheet. Before the first full sheet, to
 
 ## Which edition, on a Mac
 
-You are on a Mac and have not bought VCarve. This decides it:
+If you work on a Mac, or cut a 4 x 4 sheet in one job, this decides the edition:
 
-| | VCarve Desktop | VCarve Pro | Vectric Spark | Carbide Create (what you have) |
+| | VCarve Desktop | VCarve Pro | Vectric Spark | Carbide Create |
 |---|---|---|---|---|
 | Runs on | Windows only. Vectric's FAQ mentions a Mac through Parallels, with "limited" support | Windows only | macOS | Mac and Windows |
 | Job size without tiling | **25 in square** (its V12.5 help) or **24 x 24 in** (Vectric's Compare page and product text) | Unlimited | not listed | No limit found |
@@ -41,7 +41,7 @@ You are on a Mac and have not bought VCarve. This decides it:
 
 Sources: § 0.1, § 9, § 10.
 
-- **VCarve Desktop does not fit a 4 x 4 bed.** Vectric's two figures disagree by an inch. The Desktop help says: "VCarve Desktop only supports job sizes up to a maximum of 25 inches square without tiling". The Compare page says "Work area: 24" x 24"", and the product text says "Desktop editions are capped at 24"x24" without tiling". Either way, the Shapeoko 5 Pro 4x4 travels 1237 x 1237 mm (about 48.7 in). Desktop also has no toolpath templates (§ 0.1, § 0.2).
+- **VCarve Desktop does not fit a 4 x 4 bed.** Vectric's two figures disagree by an inch. The Desktop help says: "VCarve Desktop only supports job sizes up to a maximum of 25 inches square without tiling". The Compare page says "Work area: 24" x 24"", and the product text says "Desktop editions are capped at 24"x24" without tiling". Either way, a 4 x 4 sheet is 48 in square, and a 4 x 4 machine such as the Shapeoko 5 Pro 4x4 travels 1237 x 1237 mm (about 48.7 in). Desktop also has no toolpath templates (§ 0.1, § 0.2).
 - **VCarve Pro is the edition for this bed and this guide.** It needs Windows: a Windows PC, or Windows on the Mac. The report records Vectric's "limited" support for Parallels under Desktop; **not known** whether Vectric says the same of Pro. Ask Vectric before you buy.
 - **Spark is Vectric's macOS program.** Vectric lists what it cuts (above), and lists neither templates nor nesting (§ 10). Without templates, each sheet's toolpaths are made by hand. Vectric says Spark files open in VCarve "V13 and later" (§ 7), and V13 was not out on 2026-11-14.
 - **On the Mac today, Carbide Create does the whole job.** [Carbide Create: cutting Sawhorse's CNC files](CAM-CARBIDE-CREATE.md).
