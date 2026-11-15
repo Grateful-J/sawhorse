@@ -936,6 +936,59 @@ fn exploding_a_kept_part_keeps_it_in_its_block() {
     assert_eq!(block(&n, "pair").len(), 2);
 }
 
+/// A solid that already has its own keep together keeps it when the component around it is
+/// exploded; the component's own is dropped, and a note says so (as it does for several
+/// solids). One the same as the solid's loses nothing and says nothing.
+#[test]
+fn exploding_a_part_onto_a_solid_with_its_own_keep_together_says_what_is_dropped() {
+    let mut d = Document::with_ground_sketch();
+    let mut explode = |own: Option<Together>, outer: Option<Together>| {
+        let o = board(&mut d, 0.0, 0.0, 0.0, 17.0, 0.75, 6.0);
+        ok(
+            &mut d,
+            Op::SetTogether {
+                part: PartRef::Object(o),
+                together: own,
+            },
+        );
+        let (inst, def) = component(&mut d, vec![Item::Object(o)], "Front");
+        ok(
+            &mut d,
+            Op::SetTogether {
+                part: PartRef::Definition(def),
+                together: outer,
+            },
+        );
+        let out = ok(&mut d, Op::Explode { node: inst });
+        let OpOutcome::Exploded { objects, notes, .. } = out else {
+            panic!("{out:?}")
+        };
+        assert_eq!(objects.len(), 1);
+        let l = cut(d.model());
+        let row = l
+            .rows
+            .iter()
+            .find(|r| r.key == PartKey::Object(objects[0]))
+            .unwrap();
+        (row.together.clone(), notes)
+    };
+    let (kept_as, notes) = explode(kept("own", 2), kept("pair", 1));
+    assert_eq!(kept_as, kept("own", 2));
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].contains("\"pair\" 1") && notes[0].contains("\"own\" 2"),
+        "{notes:?}"
+    );
+    // The same keep together on both: nothing is lost, nothing is said.
+    let (kept_as, notes) = explode(kept("same", 1), kept("same", 1));
+    assert_eq!(kept_as, kept("same", 1));
+    assert!(notes.is_empty(), "{notes:?}");
+    // Only the component's: the solid takes it, as ever.
+    let (kept_as, notes) = explode(None, kept("pair", 0));
+    assert_eq!(kept_as, kept("pair", 0));
+    assert!(notes.is_empty(), "{notes:?}");
+}
+
 // ---- property tests ------------------------------------------------------------------------
 
 /// A random list: up to nine parts, some kept in one of two blocks (two holders), random

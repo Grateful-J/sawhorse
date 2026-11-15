@@ -1350,6 +1350,18 @@ impl Model {
                     t.index,
                     solids.len()
                 ));
+            } else if solids.len() == 1 {
+                // The solid already has its own; the group's is not kept, and a note says.
+                let own = &self.objects[first].part;
+                if own.together.as_ref() != Some(t) {
+                    notes.push(format!(
+                        "{name} was kept together as {:?} {}: its solid is kept together already, as {:?} {}; the group's is dropped",
+                        t.key,
+                        t.index,
+                        own.together.as_ref().map_or("", |o| o.key.as_str()),
+                        own.together.as_ref().map_or(0, |o| o.index),
+                    ));
+                }
             }
         }
         if !attrs.bom.is_empty() {
