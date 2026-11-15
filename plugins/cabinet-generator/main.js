@@ -1631,6 +1631,9 @@ function baseFields(b) {
   return out;
 }
 
+/** Whether anything stands beside a cabinet of the row (an end panel, a filler, an opening). @param {Placed[]} row */
+const hasPieces = (row) => row.some((c) => c.ends && (c.ends.left.length || c.ends.right.length));
+
 /** The rows panel for what is selected. @returns {Field[]} */
 function rowsBody() {
   const v = rowView;
@@ -1643,7 +1646,7 @@ function rowsBody() {
   }
   out.push({ type: "note", id: "row", text: "", tone: "info" });
   // What stands beside the cabinets (end panels, fillers, openings), along the row, and what its checks say.
-  if (v.row.some((c) => c.ends && (c.ends.left.length || c.ends.right.length))) out.push({ type: "table", id: "rowItems", columns: ["Along the row", "What", "From", "Width"], rows: [], align: ["left", "left", "right", "right"] });
+  if (hasPieces(v.row)) out.push({ type: "table", id: "rowItems", columns: ["Along the row", "What", "From", "Width"], rows: [], align: ["left", "left", "right", "right"] });
   out.push({ type: "note", id: "rowChecks", text: "" });
   if (v.kind === "row" && v.selected.length > 1 && rowOf(v.selected, v.selected[0].id).length < v.selected.length) {
     out.push({ type: "button", id: "lineUp", label: "Line up the selected cabinets" }, help("The longest row among them stays put; the others butt against its ends in the order they stand, backs in line, on its floor."));
@@ -1700,7 +1703,8 @@ async function explainRows() {
     fields.row = { text: `Row of ${row.length}: ${row.map((c) => c.name).join(", ")} · ${f(lay.length)} long, ${f(lay.depth)} deep${on}`, tone: "info" };
     const x0 = lay.items.length ? lay.items[0].x0 : 0;
     const word = { cabinet: "Cabinet", panel: "End panel", filler: "Filler", opening: "Opening" };
-    fields.rowItems = { rows: lay.items.map((it) => [it.label, it.kind === "cabinet" ? word.cabinet : `${word[it.kind]}, ${it.side} of ${row[it.cab].name}`, f(it.x0 - x0), f(it.x1 - it.x0)]) };
+    // The table is there only when something stands beside a cabinet (rowsBody).
+    if (hasPieces(row)) fields.rowItems = { rows: lay.items.map((it) => [it.label, it.kind === "cabinet" ? word.cabinet : `${word[it.kind]}, ${it.side} of ${row[it.cab].name}`, f(it.x0 - x0), f(it.x1 - it.x0)]) };
   }
   {
     const warn = row.length ? rowChecks(row, (await placed()).list, metric()) : [];
