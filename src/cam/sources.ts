@@ -285,6 +285,14 @@ export const SOURCES = {
     confidence: "medium",
     report: "§8a",
   },
+  report8b: {
+    maker: "Sawhorse research report",
+    document: "Recommended defaults, generic hobby 4×4 machine",
+    where: '§8b: the lowest manufacturer value; RPM 18,000 unless the feed exceeds the machine\'s limit; "The 1/8" row is Amana\'s printed chart value; on a light machine, start at half of it"',
+    url: "docs/research/feeds-speeds-sources.md#8b-generic-hobby-4x4-machine",
+    confidence: "low",
+    report: "§8b",
+  },
 } as const satisfies Record<string, Source>;
 
 export type SourceId = keyof typeof SOURCES;

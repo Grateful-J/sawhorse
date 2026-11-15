@@ -235,6 +235,7 @@ export const COMMUNITY = {
   stepoverFinishLow: { value: 5, unit: "percent", src: "atoz", note: "Finishing 5–10% of the diameter" } as Sourced,
   stepoverFinishHigh: { value: 10, unit: "percent", src: "atoz" } as Sourced,
   rubbingFloor: { value: 0.001, unit: "in/tooth", src: "atoz", note: '0.001" is the commonly cited minimum; it "may need to be lowered to 0.0005" for 1/8" and smaller endmills"' } as Sourced,
+  rubbingFloorSmall: { value: 0.0005, unit: "in/tooth", src: "atoz", note: 'For 1/8" and smaller end mills the 0.001" minimum "may need to be lowered to 0.0005"' } as Sourced,
   ccLibraryDepthLow: { value: 0.03, unit: "in", src: "forum-46692", note: "Carbide Create's library depth of cut for compression bits in plywood, as a user reports it" } as Sourced,
   ccLibraryDepthHigh: { value: 0.04, unit: "in", src: "forum-46692" } as Sourced,
 };
@@ -248,6 +249,10 @@ export const ONION_SKIN = { value: 0.02, unit: "in", src: "laguna", note: '"Set 
 /** Why a 35 mm hinge-boring or Forstner bit never goes in the router. */
 export const HINGE_BIT_MAX = { value: 8000, unit: "rpm", src: "amana-203431", note: 'Amana 203431, 35 mm hinge boring bit: "Maximum RPM is 8,000"; "Not to be used in portable drills or hand held routers"' } as Sourced;
 export const FORSTNER_35 = { value: 900, unit: "rpm", src: "wurth", note: "Würth Forstner bits over 35 mm: 900 rpm in hardwood or MDF" } as Sourced;
+
+/** §8b: a 1/8 in bit on a light machine starts at half of Amana's printed figure (and §8a
+ * keeps it above the 0.001 in/tooth rubbing floor). */
+export const EIGHTH_HALF = { value: 0.5, unit: "ratio", src: "report8b", note: '"The 1/8" row is Amana\'s printed chart value; on a light machine, start at half of it"' } as Sourced;
 
 /** The HPL factor: Rennie's HPL row is about 70% of its MDF row at 6.35 mm. */
 export const HPL_FACTOR = { value: 0.7, unit: "ratio", src: "rennie", note: "Rennie: HPL .229–.305 mm vs MDF .330–.406 mm at 6.35 mm; a derived ratio, and Rennie's chart excludes compression bits" } as Sourced;
