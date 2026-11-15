@@ -16,7 +16,8 @@ import { decimalSteps, formatBoardFeet, formatSteps, GRAIN_WORDS, isMetric, list
 
 export const CSV_TYPE = { description: "Cut list (CSV)", mime: "text/csv", extensions: [".csv"] };
 
-function field(v: string | number): string {
+/** One CSV field: quoted when it holds a comma, a quote or a line break. */
+export function field(v: string | number): string {
   const s = String(v);
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
@@ -104,7 +105,12 @@ export function parseCsv(text: string): string[][] {
 
 /** UTF-8 bytes with a byte-order mark, so spreadsheet programs read "×" and "²" right. */
 export function csvBytes(list: CutList): Uint8Array {
-  const body = new TextEncoder().encode(cutListCsv(list));
+  return withBom(cutListCsv(list));
+}
+
+/** CSV text as UTF-8 bytes with a byte-order mark. */
+export function withBom(text: string): Uint8Array {
+  const body = new TextEncoder().encode(text);
   const out = new Uint8Array(body.length + 3);
   out.set([0xef, 0xbb, 0xbf]);
   out.set(body, 3);

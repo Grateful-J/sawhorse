@@ -9,6 +9,7 @@ import { SidePanel, type PaneId } from "./components/SidePanel";
 import { CutListReport } from "./components/CutListReport";
 import { rowKey } from "./components/CutListPane";
 import { cncSettings, NestingSection } from "./components/NestingSection";
+import { ShoppingSection } from "./components/ShoppingSection";
 import { StockDialog } from "./components/StockDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
@@ -26,6 +27,8 @@ import { csvBytes, CSV_TYPE } from "./cutlist/csv";
 import { labelsPdf, reportPdf } from "./cutlist/documents";
 import { followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
 import { loadCutRounding, saveCutRounding } from "./cutlist/rounding-store";
+import { currencyForLocale, priceList, shoppingCsvBytes, shoppingList, SHOPPING_CSV_TYPE, type ShopPrefs } from "./cutlist/shopping";
+import { loadShopPrefs, saveShopPrefs } from "./cutlist/shop-store";
 import { PDF_TYPE } from "./cutlist/pdf";
 import type { CutList, CutRow, Grain, Nesting, NestSettings, Placement, Rounding, StockDef, StockLibrary, StockPiece } from "./kernel/types";
 import { ValueBar, type StatusMessage } from "./components/ValueBar";
@@ -167,6 +170,20 @@ function loadNestOpen(): boolean {
     return false;
   }
 }
+
+/** The Cut list pane's Shopping list section was left open. */
+const SHOP_OPEN_KEY = "sawhorse.shoppingOpen";
+
+function loadShopOpen(): boolean {
+  try {
+    return localStorage.getItem(SHOP_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The browser's language, for money and numbers (none in a test without a navigator). */
+const LOCALE = typeof navigator !== "undefined" ? navigator.language : undefined;
 
 /** What selecting a nested piece selects. */
 function entityOfItem(item: Item): Entity {
@@ -431,6 +448,16 @@ export function App() {
   // Nesting (lane 9): the parts laid out on stock by the kernel while its section is open.
   const [nestOpen, setNestOpen] = useState<boolean>(loadNestOpen);
   const nestShown = cutOpen && nestOpen;
+  // The Shopping list: its sheets and boards are the nesting's, so it is worked out while
+  // either section is open. Its prices are the shop's, kept on this device, not in the model.
+  const [shopOpen, setShopOpen] = useState<boolean>(loadShopOpen);
+  const shopShown = cutOpen && shopOpen;
+  const nestWanted = nestShown || shopShown;
+  const [shopPrefs, setShopPrefsState] = useState<ShopPrefs>(() => loadShopPrefs(currencyForLocale(LOCALE)));
+  const setShopPrefs = useCallback((p: ShopPrefs) => {
+    setShopPrefsState(p);
+    saveShopPrefs(p);
+  }, []);
   const [nesting, setNesting] = useState<Nesting | null>(null);
   const [nestProblem, setNestProblem] = useState<string | null>(null);
   const [nestBusy, setNestBusy] = useState(false);
@@ -1208,7 +1235,7 @@ export function App() {
   // The nesting: worked out again a moment after the last edit while its section is open
   // (read-only; kerf, trim and the algorithm are document settings, so they are edits too).
   useEffect(() => {
-    if (!nestShown || !scene) return;
+    if (!nestWanted || !scene) return;
     const k = kernelRef.current;
     if (!k) return;
     let stale = false;
@@ -1244,7 +1271,7 @@ export function App() {
       stale = true;
       window.clearTimeout(t);
     };
-  }, [nestShown, scene, cutVisibleOnly]);
+  }, [nestWanted, scene, cutVisibleOnly]);
 
   // Read-only hooks for tests: the cut list and the nesting for any options, straight from
   // the kernel.
@@ -2274,6 +2301,21 @@ export function App() {
       /* per-viewer convenience only */
     }
   }, [nestOpen]);
+  const toggleShop = useCallback(() => {
+    const next = !shopOpen;
+    setShopOpen(next);
+    if (!next && !nestOpen) {
+      setNestBusy(false);
+      nestNow.current.pending = false;
+    }
+    try {
+      localStorage.setItem(SHOP_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [shopOpen, nestOpen]);
+  /** The shopping list priced at the shop's prices (null until there is a cut list). */
+  const shopPriced = useMemo(() => (cutList && shopShown ? priceList(shoppingList(cutList, nesting), shopPrefs) : null), [cutList, nesting, shopPrefs, shopShown]);
   const setNestSettings = useCallback((s: NestSettings) => void apply({ op: "set_nest_settings", settings: s }, () => nestSettingsText(s, nestUnits)), [apply, nestUnits]);
   /** An edit built from the stock library as the kernel has it when the edit's turn comes: the
    * read and the write are one task in the edit queue. The nesting on screen can be a moment
@@ -2390,6 +2432,15 @@ export function App() {
     },
     [cutList, cutTitle],
   );
+  const saveShopCsv = useCallback(async () => {
+    if (!shopPriced) return;
+    try {
+      const res = await saveFile(`${cutTitle} shopping list.csv`, shoppingCsvBytes(shopPriced, shopPrefs), SHOPPING_CSV_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: the shopping list with your prices${shopPriced.unpriced.length ? ` (${shopPriced.unpriced.length} row${shopPriced.unpriced.length === 1 ? "" : "s"} with no price, left out of the total)` : ""}.`, error: false });
+    } catch (e) {
+      setMessage({ text: `Could not save the shopping list: ${e instanceof Error ? e.message : String(e)}`, error: true });
+    }
+  }, [shopPriced, shopPrefs, cutTitle]);
   // A nesting that went wrong (parts on no stock, glued up, or off their material's sheet) is
   // not saved for cutting without asking.
   const [problemRequest, setProblemRequest] = useState<NestProblemRequest | null>(null);
@@ -2595,12 +2646,14 @@ export function App() {
   );
   const saveNestPdf = useCallback(async (n: Nesting) => {
     try {
-      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits), PDF_TYPE);
-      if (res) setMessage({ text: `Saved ${res.name}: what to buy, then a page per sheet or board with its diagram and cut sequence.`, error: false });
+      // With the Shopping list open, its list (at the shop's prices) follows the summary.
+      const shop = cutList && shopShown ? { priced: priceList(shoppingList(cutList, n), shopPrefs), prefs: shopPrefs, locale: LOCALE } : undefined;
+      const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, shop), PDF_TYPE);
+      if (res) setMessage({ text: `Saved ${res.name}: what to buy${shop ? ", the shopping list with your prices" : ""}, then a page per sheet or board with its diagram and cut sequence.`, error: false });
     } catch (e) {
       setMessage({ text: `Could not save the nesting booklet: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [cutTitle, nestUnits]);
+  }, [cutTitle, nestUnits, cutList, shopShown, shopPrefs]);
 
   const printCut = useCallback(() => {
     const body = document.body;
@@ -3414,6 +3467,20 @@ export function App() {
               handWork={sawWork}
               handWorkNote={sawWorkNote}
               blocked={nestExportBlock}
+            />
+          ) : null,
+          shopOpen,
+          onShop: toggleShop,
+          shopping: shopShown ? (
+            <ShoppingSection
+              list={cutList}
+              nesting={nesting}
+              busy={nestBusy}
+              problem={nestProblem ?? (kernelState === "missing" || kernelState === "error" ? "The sheets and boards come from the nesting, which the kernel works out; it is not loaded." : null)}
+              prefs={shopPrefs}
+              onPrefs={setShopPrefs}
+              onCsv={() => void saveShopCsv()}
+              locale={LOCALE}
             />
           ) : null,
         }}

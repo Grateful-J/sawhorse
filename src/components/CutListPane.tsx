@@ -50,6 +50,11 @@ export interface CutListPaneProps {
   onNest?: () => void;
   /** The Nesting section itself, drawn under the cut list while open. */
   nesting?: ReactNode;
+  /** The Shopping list section is open. */
+  shopOpen?: boolean;
+  onShop?: () => void;
+  /** The Shopping list section itself, drawn under the cut list (after Nesting) while open. */
+  shopping?: ReactNode;
   /** Lane 20: the panel is in its wide mode (more room for names, notes and reasons). */
   wide?: boolean;
   /** Lane 20: switch the panel's wide mode (the Wide button); none hides the button. */
@@ -704,11 +709,24 @@ export function CutListPane(p: CutListPaneProps) {
         >
           {p.nestOpen ? "Nesting ‹" : "Nesting ›"}
         </button>
+        {p.onShop ? (
+          <button
+            type="button"
+            className="btn"
+            aria-pressed={!!p.shopOpen}
+            disabled={!p.shopOpen && (!list || empty)}
+            onClick={p.onShop}
+            title="What to buy: the sheets and boards the nesting uses, and the hardware the parts carry, with your prices and overage"
+          >
+            {p.shopOpen ? "Shopping list ‹" : "Shopping list ›"}
+          </button>
+        ) : null}
       </div>
       <p className="note" data-testid="cutlist-note">
         {scopeNote(r)} Sizes in {sizeUnit(r)}.
       </p>
       {p.nesting}
+      {p.shopping}
       {menu ? (
         <div className="ctxmenu" ref={menuRef} role="menu" aria-label={`Cut list: ${partsLabel(menu.rows)}`} style={{ left: menu.x, top: menu.y }}>
           <div className="ctxtitle" title={menu.rows.map((r) => r.name).join(", ")}>
