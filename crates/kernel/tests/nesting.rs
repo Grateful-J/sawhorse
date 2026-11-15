@@ -756,6 +756,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
                         center: [0.0; 3],
                         shaped: false,
                     },
+                    holder: None,
                 }
             })
             .collect();
@@ -801,6 +802,7 @@ fn list_of(parts: &[(f64, f64, f64, usize, Grain, bool, u8)], visible_mask: u64)
             area_m2: 0.0,
             bom: Vec::new(),
             stretched: 0,
+            together: None,
             occurrences,
         });
     }

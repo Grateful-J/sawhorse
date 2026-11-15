@@ -609,6 +609,40 @@ mod tests {
     }
 
     #[test]
+    fn a_parts_keep_together_is_saved_and_opened() {
+        let mut d = sample();
+        d.apply(
+            &serde_json::from_str::<Op>(
+                r#"{"op":"set_together","part":{"object":1},"together":{"key":"Cabinet 1 fronts","index":2,"stack":"across"}}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let bytes = write(d.model(), &SaveOptions::default()).unwrap();
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+        let scene = String::from_utf8(entry(&mut zip, "scene.json").unwrap().unwrap()).unwrap();
+        assert!(scene.contains("\"key\": \"Cabinet 1 fronts\""), "{scene}");
+        assert!(scene.contains("\"stack\": \"across\""), "{scene}");
+        let o = read(&bytes).unwrap();
+        assert_eq!(o.document.hash(), d.hash(), "same model, same hash");
+        let t = o
+            .document
+            .model()
+            .object(1)
+            .unwrap()
+            .part()
+            .together
+            .clone()
+            .unwrap();
+        assert_eq!((t.key.as_str(), t.index), ("Cabinet 1 fronts", 2));
+        // A file without it has none in scene.json.
+        let plain = write(sample().model(), &SaveOptions::default()).unwrap();
+        let mut zip = zip::ZipArchive::new(Cursor::new(plain.as_slice())).unwrap();
+        let scene = String::from_utf8(entry(&mut zip, "scene.json").unwrap().unwrap()).unwrap();
+        assert!(!scene.contains("\"together\""));
+    }
+
+    #[test]
     fn a_parts_hardware_list_is_saved_and_opened() {
         let mut d = sample();
         d.apply(

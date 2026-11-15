@@ -527,6 +527,16 @@ pub enum Op {
         #[serde(default)]
         bom: Vec<crate::cutlist::BomItem>,
     },
+    /// Keep together (grain-matched fronts): nest the part as one block with the other parts
+    /// of `together.key` in its group or component, at `together.index` (see
+    /// [`crate::nesting`]); `None` clears it. Metadata, like grain: allowed anywhere in the
+    /// tree, and it reaches every copy of a component. Checked by
+    /// [`crate::cutlist::Together::problem`]; refused on an assembly, which is never nested.
+    SetTogether {
+        part: crate::cutlist::PartRef,
+        #[serde(default)]
+        together: Option<crate::cutlist::Together>,
+    },
     /// Lane 15: put each edge-connected piece of non-solid meshes into a group of its own, so
     /// the cut list counts it as a part (loose faces are never parts). `meshes` empty: every
     /// mesh in the open context. One undo step; the geometry does not move or change.
@@ -2398,6 +2408,23 @@ impl Model {
                 }
                 let bom = bom.clone();
                 self.set_part(*part, move |a| a.bom = bom)
+            }
+            Op::SetTogether { part, together } => {
+                if let Some(why) = together
+                    .as_ref()
+                    .and_then(crate::cutlist::Together::problem)
+                {
+                    return Err(DocumentError::BadTogether(why).into());
+                }
+                // On an assembly it would never be nested: the nesting places its pieces.
+                if together.is_some() && self.holds_parts(*part)? {
+                    return Err(DocumentError::BadTogether(
+                        "that holds other parts (an assembly, such as a whole cabinet), so it is never nested: keep the parts themselves together (the drawer fronts)".into(),
+                    )
+                    .into());
+                }
+                let together = together.clone();
+                self.set_part(*part, move |a| a.together = together)
             }
             Op::GroupLoose { meshes } => self.group_loose(meshes),
             Op::SetEdgeFlags { edges, set, clear } => self.set_edge_flags(edges, *set, *clear),

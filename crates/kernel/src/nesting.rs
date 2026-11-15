@@ -41,6 +41,22 @@
 //!   the board, else a new section as long as itself), so narrow parts are ripped side by
 //!   side from one crosscut section. The shelves win only with fewer boards.
 //!
+//! **Kept together** (grain-matched fronts, [`crate::cutlist::PartAttrs::together`]). The
+//! parts with one key in one group or component (each copy of a cabinet is its own block)
+//! are one rigid block: in index order, each lying as its grain says (along the stock's
+//! grain), a kerf apart (the kerf of the sheet they are cut on: the router's, or on the
+//! saw's sheet the saw's), lined up on their near edge, end to end along the grain
+//! (`stack: along`) or side by side across it (`across`). The block is laid out as one
+//! rectangle and turns 90 degrees only when every part in it may; each part keeps its own
+//! placement, so its cuts, label and outline are its own. Its stock is the one its parts
+//! were given; when that is the router's sheet and the block is larger, the saw's sheet of
+//! the same thickness and grain (library order) takes it whole, when one does. A block is
+//! never split: when it cannot be cut whole from one sheet every part of it is reported,
+//! too large as a block ([`UnplacedReason::TogetherTooLarge`]), or kept from it
+//! ([`UnplacedReason::Together`]: a part of it found no stock (that part says why), its
+//! parts want different stock or material, two share an index, or they run different
+//! ways). A part of a block is never glued up.
+//!
 //! **Cuts.** Each piece's cut sequence is found from its layout: trim cuts first, then
 //! recursively the first straight cut across the current offcut that crosses no part (rips
 //! along a sheet's longer side first; crosscuts first on a board), lower side first. A
@@ -53,7 +69,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::cutlist::{CutList, CutOptions, CutRow, Grain};
+use crate::cutlist::{CutList, CutOptions, CutRow, Grain, Stack, Together};
 use crate::hash::StableHasher;
 use crate::model::Model;
 use crate::nodes::Item;
@@ -141,6 +157,23 @@ pub struct Placement {
     /// the strip's width; `size` stays the whole part's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strip: Option<Strip>,
+    /// Kept together with other parts (grain-matched fronts): its block and its place in it.
+    /// Absent for a part nested on its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub together: Option<InBlock>,
+}
+
+/// A part's place in a keep-together block ([`crate::cutlist::Together`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InBlock {
+    /// The block's key, and this part's index in it as the part says.
+    pub key: String,
+    pub index: u32,
+    /// `n` of `of` (1-based) in the block's order: the lowest index first.
+    pub n: usize,
+    pub of: usize,
+    /// Which way the block runs against the grain.
+    pub stack: Stack,
 }
 
 /// Which strip of a glue-up: `n` of `of` (1-based).
@@ -232,6 +265,14 @@ pub enum UnplacedReason {
     /// Lane 20: lumber wider than 4 ft and than every board
     /// ([`crate::cutlist::Uncounted::TooWide`]).
     TooWide,
+    /// Kept together: its block cannot be cut whole from one sheet, and a block is never
+    /// split. Another part of it found no stock (that part says why), its parts want
+    /// different stock or material, two have one index, they run different ways, or this
+    /// part could only be glued up.
+    Together,
+    /// Kept together: the block as one piece is larger than its stock (and than the saw's
+    /// sheet, with a saw set), though its parts fit one by one.
+    TogetherTooLarge,
 }
 
 impl From<crate::cutlist::Uncounted> for UnplacedReason {
@@ -279,6 +320,9 @@ pub struct Unplaced {
     /// no sheet of that size. Absent unless a footprint is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asked: Option<[f64; 2]>,
+    /// Kept together: its block and its place in it. Absent for a part on its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub together: Option<InBlock>,
 }
 
 /// One stock and material: how many pieces of it.
@@ -352,6 +396,7 @@ struct Need {
     tag: String,
     item: Item,
     strip: Option<Strip>,
+    together: Option<InBlock>,
 }
 
 /// "a".."z", "aa".. for 1, 2, 3...
@@ -399,6 +444,98 @@ impl Rect {
     }
     fn holds(&self, dx: f64, dy: f64) -> bool {
         dx <= self.w + EPS && dy <= self.h + EPS
+    }
+}
+
+// ---- blocks (kept together) ----------------------------------------------------------------
+
+/// How a part lies on a stock of grain `sg` in a block that is not turned: its size along the
+/// stock's grain and across it, and whether its length runs across (as [`orientations`]
+/// puts it first).
+fn lie(row: &CutRow, sg: StockGrain) -> (f64, f64, bool) {
+    let (w, l) = (row.size[1], row.size[2]);
+    let free = sg == StockGrain::None || row.grain == Grain::None;
+    if !free && row.grain == Grain::Width {
+        (w, l, true)
+    } else {
+        (l, w, false)
+    }
+}
+
+/// A keep-together block on its stock: its parts in order, each `(need, along, across,
+/// turned)` as [`lie`] says, `kerf` apart.
+#[derive(Debug, Clone)]
+struct Block {
+    stack: Stack,
+    kerf: f64,
+    /// Every part may turn (the stock or the part has no grain): the block may.
+    free: bool,
+    parts: Vec<(usize, f64, f64, bool)>,
+}
+
+impl Block {
+    /// Each part's offset along the stack from the block's corner, and the block's size along
+    /// the stock's grain and across it (not turned). The offsets are added up one by one, so
+    /// the gap between two parts is the kerf to the last bit the sum allows.
+    fn offsets(&self) -> (Vec<f64>, f64, f64) {
+        let mut offs = Vec::with_capacity(self.parts.len());
+        let mut at = 0.0;
+        let mut end: f64 = 0.0;
+        let mut wide: f64 = 0.0;
+        for (k, &(_, a, c, _)) in self.parts.iter().enumerate() {
+            if k > 0 {
+                at = end + self.kerf;
+            }
+            offs.push(at);
+            let (run, side) = match self.stack {
+                Stack::Along => (a, c),
+                Stack::Across => (c, a),
+            };
+            end = at + run;
+            wide = wide.max(side);
+        }
+        match self.stack {
+            Stack::Along => (offs, end, wide),
+            Stack::Across => (offs, wide, end),
+        }
+    }
+
+    /// The ways the block may lie: (dx, dy, turned); turned only when it is free.
+    fn orients(&self) -> Vec<(f64, f64, bool)> {
+        let (_, dx, dy) = self.offsets();
+        let mut out = vec![(dx, dy, false)];
+        if self.free && dx != dy {
+            out.push((dy, dx, true));
+        }
+        out
+    }
+
+    /// The block's rectangle `p`, as each of its parts.
+    fn expand(&self, p: &Put) -> Vec<Put> {
+        let (offs, _, _) = self.offsets();
+        self.parts
+            .iter()
+            .zip(offs)
+            .map(|(&(need, a, c, t), off)| {
+                // The stack runs along x when it runs along the grain and the block is not
+                // turned, or across the grain and it is.
+                let along_x = (self.stack == Stack::Along) != p.turned;
+                let (dx, dy, turned) = if p.turned { (c, a, !t) } else { (a, c, t) };
+                let (x, y) = if along_x {
+                    (p.x + off, p.y)
+                } else {
+                    (p.x, p.y + off)
+                };
+                Put {
+                    need,
+                    x,
+                    y,
+                    dx,
+                    dy,
+                    turned,
+                }
+            })
+            .collect()
     }
 }
 
@@ -1307,12 +1444,22 @@ fn find_cut(reg: Rect, parts: &[Put], dir: CutDir, kerf: f64) -> Option<f64> {
     (hi < r1 - EPS).then_some(hi)
 }
 
-/// The cut sequence that frees every part, and whether it does (see the module docs).
-fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, bool) {
+/// The cut sequence that frees every part, and whether it does (see the module docs). A
+/// keep-together block (`blocks`, by the need its rectangle carries) is freed as one
+/// rectangle first, then cut into its parts inside that offcut: the void beside a shorter
+/// part of the block is never left as a sliver narrower than the kerf against another part.
+fn decompose(
+    u: Rect,
+    parts: &[Put],
+    kerf: f64,
+    kind: StockKind,
+    blocks: &BTreeMap<usize, Block>,
+) -> (Vec<Cut>, bool) {
     let mut cuts = Vec::new();
     let mut ok = true;
-    let mut stack: Vec<(Rect, Vec<Put>)> = vec![(u, parts.to_vec())];
-    while let Some((reg, ps)) = stack.pop() {
+    // Each offcut, what is on it, and whether its blocks are already their parts.
+    let mut stack: Vec<(Rect, Vec<Put>, bool)> = vec![(u, parts.to_vec(), false)];
+    while let Some((reg, ps, inside)) = stack.pop() {
         if ps.is_empty() {
             continue;
         }
@@ -1325,6 +1472,14 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
             .iter()
             .find_map(|&d| find_cut(reg, &ps, d, kerf).map(|c| (d, c)));
         let Some((dir, c)) = found else {
+            // A block freed whole: now its parts, in its own offcut.
+            if let [p] = ps.as_slice()
+                && !inside
+                && let Some(b) = blocks.get(&p.need)
+            {
+                stack.push((reg, b.expand(p), true));
+                continue;
+            }
             if ps.len() > 1 {
                 ok = false;
             }
@@ -1376,8 +1531,8 @@ fn decompose(u: Rect, parts: &[Put], kerf: f64, kind: StockKind) -> (Vec<Cut>, b
             CutDir::Crosscut => p.x + p.dx <= c + EPS,
         });
         // Lower side first: push it last.
-        stack.push((hi_reg, hi));
-        stack.push((lo_reg, lo));
+        stack.push((hi_reg, hi, inside));
+        stack.push((lo_reg, lo, inside));
     }
     (cuts, ok)
 }
@@ -1411,6 +1566,158 @@ fn trim_cuts(s: &StockDef, trim: f64, kerf: f64) -> Vec<Cut> {
 
 // ---- the whole nesting ----------------------------------------------------------------------
 
+/// A part of a keep-together block, before the block is placed: its stock as its row was
+/// given it, or why it has none.
+struct Pending {
+    row: usize,
+    copy: usize,
+    tag: String,
+    item: Item,
+    together: Together,
+    stocked: Result<usize, (UnplacedReason, Option<usize>)>,
+}
+
+impl InBlock {
+    fn hash_into(&self, h: &mut StableHasher) {
+        h.tag("together");
+        h.tag(&self.key);
+        h.u64(u64::from(self.index));
+        h.usize(self.n);
+        h.usize(self.of);
+        h.u64(self.stack.code());
+    }
+}
+
+/// The stock a block (its parts in order) is cut from, whole, and the block on it; or why
+/// there is none: the reason for its parts that have stock of their own, and the stock meant.
+///
+/// The block goes on the stock its parts were given. When that is the router's sheet (a
+/// footprint set) and the block does not fit it, or when some parts went to the saw's sheet
+/// and the rest to the router's sheet it stands in for, the saw's sheet of that thickness
+/// and grain (library order) takes the block whole, when one does (`overflow` set). Parts of
+/// different stock otherwise, or of different material, cannot be one block.
+fn block_stock(
+    list: &CutList,
+    lib: &StockLibrary,
+    settings: &NestSettings,
+    ms: &[Pending],
+) -> Result<(usize, Block), (UnplacedReason, Option<usize>)> {
+    let together = Err((UnplacedReason::Together, None));
+    let Some(first) = ms.first() else {
+        return together;
+    };
+    if ms.iter().any(|m| m.stocked.is_err()) {
+        return together;
+    }
+    let stack = first.together.stack;
+    if ms.iter().any(|m| m.together.stack != stack)
+        || ms
+            .windows(2)
+            .any(|w| w[0].together.index == w[1].together.index)
+    {
+        return together;
+    }
+    let material = &list.rows[first.row].material;
+    if ms.iter().any(|m| &list.rows[m.row].material != material) {
+        return together;
+    }
+    let mut ks: Vec<usize> = Vec::new();
+    for m in ms {
+        if let Ok(k) = m.stocked
+            && !ks.contains(&k)
+        {
+            ks.push(k);
+        }
+    }
+    let router = |s: &StockDef| {
+        s.kind == StockKind::Sheet && settings.sheet_size.is_some_and(|fp| fp.matches(s))
+    };
+    // The saw's sheets that stand in for a router's sheet: its thickness and grain.
+    let saws_like = |like: &StockDef| -> Vec<usize> {
+        let (Some(fp), Some(o)) = (settings.sheet_size, settings.overflow) else {
+            return Vec::new();
+        };
+        lib.stocks
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                s.kind == StockKind::Sheet
+                    && o.sheet_size.matches(s)
+                    && !fp.matches(s)
+                    && s.grain == like.grain
+                    && (s.thickness - like.thickness).abs() <= STOCK_EPSILON
+            })
+            .map(|(k, _)| k)
+            .collect()
+    };
+    let candidates: Vec<usize> = match ks.as_slice() {
+        [k] => {
+            let mut v = vec![*k];
+            if router(&lib.stocks[*k]) {
+                v.extend(saws_like(&lib.stocks[*k]));
+            }
+            v
+        }
+        [a, b] => {
+            let (r, w) = if router(&lib.stocks[*a]) {
+                (*a, *b)
+            } else {
+                (*b, *a)
+            };
+            let saws = if router(&lib.stocks[r]) {
+                saws_like(&lib.stocks[r])
+            } else {
+                Vec::new()
+            };
+            if saws.contains(&w) {
+                std::iter::once(w)
+                    .chain(saws.into_iter().filter(|&k| k != w))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    };
+    for &k in &candidates {
+        let s = &lib.stocks[k];
+        let saw = settings
+            .sheet_size
+            .zip(settings.overflow)
+            .filter(|(fp, o)| {
+                s.kind == StockKind::Sheet && o.sheet_size.matches(s) && !fp.matches(s)
+            })
+            .map(|(_, o)| o);
+        let (kerf, trim) = match saw {
+            Some(o) => (o.kerf, effective_trim(o.trim, o.kerf)),
+            None => (settings.kerf, effective_trim(settings.trim, settings.kerf)),
+        };
+        let rows = || ms.iter().map(|m| &list.rows[m.row]);
+        if !rows().all(|r| thickness_fits(s, r.size[0]) && fit(r, s, trim).is_ok()) {
+            continue;
+        }
+        let block = Block {
+            stack,
+            kerf,
+            free: rows().all(|r| s.grain == StockGrain::None || r.grain == Grain::None),
+            parts: rows()
+                .map(|r| {
+                    let (a, c, t) = lie(r, s.grain);
+                    (0, a, c, t)
+                })
+                .collect(),
+        };
+        let u = usable(s, trim);
+        if block.orients().iter().any(|&(dx, dy, _)| u.holds(dx, dy)) {
+            return Ok((k, block));
+        }
+    }
+    match candidates.last() {
+        Some(&k) => Err((UnplacedReason::TogetherTooLarge, Some(k))),
+        None => together,
+    }
+}
+
 /// Nest a cut list on a library's stock (see the module docs). Pure: the model's
 /// [`Model::nest`] calls this with its own cut list and library.
 pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> Nesting {
@@ -1439,6 +1746,10 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
     // Groups by stock and material, in order of their first piece.
     let mut group_order: Vec<(usize, Option<String>)> = Vec::new();
     let mut group_items: BTreeMap<(usize, Option<String>), Vec<Item2>> = BTreeMap::new();
+    // Kept together: the parts of each block (by key and holder), in order of their first
+    // piece, laid out after every other part has its group.
+    let mut block_order: Vec<(String, Option<u64>)> = Vec::new();
+    let mut pending: BTreeMap<(String, Option<u64>), Vec<Pending>> = BTreeMap::new();
     for (ri, row) in list.rows.iter().enumerate() {
         // Dropped from the list: not nested, not reported (row numbers stay the list's).
         if !row.included {
@@ -1473,6 +1784,29 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
             } else {
                 (ri + 1).to_string()
             };
+            // Kept together: placed with its block, below. A part of a block is never glued.
+            if let Some(t) = &row.together {
+                let key = (t.key.clone(), o.holder);
+                pending
+                    .entry(key.clone())
+                    .or_insert_with(|| {
+                        block_order.push(key);
+                        Vec::new()
+                    })
+                    .push(Pending {
+                        row: ri,
+                        copy,
+                        tag,
+                        item: o.item,
+                        together: t.clone(),
+                        stocked: match &stocked {
+                            Ok((k, _, None)) => Ok(*k),
+                            Ok((k, _, Some(_))) => Err((UnplacedReason::Together, Some(*k))),
+                            Err(e) => Err(*e),
+                        },
+                    });
+                continue;
+            }
             match &stocked {
                 Ok((k, orients, glued)) => {
                     // A whole piece, or one need per strip, each the part's length along
@@ -1512,6 +1846,7 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                             tag,
                             item: o.item,
                             strip,
+                            together: None,
                         });
                         group_items
                             .entry(key.clone())
@@ -1537,10 +1872,88 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                         .then_some(settings.sheet_size)
                         .flatten()
                         .map(|fp| [fp.width, fp.length]),
+                    together: None,
                 }),
             }
         }
     }
+    // Each block whole on one stock, or every part of it reported.
+    let mut blocks: BTreeMap<usize, Block> = BTreeMap::new();
+    for key in block_order {
+        let mut ms = pending.remove(&key).unwrap_or_default();
+        ms.sort_by(|a, b| {
+            a.together
+                .index
+                .cmp(&b.together.index)
+                .then(a.row.cmp(&b.row))
+                .then(a.copy.cmp(&b.copy))
+        });
+        let of = ms.len();
+        let info = |n: usize, m: &Pending| InBlock {
+            key: m.together.key.clone(),
+            index: m.together.index,
+            n: n + 1,
+            of,
+            stack: m.together.stack,
+        };
+        match block_stock(list, lib, &settings, &ms) {
+            Ok((k, mut block)) => {
+                for (n, m) in ms.iter().enumerate() {
+                    block.parts[n].0 = needs.len();
+                    needs.push(Need {
+                        row: m.row,
+                        copy: m.copy,
+                        tag: m.tag.clone(),
+                        item: m.item,
+                        strip: None,
+                        together: Some(info(n, m)),
+                    });
+                }
+                let head = block.parts[0].0;
+                let gk = (k, list.rows[ms[0].row].material.clone());
+                group_items
+                    .entry(gk.clone())
+                    .or_insert_with(|| {
+                        group_order.push(gk.clone());
+                        Vec::new()
+                    })
+                    .push(Item2 {
+                        need: head,
+                        orients: block.orients(),
+                    });
+                blocks.insert(head, block);
+            }
+            Err((why, meant)) => {
+                for (n, m) in ms.iter().enumerate() {
+                    let row = &list.rows[m.row];
+                    // A part with its own reason says it; the others say the block's.
+                    let (reason, k) = match m.stocked {
+                        Err(own) => own,
+                        Ok(k) => (why, meant.or(Some(k))),
+                    };
+                    unplaced.push(Unplaced {
+                        row: m.row,
+                        copy: m.copy,
+                        tag: m.tag.clone(),
+                        name: row.name.clone(),
+                        item: m.item,
+                        size: row.size,
+                        material: row.material.clone(),
+                        stock: k.map(|k| lib.stocks[k].name.clone()),
+                        sheet: row.sheet,
+                        reason,
+                        asked: (row.sheet && reason == UnplacedReason::NoStock && k.is_none())
+                            .then_some(settings.sheet_size)
+                            .flatten()
+                            .map(|fp| [fp.width, fp.length]),
+                        together: Some(info(n, m)),
+                    });
+                }
+            }
+        }
+    }
+    // In list order (a block's parts are reported after the loop); already so without blocks.
+    unplaced.sort_by_key(|u| (u.row, u.copy));
     let mut pieces: Vec<StockPiece> = Vec::new();
     let mut groups: Vec<NestGroup> = Vec::new();
     for (gi, key) in group_order.iter().enumerate() {
@@ -1588,17 +2001,32 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
             // board section by section along it, then across a section, the order its cuts
             // free them (#50). A board whose parts all lie on its near edge reads the same
             // either way.
+            let reading = |puts: &mut Vec<Put>| {
+                puts.sort_by(|a, b| {
+                    let (a1, a2, b1, b2) = match s.kind {
+                        StockKind::Sheet => (a.y, a.x, b.y, b.x),
+                        StockKind::Board => (a.x, a.y, b.x, b.y),
+                    };
+                    a1.total_cmp(&b1)
+                        .then(a2.total_cmp(&b2))
+                        .then(a.need.cmp(&b.need))
+                });
+            };
             let mut puts = puts;
-            puts.sort_by(|a, b| {
-                let (a1, a2, b1, b2) = match s.kind {
-                    StockKind::Sheet => (a.y, a.x, b.y, b.x),
-                    StockKind::Board => (a.x, a.y, b.x, b.y),
-                };
-                a1.total_cmp(&b1)
-                    .then(a2.total_cmp(&b2))
-                    .then(a.need.cmp(&b.need))
-            });
-            let (mut cuts, guillotine) = decompose(u, &puts, kerf, s.kind);
+            reading(&mut puts);
+            let (mut cuts, guillotine) = decompose(u, &puts, kerf, s.kind, &blocks);
+            // A block's rectangle as its parts, each in its own place.
+            if !blocks.is_empty() {
+                puts = puts
+                    .iter()
+                    .flat_map(|p| {
+                        blocks
+                            .get(&p.need)
+                            .map_or_else(|| vec![*p], |b| b.expand(p))
+                    })
+                    .collect();
+                reading(&mut puts);
+            }
             let mut all = trim_cuts(s, trim, kerf);
             all.append(&mut cuts);
             for (k, c) in all.iter_mut().enumerate() {
@@ -1624,6 +2052,7 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                         size: row.size,
                         not_solid: row.not_solid,
                         strip: n.strip,
+                        together: n.together.clone(),
                     }
                 })
                 .collect();
@@ -1767,6 +2196,10 @@ impl Nesting {
                     h.usize(s.n);
                     h.usize(s.of);
                 }
+                // Kept together: only in a block, for the same reason.
+                if let Some(b) = &q.together {
+                    b.hash_into(&mut h);
+                }
             }
             h.usize(p.cuts.len());
             for c in &p.cuts {
@@ -1782,6 +2215,9 @@ impl Nesting {
             h.usize(u.copy);
             item(&mut h, &u.item);
             h.u64(u.reason as u64);
+            if let Some(b) = &u.together {
+                b.hash_into(&mut h);
+            }
         }
         h.usize(self.totals.sheets);
         h.usize(self.totals.boards);
@@ -1866,7 +2302,7 @@ mod tests {
             put(4.1, 0.0, 4.0, 1.9),
             put(0.0, 2.0, 9.0, 1.9),
         ];
-        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet, &BTreeMap::new());
         assert!(ok);
         assert_eq!(cuts[0].dir, CutDir::Rip);
         assert!((cuts[0].at - 1.9).abs() < 1e-12);
@@ -1887,7 +2323,7 @@ mod tests {
             w: 7.1,
             h: 4.0,
         };
-        assert!(!decompose(u, &pin, 0.1, StockKind::Sheet).1);
+        assert!(!decompose(u, &pin, 0.1, StockKind::Sheet, &BTreeMap::new()).1);
     }
 
     /// Two parts more than a kerf apart and less than two: the cut goes against the far
@@ -1902,7 +2338,7 @@ mod tests {
             h: 10.0,
         };
         let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.15, 4.0, 3.0)];
-        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+        let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet, &BTreeMap::new());
         assert!(ok);
         let at: Vec<(CutDir, f64)> = cuts.iter().map(|c| (c.dir, c.at)).collect();
         assert_eq!(at.len(), 3, "{at:?}");
@@ -1912,7 +2348,7 @@ mod tests {
         // Exactly a kerf, or two or more: as ever, against the near part.
         for gap in [0.1, 0.2, 0.5] {
             let parts = [put(0.0, 0.0, 4.0, 3.0), put(0.0, 3.0 + gap, 4.0, 3.0)];
-            let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet);
+            let (cuts, ok) = decompose(u, &parts, 0.1, StockKind::Sheet, &BTreeMap::new());
             assert!(ok);
             assert!((cuts[0].at - 3.0).abs() < 1e-12, "{gap}: {cuts:?}");
         }

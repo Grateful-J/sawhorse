@@ -91,6 +91,9 @@ export type KernelOp =
   | { op: "set_include"; part: PartRef; include: boolean }
   /** The shopping list: what is bought for each piece of a part beyond its wood (replaces what was said; [] clears it). */
   | { op: "set_bom"; part: PartRef; bom: BomItem[] }
+  /** Keep together (grain-matched fronts): nest the part as one block with the other parts of
+   * its key in its group or component, in index order (null clears it). Refused on an assembly. */
+  | { op: "set_together"; part: PartRef; together: Together | null }
   /** Lane 15: each edge-connected piece of loose non-solid faces into a group of its own (none named: every mesh in the open context). */
   | { op: "group_loose"; meshes: number[] }
   /** Lane 15: soft (1), smooth (2), hidden (4) on edges named by owner and end points. */
@@ -1100,7 +1103,35 @@ export interface CutRow {
   /** Pieces placed under a transform that stretches them (absent: none): their hardware is
    * still the original's. */
   stretched?: number;
+  /** Keep together (grain-matched fronts); absent when not said. */
+  together?: Together;
   occurrences: Occurrence[];
+}
+
+/** Which way a keep-together block runs against its parts' grain: end to end along it (each
+ * part crosscut off the next) or side by side across it (each ripped off the next). */
+export type Stack = "along" | "across";
+
+/** Keep together (crates/kernel/src/cutlist.rs `Together`): parts with one `key` in one group
+ * or component are nested as one block, lowest `index` first, a kerf apart, their grain lined
+ * up, never split between sheets. */
+export interface Together {
+  /** 1 to 64 characters, no control characters, no space at either end. */
+  key: string;
+  /** 0 to 9999; two parts of one block with one index are reported, not nested. */
+  index: number;
+  /** Absent: "along". */
+  stack?: Stack;
+}
+
+/** A part's place in a keep-together block, as the nesting placed or reported it. */
+export interface InBlock {
+  key: string;
+  index: number;
+  /** `n` of `of`, 1-based, lowest index first. */
+  n: number;
+  of: number;
+  stack: Stack;
 }
 
 /** How a shopping-list item is counted and bought: one by one, in pairs, or in metres. */
@@ -1255,6 +1286,8 @@ export interface Placement {
   not_solid?: boolean;
   /** #49: strip `n` of `of` of a part glued up for width; `dy` is the strip's width, `size` the part's. */
   strip?: { n: number; of: number };
+  /** Kept together with other parts (grain-matched fronts): its block and place in it. */
+  together?: InBlock;
 }
 
 /** #49: a solid part wider than every board, glued up from strips of one board. */
@@ -1297,7 +1330,11 @@ export interface StockPiece {
   efficiency: number;
 }
 
-export type UnplacedReason = "no_stock" | "thickness" | "too_large" | "grain" | "flat" | "not_a_board" | "whole_piece" | "hollow" | "too_wide";
+/** `together`: kept off the sheet with the rest of its block (a block is never split): another
+ * part of it found no stock, its parts want different stock or material, two share an index,
+ * or they run different ways. `together_too_large`: its block as one piece is larger than its
+ * stock (and than the saw's sheet, with a saw set), though its parts fit one by one. */
+export type UnplacedReason = "no_stock" | "thickness" | "too_large" | "grain" | "flat" | "not_a_board" | "whole_piece" | "hollow" | "too_wide" | "together" | "together_too_large";
 
 export interface Unplaced {
   row: number;
@@ -1312,6 +1349,8 @@ export interface Unplaced {
   reason: UnplacedReason;
   /** The sheet footprint that was asked for, when none of that size has this thickness. */
   asked?: [number, number] | null;
+  /** Kept together: its block and place in it. */
+  together?: InBlock;
 }
 
 export interface NestGroup {

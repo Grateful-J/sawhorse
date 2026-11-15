@@ -1285,7 +1285,17 @@ impl Model {
                 ))
                 .into());
             }
-            return Ok(Vec::new());
+            // Keep together on an assembly (only a file can say it) kept nothing together.
+            return Ok(attrs
+                .together
+                .iter()
+                .map(|t| {
+                    format!(
+                        "{name} was kept together as {:?} {}: its parts are not",
+                        t.key, t.index
+                    )
+                })
+                .collect());
         }
         let solids: Vec<ObjectId> = things
             .iter()
@@ -1296,7 +1306,16 @@ impl Model {
             .collect();
         let Some(&first) = solids.first() else {
             if attrs.bom.is_empty() {
-                return Ok(Vec::new());
+                return Ok(attrs
+                    .together
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            "{name} was kept together as {:?} {}: it holds no solid to keep it on",
+                            t.key, t.index
+                        )
+                    })
+                    .collect());
             }
             return Err(DocumentError::BadBom(format!(
                 "{name} carries a hardware list and holds no solid to keep it on; clear its hardware before exploding it"
@@ -1319,6 +1338,20 @@ impl Model {
             p.include = p.include.or(attrs.include);
         }
         let mut notes = Vec::new();
+        // Keep together goes to the one solid that becomes the part; several solids would be
+        // several pieces at one place in the block, so none of them takes it, and a note says.
+        if let Some(t) = &attrs.together {
+            if solids.len() == 1 && self.objects[first].part.together.is_none() {
+                self.objects[first].part.together = Some(t.clone());
+            } else if solids.len() > 1 {
+                notes.push(format!(
+                    "{name} was kept together as {:?} {}: its {} solids are not; keep the one that belongs together again",
+                    t.key,
+                    t.index,
+                    solids.len()
+                ));
+            }
+        }
         if !attrs.bom.is_empty() {
             self.objects[first]
                 .part

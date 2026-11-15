@@ -175,6 +175,11 @@ enum Fuzz {
     /// (a half pair, a unit this version does not know, more than 32 items), on listed parts,
     /// assemblies and unknown ids alike.
     Bom(u8, u8),
+    /// Keep together (`set_together`): one of two keys at an index, either way of running,
+    /// cleared, or refused (a key with a space at its end, an index past the limit), on
+    /// listed parts, assemblies and unknown ids alike; the nesting's checker then verifies
+    /// every block.
+    Together(u8, u8, u8),
     /// Lane 15: import a box as a polygon soup (shape: 0 closed, 1 no top, 2 no top or
     /// bottom, 3 a closed box with a 50 micrometre gap the cut list's heal closes), in a
     /// group or loose, at a grid point, sized by the picks.
@@ -594,6 +599,7 @@ fn lane5_op() -> impl Strategy<Value = Fuzz> {
         1 => Just(Fuzz::ResetStock),
         2 => (any::<u8>(), any::<bool>()).prop_map(|(k, b)| Fuzz::Include(k, b)),
         2 => (any::<u8>(), 0u8..8).prop_map(|(k, b)| Fuzz::Bom(k, b)),
+        2 => (any::<u8>(), 0u8..8, 0u8..4).prop_map(|(k, t, i)| Fuzz::Together(k, t, i)),
         2 => (0u8..4, any::<bool>(), any::<[u8; 3]>(), any::<[u8; 3]>()).prop_map(|(s, g, a, z)| Fuzz::ImportPart(s, g, a, z)),
         1 => prop::option::of(any::<u8>()).prop_map(Fuzz::GroupLoose),
         2 => (any::<u8>(), any::<u8>(), any::<bool>(), any::<bool>()).prop_map(|(o, a, s, m)| Fuzz::Soften(o, a, s, m)),
@@ -1959,6 +1965,31 @@ fn resolve(f: &Fuzz, d: &Document) -> Op {
             Op::SetBom {
                 part: part(*k),
                 bom,
+            }
+        }
+        Fuzz::Together(k, t, i) => {
+            use sawhorse_kernel::cutlist::{Stack, Together};
+            let kept = |key: &str, index: u32, stack| {
+                Some(Together {
+                    key: key.into(),
+                    index,
+                    stack,
+                })
+            };
+            let i = u32::from(*i);
+            let together = match t {
+                0 => None,
+                1 | 2 => kept("fronts", i, Stack::Along),
+                3 => kept("fronts", i, Stack::Across),
+                4 => kept("Cabinet 2 fronts", i, Stack::Along),
+                5 => kept("fronts", 0, Stack::Along),
+                // Refused: a space at the end, an index past the limit.
+                6 => kept("fronts ", i, Stack::Along),
+                _ => kept("fronts", 10_000, Stack::Along),
+            };
+            Op::SetTogether {
+                part: part(*k),
+                together,
             }
         }
         Fuzz::ImportPart(shape, grouped, at, size) => {
