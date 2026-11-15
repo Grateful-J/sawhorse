@@ -119,10 +119,12 @@ async function dxfOf(parts: Part[], name: string, metric: boolean) {
 }
 
 run("edge banding through the kernel", () => {
-  it("every hole, dado and notch at its unbanded place, and each blank plus its bands the unbanded part: every preset, unit, mounting and catalogue, bands of 0.45 to 3 mm", async () => {
-    let compared = 0;
-    for (const metric of [false, true]) {
-      for (const p of PRESETS) {
+  // One test per starting point and unit: each overlay and inset, Blum Inc. and Blum Europe,
+  // with bands of 0.45, 1, 2 and 3 mm.
+  for (const metric of [false, true]) {
+    for (const p of PRESETS) {
+      it(`${p.label} (${metric ? "metric" : "inch"}): every hole, dado and notch at its unbanded place, and each blank plus its bands the unbanded part`, async () => {
+        let compared = 0;
         for (const front of ["overlay", "inset"] as const) {
           for (const catalog of ["us", "eu"] as const) {
             // A document each: the kernel's import slows as a document fills. The cabinet, then
@@ -162,11 +164,11 @@ run("edge banding through the kernel", () => {
             }
           }
         }
-      }
+        // Four cabinets, four bands each, every part of each (a cabinet has at least 8 parts).
+        expect(compared).toBeGreaterThanOrEqual(4 * 4 * 8);
+      }, 300_000);
     }
-    // 64 cabinets, four bands each, every part of each.
-    expect(compared).toBeGreaterThan(3000);
-  }, 600_000);
+  }
 
   it("the cut list lists each banded part at its blank, and the DXF draws the blank", async () => {
     for (const metric of [false, true]) {
