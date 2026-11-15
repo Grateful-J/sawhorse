@@ -77,9 +77,9 @@ test("edge banding: off to start; on, each banded part finished and cut; a cup t
   // The cut list: the banded parts say so, and the note says what their sizes are.
   await page.getByRole("tab", { name: "Cut list" }).click();
   const list = page.getByTestId("cutlist");
-  await expect(list.locator('tr[data-part="Door"]')).toContainText("edge banding 1 mm x 15/16 in, 3.001 m a piece");
+  await expect(list.locator('tr[data-part="Door"]')).toContainText("edge banding 1 mm x 15/16 in, 2.858 m a piece");
   await expect(list.locator('tr[data-part="Back"]')).not.toContainText("edge banding");
-  await expect(page.getByTestId("cutlist-note")).toContainText("Edge banding is not added to the sizes");
+  await expect(page.getByTestId("cutlist-note")).toContainText("Sizes as drawn, rounded to the nearest 1/16 in. A part noted \"edge banding\" is drawn at its cut size");
 
   // The shopping list: the band by the metre, for the whole cabinet.
   await page.locator(".cutlist .btnrow").getByRole("button", { name: "Shopping list ›" }).click();
