@@ -16,6 +16,8 @@ export interface Box {
 export interface WorldFace {
   normal: P3;
   points: P3[];
+  /** The face's inner rings: the holes drilled into it. */
+  holes?: P3[][];
 }
 
 export function boxOf(points: P3[]): Box {
@@ -51,12 +53,29 @@ export function normalOf(ring: P3[]): P3 {
   return [x / l, y / l, z / l];
 }
 
-/** A plugin part's faces, each copy's, in the cabinet's coordinates (its outer ring). */
+/** A plugin part's faces, each copy's, in the cabinet's coordinates (its outer ring, and its inner
+ * rings: the holes in it). */
 export function meshFaces(mesh: { positions: P3[]; faces: number[][][] }, at: P3): WorldFace[] {
+  const world = (loop: number[]) => loop.map((i) => mesh.positions[i].map((v, k) => v + at[k]) as P3);
   return mesh.faces.map((f) => {
-    const points = f[0].map((i) => mesh.positions[i].map((v, k) => v + at[k]) as P3);
-    return { normal: normalOf(points), points };
+    const points = world(f[0]);
+    return { normal: normalOf(points), points, holes: f.slice(1).map(world) };
   });
+}
+
+/** Every hole ring in a part's faces, read on its own (not through `cutKeys`): its centre (the
+ * mean of its points, in the cabinet's coordinates) and its size, in a fixed order. A hole that
+ * moved on either axis of its face, or that went missing, changes this list. */
+export function holeCentres(faces: WorldFace[]): number[][] {
+  const out: number[][] = [];
+  for (const f of faces) {
+    for (const ring of f.holes ?? []) {
+      const c = [0, 1, 2].map((k) => ring.reduce((t, p) => t + p[k], 0) / ring.length);
+      const r = Math.max(...ring.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])));
+      out.push([...c, r]);
+    }
+  }
+  return out.sort(byKey);
 }
 
 /** A part's cuts (its faces off its own box), clipped to `clip`: each its normal, then its box's

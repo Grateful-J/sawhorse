@@ -3,15 +3,15 @@
 // These tests prove it on the plugin's own meshes; cabinet-banding.wasm.test.ts proves it again
 // through the kernel, the cut list and the DXF.
 import { describe, expect, it } from "vitest";
-import { applyPreset, bandClash, bandFor, bandList, bandPart, defaults, EDGE_AXES, plan, PRESETS, WEB, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
+import { applyPreset, BAND, bandClash, bandFor, bandList, bandPart, defaults, EDGE_AXES, END_NOTCH, plan, PRESETS, WEB, type Part, type Sizes } from "../../plugins/cabinet-generator/cabinet.js";
 import { pack, unpack } from "../../plugins/cabinet-generator/keep.js";
 import { testCut } from "../../plugins/cabinet-generator/testcuts.js";
-import { boxOf, cutKeys, cutsDiffer, meshFaces, overlap, type P3 } from "./bandingProof";
+import { boxOf, cutKeys, cutsDiffer, holeCentres, meshFaces, overlap, type P3 } from "./bandingProof";
 
 const IN = 0.0254;
 const MM = 0.001;
-const SIZES = ["0.45", "1", "2", "3"] as const;
-const THICK = { "0.45": 0.45 * MM, "1": 1 * MM, "2": 2 * MM, "3": 3 * MM };
+const SIZES = ["0.018in", "1", "2", "3"] as const;
+const THICK = { "0.018in": 0.018 * IN, "1": 1 * MM, "2": 2 * MM, "3": 3 * MM };
 
 /** Every starting point in both units, overlay and inset, Blum Inc. and Blum Europe. The boring
  * distance is 6 mm, so a 3 mm band on the doors keeps 3 mm of wood beside the cup. */
@@ -48,8 +48,10 @@ function expectedEdges(name: string): (keyof typeof EDGE_AXES)[] {
 const worldBox = (part: Part, at: P3) => boxOf(meshFaces(part.mesh as never, at).flatMap((f) => f.points));
 
 describe("edge banding: geometry", () => {
-  it("every hole, dado and notch is where it is unbanded, in every preset, unit, mounting and catalogue, with bands of 0.45, 1, 2 and 3 mm", () => {
+  it("every hole, dado and notch is where it is unbanded, in every preset, unit, mounting and catalogue, with bands of 0.018 in, 1, 2 and 3 mm", () => {
     let compared = 0;
+    let cuts = 0;
+    let holes = 0;
     for (const { label, s, metric } of matrix()) {
       const plain = plan(s, metric);
       expect(plain.error, label).toBeNull();
@@ -64,13 +66,45 @@ describe("edge banding: geometry", () => {
           const fa = meshFaces(a.part.mesh as never, a.at);
           const fb = meshFaces(b.part.mesh as never, b.at);
           const clip = overlap(boxOf(fa.flatMap((f) => f.points)), boxOf(fb.flatMap((f) => f.points)));
-          expect(cutsDiffer(cutKeys(fa, clip), cutKeys(fb, clip)), `${label} ${size} ${name}`).toBeNull();
+          const ka = cutKeys(fa, clip);
+          expect(cutsDiffer(ka, cutKeys(fb, clip)), `${label} ${size} ${name}`).toBeNull();
+          // Never compared blank: a part with cuts (more than a box's eight corners) has keys.
+          if (a.part.mesh.positions.length > 8) expect(ka.length, `${label} ${name}`).toBeGreaterThan(0);
+          // Every hole, read from its own ring, at its unbanded place on both axes of its face.
+          const ha = holeCentres(fa);
+          expect(cutsDiffer(ha, holeCentres(fb)), `${label} ${size} ${name} holes`).toBeNull();
+          cuts += ka.length;
+          holes += ha.length;
           compared++;
         }
       }
     }
     // 64 cabinets, four bands each, every part of each.
     expect(compared).toBeGreaterThan(3000);
+    expect(cuts).toBeGreaterThan(100_000);
+    expect(holes).toBeGreaterThan(9_000);
+  });
+
+  it("the comparison sees each part's cuts and holes: the counts of two cabinets, part by part", () => {
+    // Faces off the part's box (cutKeys), then hole rings (holeCentres), from the real data. A
+    // proof that read nothing would read 0 here.
+    const want = {
+      base: { Door: [66, 6], "Left side": [211, 14], "Right side": [143, 10], "Front stretcher": [4, 0], "Rear stretcher": [3, 0], Bottom: [17, 0], "Shelf 1": [0, 0], Back: [0, 0], "Toe kick": [0, 0] },
+      mixed: { "Left door": [66, 6], "Right door": [66, 6], "Drawer 1 front": [32, 4], "Drawer 1 left": [3, 0], "Drawer 1 right": [3, 0], "Drawer 1 sub-front": [3, 0], "Drawer 1 back": [34, 2], "Drawer 1 bottom": [0, 0], "Left side": [143, 10], "Right side": [143, 10], "Front stretcher": [4, 0], "Rear stretcher": [3, 0], Bottom: [17, 0], "Shelf 1": [0, 0], Back: [0, 0], "Toe kick": [0, 0] },
+    };
+    for (const [id, metric, front, catalog] of [["base", false, "overlay", "us"], ["mixed", true, "inset", "eu"]] as const) {
+      const s = { ...applyPreset(defaults(metric), id, metric), front, catalog, cupDistance: 6 * MM };
+      const before = copies(plan(s, metric).parts);
+      const got: Record<string, number[]> = {};
+      for (const [name, b] of copies(plan({ ...s, band: true }, metric).parts)) {
+        const a = before.get(name)!;
+        const fa = meshFaces(a.part.mesh as never, a.at);
+        const fb = meshFaces(b.part.mesh as never, b.at);
+        const clip = overlap(boxOf(fa.flatMap((f) => f.points)), boxOf(fb.flatMap((f) => f.points)));
+        got[name] = [cutKeys(fb, clip).length, holeCentres(fb).length];
+      }
+      expect(got, id).toEqual(want[id]);
+    }
   });
 
   it("each banded part's blank plus its bands is the unbanded part, on exactly the edges it should be; the rest are untouched", () => {
@@ -152,7 +186,7 @@ describe("edge banding off changes nothing", () => {
   it("off, every band setting is ignored: the plan is the same to the byte, meshes and rows", () => {
     for (const { label, s, metric } of matrix()) {
       const base = JSON.stringify(plan(s, metric));
-      const fiddled: Sizes = { ...s, band: false, bandCount: 3, band1Size: "3", band2Size: "custom", band2Thick: 5 * MM, band1Name: "Oak", bandFronts: "2", bandCarcass: "3", bandShelves: "1", bandPremill: 2 * MM, bandWasteEnd: 0, bandWastePct: 50 };
+      const fiddled: Sizes = { ...s, band: false, bandCount: 3, band1Size: "3", band2Size: "custom", band2Thick: 5 * MM, band1Name: "Oak", bandFronts: "2", bandCarcass: "3", bandShelves: "1", bandPremill: 2 * MM, bandWasteEnd: 0 };
       expect(JSON.stringify(plan(fiddled, metric)), label).toBe(base);
       // On, with no kind of part picked: nothing banded, nothing changed.
       const none: Sizes = { ...s, band: true, bandFronts: "none", bandCarcass: "none", bandShelves: "none" };
@@ -199,6 +233,26 @@ describe("edge banding refuses what it would spoil", () => {
     expect(err(base(false, { ...pull, doorPullEdge: 8.4 * MM }))).toBeNull();
   });
 
+  it("with a pre-mill, the 3 mm is kept to the edge after the pre-mill, under the band, not to the larger blank's edge", () => {
+    // A 3 mm band and a 1 mm pre-mill: the blank is cut 2 mm short, but once pre-milled the wood
+    // beside a cup bored 5 mm from the finished edge is 2 mm.
+    expect(err(base(false, { band1Size: "3", cupDistance: 5 * MM, bandPremill: 1 * MM }))).toMatch(/: the hinge cup is 5 mm .* under Band 1 \(3 mm\) that leaves 2 mm .* Set Boring distance to at least 6 mm/);
+    expect(err(base(false, { band1Size: "3", cupDistance: 5 * MM, bandPremill: 3 * MM }))).toMatch(/Set Boring distance to at least 6 mm/);
+    expect(err(base(false, { band1Size: "3", cupDistance: 6 * MM, bandPremill: 1 * MM }))).toBeNull();
+    // The same for a blind dado's stop: 5 mm, a 3 mm band, a 2 mm pre-mill: 2 mm in front of it.
+    expect(err(base(false, { band1Size: "3", cupDistance: 6 * MM, dadoStop: 5 * MM, bandPremill: 2 * MM }))).toMatch(/^The blind dados stop 5 mm .* leaves 2 mm/);
+    // Through bandPart, a groove 3.5 mm from the edge under a 1 mm band with a 1 mm pre-mill.
+    const band = bandList(base(), false)[0];
+    expect(() => bandPart("Side", [0.018, 0.5, 0.8], [{ min: [0, 0.0035, 0.1], max: [0.006, 0.5, 0.12] }], [], [{ edge: "front", band }], 1 * MM)).toThrow(/leaves 2\.5 mm/);
+  });
+
+  it("the thin preset is REHAU's .018 in, 0.457 mm", () => {
+    const s = base(false, { band1Size: "0.018in" });
+    expect(BAND.sizes[0]).toEqual(["0.018in", 0.018 * 25.4, "0.018 in (0.457 mm)"]);
+    expect(bandList(s, false)[0].thickness).toBeCloseTo(0.4572 * MM, 12);
+    expect(bandList(s, false)[0].label).toBe("0.018 in x 15/16 in");
+  });
+
   it("a finger notch in a banded drawer front, a band too narrow for its stock, a band not listed, and settings out of range", () => {
     expect(err(base(false, { drawerPull: "notch" }))).toMatch(/finger notch cuts into each drawer front's top edge/);
     expect(err(base(false, { drawerPull: "notch", bandFronts: "none" }))).toBeNull();
@@ -209,7 +263,9 @@ describe("edge banding refuses what it would spoil", () => {
     expect(err(base(false, { band1Size: "custom", band1Thick: 0.05 * MM }))).toMatch(/^Band 1 must be at least 0\.1 mm/);
     expect(err(base(false, { bandPremill: 3.5 * MM }))).toMatch(/pre-mill must be 0 to 3 mm/);
     expect(err(base(false, { bandPremill: 3 * MM }))).toBeNull();
-    expect(err(base(false, { bandWastePct: 101 }))).toMatch(/0 to 100%/);
+    // Nothing picked: the list is not used, so it is not checked.
+    expect(err(base(false, { bandCount: 7, bandFronts: "none", bandCarcass: "none", bandShelves: "none" }))).toBeNull();
+    expect(err(base(false, { bandCount: 7 }))).toMatch(/list 1 to 3 bands/);
     expect(err(base(false, { bandWasteEnd: -1 * MM }))).toMatch(/waste per banded side/);
     expect(err(base(false, { bandCount: 4 }))).toMatch(/list 1 to 3 bands/);
   });
@@ -251,21 +307,31 @@ describe("edge banding refuses what it would spoil", () => {
 });
 
 describe("edge banding: what is bought", () => {
-  it("each banded part carries its band by the metre: the banded length, 1 in per banded side, then 5%, rounded up to the millimetre", () => {
+  it("each banded part carries its band by the metre: each banded edge's whole run plus 1 in per banded side, rounded up to the millimetre (the 5% is the shopping list's)", () => {
     for (const metric of [false, true]) {
       const s = { ...applyPreset(defaults(metric), "base", metric), band: true };
       const p = plan(s, metric);
       const door = p.parts.find((x) => x.name === "Door")!;
       const [w, , h] = door.finished!;
-      const want = Math.ceil(((2 * (w + h) + 4 * IN) * 1.05) * 1000 - 1e-6) / 1000;
+      const want = Math.ceil((2 * (w + h) + 4 * IN) * 1000 - 1e-6) / 1000;
       const label = bandList(s, metric)[0].label;
       expect(label).toBe(metric ? "1 mm x 23 mm" : "1 mm x 15/16 in");
       expect(door.bom!.filter((b) => b.unit === "m")).toEqual([{ item: `Edge banding, ${label}`, qty: want, unit: "m" }]);
-      // The side's front edge, above its toe kick.
+      // The side's front edge: its whole height, toe kick notch and all (the band runs across the
+      // notch and is trimmed there by hand), though only the part above the notch is banded.
       const side = p.parts.find((x) => x.name === "Left side")!;
-      expect(side.bom).toEqual([{ item: `Edge banding, ${label}`, qty: Math.ceil(((s.height - s.toeKick + IN) * 1.05) * 1000 - 1e-6) / 1000, unit: "m" }]);
+      expect(side.bands![0].length).toBeCloseTo(s.height - s.toeKick, 12);
+      expect(side.bands![0].run).toBeCloseTo(s.height, 12);
+      expect(side.bom).toEqual([{ item: `Edge banding, ${label}`, qty: Math.ceil((s.height + IN) * 1000 - 1e-6) / 1000, unit: "m" }]);
+      // The bottom: its tongues are notched, and the band runs their whole length too.
+      const bottom = p.parts.find((x) => x.name === "Bottom")!;
+      expect(bottom.bom![0].qty).toBe(Math.ceil((bottom.finished![0] + IN) * 1000 - 1e-6) / 1000);
+      // Each says how to trim at the notch; the door, with no notch, does not.
+      expect(p.rows.find((r) => r[0] === "Left side" && r[4] === "Edge band")![1]).toContain(END_NOTCH);
+      expect(p.rows.find((r) => r[0] === "Bottom" && r[4] === "Edge band")![1]).toContain(END_NOTCH);
+      expect(p.rows.find((r) => r[0] === "Door" && r[4] === "Edge band")![1]).not.toContain(END_NOTCH);
       // No waste: the length exactly (to the millimetre).
-      const exact = plan({ ...s, bandWasteEnd: 0, bandWastePct: 0 }, metric).parts.find((x) => x.name === "Door")!;
+      const exact = plan({ ...s, bandWasteEnd: 0 }, metric).parts.find((x) => x.name === "Door")!;
       expect(exact.bom!.find((b) => b.unit === "m")!.qty).toBe(Math.ceil(2 * (w + h) * 1000 - 1e-6) / 1000);
       // Unbanded parts carry none; the hardware is still there, first.
       expect(door.bom![0].sku).toMatch(/^71B/);
@@ -282,7 +348,7 @@ describe("edge banding: what is bought", () => {
     expect(p.parts.find((x) => x.name === "Bottom")!.bom!.map((b) => b.item)).toEqual(["Edge banding, 1 mm x 15/16 in"]);
     // The shop sheet lists each banded part, finished and cut.
     const row = p.rows.find((r) => r[0] === "Door" && r[4] === "Edge band")!;
-    expect(row[1]).toMatch(/^Edge band all four edges \(3 mm x 15\/16 in, White PVC\): finished 23\.875 x 30\.375 in \(606\.4 x 771\.5 mm\), cut 23\.639 x 30\.139 in \(600\.4 x 765\.5 mm\); 3\.001 m of band each, with waste$/);
+    expect(row[1]).toMatch(/^Edge band all four edges \(3 mm x 15\/16 in, White PVC\): finished 23\.875 x 30\.375 in \(606\.4 x 771\.5 mm\), cut 23\.639 x 30\.139 in \(600\.4 x 765\.5 mm\); 2\.858 m of band each, with waste$/);
     // A name with line breaks and tabs is one line; a long one is cut to 40 characters.
     const odd = plan({ ...s, band2Name: "  White\n\tPVC  " + "x".repeat(60) }, false);
     expect(odd.error).toBeNull();
@@ -301,7 +367,7 @@ describe("edge banding is kept with the cabinet", () => {
         band1Thick: 0.97 * MM,
         band1Name: "Maple",
         band1Width: 22 * MM,
-        band2Size: "0.45",
+        band2Size: "0.018in",
         band3Size: "3",
         band3Name: "Black",
         bandFronts: "3",
@@ -309,7 +375,6 @@ describe("edge banding is kept with the cabinet", () => {
         bandShelves: "2",
         bandPremill: 0.5 * MM,
         bandWasteEnd: 50 * MM,
-        bandWastePct: 0,
         cupDistance: 6.5 * MM,
       };
       const kept = pack(s, metric);
@@ -323,6 +388,22 @@ describe("edge banding is kept with the cabinet", () => {
 });
 
 describe("edge banding in the test cuts", () => {
+  it("the raw-edge numbers come from the blank: a band less its pre-mill (metric, drawer over doors, 1 mm band)", () => {
+    const at = (premill: number) => {
+      const t = testCut("door", { ...applyPreset(defaults(true), "mixed", true), band: true, bandPremill: premill }, true);
+      expect(t.error).toBeNull();
+      return [t.rows.find((r) => r[0] === "Hinge cup centre, from the door's hinge edge")![1], t.rows.find((r) => r[0] === "Mounting plate holes")![1]];
+    };
+    expect(at(0)).toEqual(["22.5 mm from the banded edge (21.5 mm from the raw edge, before banding)", "5 mm, 11.5 deep, 32 mm apart, 37 mm from the side's banded front edge (36 mm from the raw edge, before banding)"]);
+    // A 1 mm pre-mill: the blank is the finished size, the cup 22.5 and the plates 37 from its edge.
+    expect(at(1 * MM)).toEqual(["22.5 mm from the banded edge (22.5 mm from the blank's edge as cut, before the pre-mill and the band)", "5 mm, 11.5 deep, 32 mm apart, 37 mm from the side's banded front edge (37 mm from the blank's edge as cut, before the pre-mill and the band)"]);
+    expect(at(0.5 * MM)[0]).toMatch(/\(22 mm from the blank's edge as cut/);
+    // The mini drawer's scale check: the side's blank, 1 mm short, or the depth with a 1 mm pre-mill.
+    const side = (premill: number) => testCut("drawer", { ...applyPreset(defaults(true), "mixed", true), band: true, bandPremill: premill }, true).rows.find((r) => r[0] === "Each side's length (a long cut: the machine's scale)")![1];
+    expect(side(0)).toBe("559 mm, as cut: measure it before banding (560 mm, your cabinet's depth, once banded)");
+    expect(side(1 * MM)).toBe("560 mm, as cut: measure it before banding (560 mm, your cabinet's depth, once banded)");
+  });
+
   it("the mini door and mini drawer are banded as the cabinet is; the machine check and the ladders never are", () => {
     for (const metric of [false, true]) {
       const s = { ...applyPreset(defaults(metric), "mixed", metric), band: true };
@@ -336,6 +417,11 @@ describe("edge banding in the test cuts", () => {
       const unbanded = testCut("door", { ...s, band: false }, metric);
       expect(door.rows.find((r) => r[0] === "The gap round the door, closed")).toEqual(unbanded.rows.find((r) => r[0] === "The gap round the door, closed"));
       expect(door.rows.find((r) => r[0] === "Hinge cup centre, from the door's hinge edge")![1]).toMatch(/from the banded edge \(.* from the raw edge, before banding\)$/);
+      // The scale check is the side's blank, as cut: measured before banding.
+      const drawerRows = testCut("drawer", s, metric).rows;
+      const sideRow = drawerRows.find((r) => r[0] === "Each side's length (a long cut: the machine's scale)")!;
+      expect(sideRow[1]).toMatch(/, as cut: measure it before banding \(/);
+      expect(testCut("drawer", { ...s, band: false }, metric).rows.find((r) => r[0] === sideRow[0])![1]).not.toMatch(/banding/);
       const drawer = testCut("drawer", s, metric);
       expect(drawer.error).toBeNull();
       expect(drawer.parts.find((p) => p.name === "Drawer front")!.bands).toHaveLength(4);
