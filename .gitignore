@@ -34,3 +34,6 @@ crates/kernel/tests/repro/pending/
 tests/corpus/skp/
 # Carbide G-code saved for comparison with Sawhorse output (docs/CAM-CARBIDE-CREATE.md): local only
 cam-fixtures/
+
+# Read-only Carbide Create diagnostic bytecode
+scripts/__pycache__/

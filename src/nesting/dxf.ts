@@ -169,6 +169,7 @@ export function nestingDxf(n: Nesting, flavour: DxfFlavour = "lwpolyline", featu
   // Colours: stock grey (8), labels yellow (2), profiles through the ACI wheel, cutouts red,
   // pockets cyan, drills blue, the other face magenta.
   const colour = (name: string, i: number) => {
+    name = name.split("__")[0];
     if (name === "0") return 7;
     if (name === "STOCK") return 8;
     if (name === "LABELS") return 2;

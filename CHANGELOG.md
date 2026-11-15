@@ -6,6 +6,8 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ### Fixed (Shapeoko CAM preflight, 2026-11-15)
 
+- **A small hardware demo model:** 17 solid parts for an 18 in Blum TANDEM slide and a ¾ in hinged door, with ½ in drawer face and box and a ¼ in bottom. Its scrap layouts, cut list, recorded settings and regeneration script are in `examples/cnc-hardware-demo/`.
+
 - **CNC exports check assigned cutters before CAM setup.** Narrow pockets and undersized holes previously reached CAM without a cutter-fit warning. The preflight now uses the job sheet's assigned bit and measured feature widths, verifies explicit ownership, reach and confirmed collets, and offers CNC setup from the warning. Starter tools are unconfirmed; router changes reset collet confirmation, and tool edits reset ownership.
 - **CNC layers identify the assigned tool and pocketed-hole intent.** The cutter's name and diameter follow the existing operation/depth name; unavailable assignments say so. DXF, job sheets and cut order share one captured shop configuration. A switch retains legacy CAM layer templates; combined DXF and R12 output keep their names.
 - **Shapeoko regression tests and read-only Carbide Create diagnostics.** The supplied narrow pocket and mismatched drilling setup have synthetic export regressions; diagnostic tests run in CI. The experimental linear G-code contract remains offline and does not validate Shapeoko programs or machine safety.

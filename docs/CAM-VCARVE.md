@@ -48,6 +48,8 @@ Sources: § 0.1, § 9, § 10.
 
 ## Templates and layer names: the safety rule
 
+**CNC tool labels:** CNC files now append the assigned cutter's name and diameter to each cutting layer. For example, `DRILL_D4.76MM_THRU__POCKET_WITH_MY_1_8_INCH_END_MILL_D3P175MM` still requests a 4.76 mm through-hole, pocketed with the named 3.175 mm end mill. The tables below show the operation prefixes; select the complete imported names when making toolpaths or templates. `TOOL_UNSET` and `OWNERSHIP_UNCONFIRMED` need attention in **CNC setup** before CAM. A change of cutter name, diameter or ownership confirmation changes the complete layer name. For existing exact-name templates, turn off **CNC setup > Job sheet > Tool details in CNC layer names**. Combined DXF and R12 exports retain their original names.
+
 Sawhorse puts the depth of every pocket and hole in its layer's name: `POCKET_6.35MM` is a pocket 6.35 mm deep, `DRILL_D5MM_10MM` a 5 mm hole 10 mm deep. A template's toolpath selects its shapes by layer name, so a template knows only the layers it was built with.
 
 A new layer name appears whenever a depth or a hole size changes:

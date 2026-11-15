@@ -1,5 +1,7 @@
 # Small slide and hinge fit model
 
+![The drawer and hinge test rigs opened in Sawhorse](preview.png)
+
 Open **18-inch-slides-and-3-4-inch-door.shz** in Sawhorse. The two named assemblies are separate hardware test rigs, with 17 solid parts in total. This is a fit test, not a load-rated desk drawer.
 
 | Test rig | Width × box depth × height | Hardware modeled |
