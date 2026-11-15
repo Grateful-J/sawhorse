@@ -4,6 +4,17 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added (CNC cabinets, 2026-11-14)
+
+- **Test cuts: prove the setup on small pieces before the real sheet** (cabinet generator 1.9.0). The cabinet panel's new **9 · Test cuts** makes four tests from the settings you will cut with, each through the same code as the cabinet, and says what it proves, the stock to cut it from, what to measure with the value expected in the document's units, and what to change when it is off.
+  - **Machine check:** a 4 in (100 mm) square, a one-pass slot one bit wide and a 1/4 in (6 mm) pocket, for the machine's travel, its squareness, the bit's real diameter and Z zero. 0.11 sq ft of scrap.
+  - **Joint ladders:** a coupon per joint whose stock differs (the carcass dado, the back's groove, the drawer bottom's groove), five dados each at clearances 0.004 in (0.1 mm) apart round **Joint clearance**, named on the wood by dimples since the LABELS layer is not cut. Pick the dado the mating stock slides into by hand and **Set Joint clearance** applies it (to the edited cabinet in one undo step, or to new cabinets); picks that disagree say to measure the sheets again. 0.50 sq ft for all three.
+  - **Mini drawer:** a cabinet planned from your settings with one drawer in the narrowest, shortest opening the planner takes, on the runner your cabinet takes, so its screw holes, box length and hook holes are your cabinet's. 6.0 sq ft, 14% of a Drawer base.
+  - **Mini door:** one door with your front type, gap, boring distance and hinge inset, and an adjustable shelf on pins. 3.3 sq ft, 11% of a Base.
+  - Each goes beside the model as its own assembly on the tag **Test cuts**, one undo step, on the cabinet's materials. To nest only the tests, hide the cabinets and tick **Visible only**; only the cabinets, hide the tag. No cabinet's output changes.
+
+  How: `plugins/cabinet-generator/testcuts.js` (new), `main.js` (the group), `cabinet.js` (exports only: `validate`, `holeClear`, `WEB`, `BLUM`, `CUP`, `PLATE_HOLE`, `PIN`); `docs/CNC-CABINETS.md` gains "Test cuts: prove the setup before the real sheet". Tests: `src/plugins/testcuts.test.ts` (new: the ladders' dados against the planner's own side and drawer-side grooves; the mini drawer's runner screws, hook holes, box, grooves and finger notch against a full drawer base's, coordinate for coordinate, both catalogues and runners in both unit systems; the mini door's cups, plates and pull against a full base's, overlay and inset; every test from every starting point), `src/nesting/cabinet-cnc.wasm.test.ts` (the coupons through the kernel to the DXF at their widths, depths and layers; the tag and Visible only nest the cabinets or the tests alone), `e2e/cabinet-testcuts.spec.ts` (new).
+
 ### Fixed (CNC cabinets, 2026-11-14)
 
 - **Shelves stand behind an inset door, and each starting point is a clean start.**
