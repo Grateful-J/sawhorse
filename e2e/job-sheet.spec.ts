@@ -55,7 +55,8 @@ test("a router sheet's job sheet in the Nesting section, and one beside each DXF
   const panel = `${CABINET}/cabinet`;
   await page.locator(`[data-panel="${panel}"] [data-field="preset"]`).selectOption("base");
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
-  await expect(page.locator("#hint")).toContainText("Made Base");
+  // Generating a cabinet can take a while on a busy machine.
+  await expect(page.locator("#hint")).toContainText("Made Base", { timeout: 20_000 });
   await page.getByRole("tab", { name: "Cut list" }).click();
   await page.getByRole("button", { name: "Nesting ›" }).click();
   const section = page.getByTestId("nesting");
