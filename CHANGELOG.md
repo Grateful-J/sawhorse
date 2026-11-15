@@ -4,6 +4,17 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added (CNC cabinets, 2026-11-14)
+
+- **CNC setup: your machine, your bits, and where to start the feeds and speeds.** **CNC setup…**, beside **Stock…** in the Nesting section, opens three tabs:
+  - **Machine:** the Shapeoko 5 Pro 4×4 (1237 x 1237 mm travel, 155 mm Z, from Carbide 3D's spec page) or a custom machine. The Carbide Compact Router (1/4 in shank; Carbide's shop-page dial table and its 2020 staff chart side by side, 2,250 RPM apart at dial 5), the Makita RT0701C, the DeWalt DWP611, or a router whose RPM you type. The 200 IPM feed warning is shown as what it is: not published by Carbide, a forum figure, low confidence.
+  - **Tools:** your bits, editable, kept on this device. It starts with the Amana 46170 compression bit (its drawing's 0.2756 in up-cut part), a 1/4 in down-cut and a 1/8 in end mill, whose shanks and flute lengths were not found and are left for you. **Profile bit** is the bit the spacing check reads.
+  - **Feeds:** for a bit, a material (raw MDF, melamine or HPL on MDF, Baltic birch, laminate-faced Baltic birch) and a cut (profile, pocket or dado, hole), the starting chipload with every bit maker's figure (they disagree 3–5×), the dial and RPM, the feed in IPM and mm/min, the ramp, the depth per pass, and warnings: a compression bit's first pass not deeper than its up-cut part, a feed over the machine's warning, a chipload under the makers', a shank the collet does not take, an end mill not smaller than the hole or with flutes shorter than it is deep, and never a Forstner or hinge-boring bit in the router. Then the scrap test that finds the real number, each step with its source.
+
+  Every built-in number names its source (maker, document, page, address) and a confidence, from `docs/research/feeds-speeds-sources.md`, which ships with the code. Where the research found nothing (an O-flute in wood, Carbide's own feeds, a bit maker's ramp angle or stepover), the panel says it does not know. The shop is kept on this device under `sawhorse.cam.shop`, never in the model, and changing it does not mark the model changed. How: `src/cam/` (`sources.ts`, `data.ts`, `chipload.ts`, `feeds.ts`, `tools.ts`, `store.ts`, `layers.ts`, `scrap.ts`, and `shop.ts`, the API a job sheet can call: `feedsFor(tool, material, op)`, `feedsForLayer`), `src/components/CncSetupDialog.tsx`, `NestingSection.tsx`. Tests: `src/cam/sources.test.ts` (walks the data: every number has a source and a confidence), `src/cam/feeds.test.ts` (the formulas in both unit systems, the research's starting values reproduced, each warning at its boundary, the hole layers), `src/cam/store.test.ts`, `src/components/CncSetupDialog.test.tsx`, `e2e/cnc-setup.spec.ts`.
+
+- **The spacing check reads your profile bit.** Before **CNC files** saves, the gap between parts is checked against the **Profile bit** chosen in CNC setup (its diameter plus 1/16 in), not always a 1/4 in bit. With none chosen it assumes 1/4 in and says so. For a bit wider than 5/16 in, CNC spacing's 3/8 in gap is not enough: the question says what Kerf to type and does not offer **Use CNC spacing**. How: `src/nesting/cnc.ts` (`spacingProblem`, `spacingNeeded`), `src/App.tsx`. Tests: `src/nesting/cnc.test.ts`.
+
 ### Fixed (CNC cabinets, 2026-11-14)
 
 - **Blum part numbers and hinge counts checked against Blum's current catalogues.**

@@ -287,6 +287,26 @@ npx vite --port 5201 --strictPort        # in another terminal
 node scripts/capture-lane09.mjs --url http://localhost:5201 --out ../_captures
 ```
 
+### CNC setup: feeds and speeds (`src/cam/`)
+
+| What | Where |
+|---|---|
+| Where every number comes from | `src/cam/sources.ts`, one entry per row of `docs/research/feeds-speeds-sources.md` |
+| The machine, the routers' dial tables, the depth and plunge rules | `src/cam/data.ts` |
+| The bit makers' chipload rows and the research's starting values (§8a) | `src/cam/chipload.ts` |
+| The calculator (pure) and its warnings | `src/cam/feeds.ts` (`computeFeeds`) |
+| The tool library, the shop kept on this device (`sawhorse.cam.shop`) | `src/cam/tools.ts`, `src/cam/store.ts` |
+| What a CNC file's layer asks for | `src/cam/layers.ts` (`layerJob`, `holeOf`, `HOLE_LAYERS`) |
+| The API for other code (a job sheet) | `src/cam/shop.ts`: `loadShop`, `machineOf`, `routerOf`, `shopTools`, `profileBit`, `feedsFor(tool, material, op, opts?)`, `feedsForLayer(tool, material, layer)`, `onShop` |
+| The dialog | `src/components/CncSetupDialog.tsx`, opened from `NestingSection.tsx` |
+
+A built-in number is a `Sourced` (`{ value, unit, src }`) or sits in an object with a `src`. `src/cam/sources.test.ts` walks the data and fails on a number with no source; add the source to `sources.ts` and its row to the research before the number. A number the research marks NOT FOUND stays out: the field is null and the panel says it does not know.
+
+```bash
+NODE_ENV=test npx vitest run src/cam src/components/CncSetupDialog.test.tsx src/nesting/cnc.test.ts
+PW_PORT=4219 NODE_ENV=test npx playwright test e2e/cnc-setup.spec.ts
+```
+
 ### Groups, components, tags and scenes (lane 5)
 
 | What | Where |
