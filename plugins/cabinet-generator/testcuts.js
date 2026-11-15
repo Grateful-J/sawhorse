@@ -13,6 +13,11 @@
 //   reach the DXF on the same layers as the cabinet's cuts.
 // Whatever the planner refuses is refused here, with its message.
 //
+// Edge banding: the mini drawer and the mini door are banded as the cabinet is, since they are
+// planned by `plan()`: each banded edge's blank a band short, every hole where it is in the
+// finished part. Band them before measuring. The machine check and the joint ladders are never
+// banded: they test the machine and the joints, and have no edge that shows.
+//
 // Lengths are metres inside. The guide's numbers are for calipers: inches to 0.001 with
 // millimetres, or millimetres, whatever the document's display precision.
 import { BLUM, CUP, MATERIALS, PIN, PLATE_HOLE, WEB, backInsetOf, holeClear, plan, runnerLine, validate } from "./cabinet.js";
@@ -532,14 +537,18 @@ export function testCut(kind, s, metric, steps) {
       out.holes = planned.rows.filter((r) => ours.has(r[0]));
     } else {
       const door = planned.parts.find((p) => p.copies.some((c) => c.name === "Door"));
-      const x0 = door ? door.copies[0].at[0] : ms.gap / 2;
+      // The finished door's edge: a banded door's copy sits at its blank's corner, a band in. A
+      // door is banded all round with one band.
+      const x0 = door ? door.copies[0].at[0] - (door.offset?.[0] ?? 0) : ms.gap / 2;
+      const band = door?.bands?.[0];
+      const sideBand = planned.parts.find((p) => p.name === "Left side")?.bands?.[0];
       const moved = planned.rows.filter((r) => /^Hinge cup, .*\(moved /.test(r[1]));
       out.rows = [
-        ["Hinge cup centre, from the door's hinge edge", L(CUP.radius * MM + ms.cupDistance), `${CUP.radius} mm plus the boring distance. Off: the door turned or mirrored in the CAM program, or X and Y zero.`],
+        ["Hinge cup centre, from the door's hinge edge", band ? `${L(CUP.radius * MM + ms.cupDistance)} from the banded edge (${L(CUP.radius * MM + ms.cupDistance - band.thickness)} from the raw edge, before banding)` : L(CUP.radius * MM + ms.cupDistance), `${CUP.radius} mm plus the boring distance${band ? ", from the finished edge, as Blum measures it" : ""}. Off: the door turned or mirrored in the CAM program, or X and Y zero.${band ? " Off by about the band's thickness once banded: the band is not the thickness typed in Edge banding (measure it with calipers)." : ""}`],
         ["Hinge cup depth", `${CUP.depth} mm`, "Off: Z zero or the CAM job's thickness (Machine check)."],
         ["Hinge cup centres, from the door's ends", moved.length ? `${L(ms.hingeInset)} (From top, bottom), but ${moved.length === 1 ? "one cup moved" : `${moved.length} cups moved`}: see the rows below that say moved` : `${L(ms.hingeInset)} (From top, bottom)`, "Off at both ends the same way: the door turned end for end."],
         ...(ms.front === "overlay"
-          ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's front edge`, "Off: X and Y zero."]]
+          ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's ${sideBand ? `finished front edge (${L(CUP.plateSetback * MM - sideBand.thickness)} from the raw edge, before banding)` : "front edge"}`, "Off: X and Y zero."]]
           : [["Mounting plates", "Not drilled with inset fronts (listed below)", "Place them by Blum's inset tables, by hand."]]),
         // The door as planned: where its edge is (half the gap, or less of the side where the
         // hinge cannot reach that far), not what the gap alone would give.
@@ -554,6 +563,12 @@ export function testCut(kind, s, metric, steps) {
       if (!ms.hardware) out.rows = [["Hardware holes", "Off in 6 · Hardware: no cups or plate holes are drilled", "Turn Drill hinge, runner and pull holes on to test the hinges."], ...out.rows.filter((r) => !/^(Hinge cup|Mounting plate)/.test(r[0]))];
       const ours = new Set(["Door", "Doors", "Left side", "Right side", "Sides"]);
       out.holes = planned.rows.filter((r) => ours.has(r[0]));
+    }
+    // Banding on: the test is banded as the cabinet is (the same planner), so band it before
+    // measuring or fitting: its holes are placed from the finished edges.
+    if (planned.parts.some((p) => p.bands)) {
+      out.rows.unshift(["Edge banding", `Band the parts the rows below say (Edge band) with the bands you will use, before you measure or fit anything: they are cut as your cabinet's are, each banded edge a band short, every hole placed from the finished edge`, "Measure a banded part across its bands: it should be its finished size. Off by a band or two: the band is not the thickness typed in Edge banding (measure it with calipers)."]);
+      out.holes = [...out.holes, ...planned.rows.filter((r) => r[0] === "Edge banding")];
     }
   }
   // Coupons side by side, 1 in (25 mm) apart, in the assembly's axes.
