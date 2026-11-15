@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Grain, NestAlgorithm, Nesting, NestSettings, Placement, StockPiece } from "../kernel/types";
 import { parseLength, type UnitSystem } from "../lib/units";
 import { diagram } from "../nesting/diagram";
-import { handWorkLegend, nestProblems, type HandWork } from "../nesting/cnc";
+import { handWorkLegend, KERF_MAX, nestProblems, type HandWork } from "../nesting/cnc";
 import type { NestSettingsPatch } from "../nesting/settingsQueue";
 import { ALGORITHMS, cutText, dims, fineU, glueText, JOINT_LOSS_DEFAULT, type Units, nestNote, nestSummary, pieceNumber, pieceYield, placedSize, reasonText, stripText } from "../nesting/format";
 
@@ -111,7 +111,6 @@ function LengthField({ label, value, units, rounding, max, onCommit }: { label: 
   );
 }
 
-const KERF_MAX = 0.5 * 0.0254;
 const TRIM_MAX = 4 * 0.0254;
 const JOINT_LOSS_MAX = 0.5 * 0.0254;
 

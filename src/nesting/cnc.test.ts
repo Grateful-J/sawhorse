@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cncSettings } from "../components/NestingSection";
-import { cncFileName, cncNotes, cutProblems, nestProblems, openPockets, routerSheetProblems, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
+import { cncFileName, cncKerf, cncNotes, cncSpacingFits, cutProblems, KERF_MAX, nestProblems, openPockets, routerSheetProblems, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
 import DxfParser from "dxf-parser";
 import { nestingDxf, overcutLoop, pieceLabel, pocketOvercut, reachesEdge } from "./dxf";
 import { diffU, exactU, fineSteps, fineStep, fineU, pieceTitle } from "./format";
@@ -195,6 +195,29 @@ describe("spacing for the router", () => {
     expect(p.text).not.toContain("Use CNC spacing");
     n.settings = { ...n.settings, kerf: (7 * IN) / 16 };
     expect(spacingProblem(n, "sixteenth", big)).toBeNull();
+  });
+
+  it("a bit no Kerf can space says so plainly: Kerf goes up to 1/2 in, so a bit over 7/16 in has none", () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, kerf: KERF_MAX };
+    expect(spacingProblem(n, "sixteenth", { diameter: (7 * IN) / 16, name: "7/16 in" })).toBeNull();
+    const p = spacingProblem(n, "sixteenth", { diameter: IN / 2, name: "1/2 in compression" })!;
+    expect(p.text).toContain("No Kerf fits this bit");
+    expect(p.text).toContain("7/16 in or less");
+    expect(p.text).not.toContain("Set Kerf to at least");
+  });
+
+  it("the text and the Use CNC spacing button read the same units: the document's", () => {
+    const n = smallNesting();
+    n.settings = { ...n.settings, kerf: IN / 8 };
+    // An inch rounding in a metric document: CNC spacing is 10 mm, and the text says so.
+    expect(spacingProblem(n, "sixteenth", null, true)!.text).toContain("Use CNC spacing (10 mm apart)");
+    expect(spacingProblem(n, "half_mm", null, false)!.text).toContain("Use CNC spacing (3/8 in apart)");
+    // 10 mm fits a 5/16 in bit (7.94 + 1.59 = 9.53 mm), 3/8 in does not quite (9.525 mm).
+    expect(cncSpacingFits((5 * IN) / 16, true)).toBe(true);
+    expect(cncSpacingFits((5 * IN) / 16 + 0.0001, false)).toBe(false);
+    expect(cncSpacingFits(IN / 4, false)).toBe(true);    // The gap the check assumes is the one the CNC spacing button sets.
+    for (const m of [true, false]) expect(cncKerf(m)).toBe(cncSettings(m).kerf);
   });
 
   const cutFeature = (o: Partial<BlankFeatures> = {}): BlankFeatures => ({ profile: null, cutouts: [], pockets: [], drills: [], flip: { pockets: [], drills: [] }, skipped: false, ...o });
