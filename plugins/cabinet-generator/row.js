@@ -18,8 +18,13 @@ const TONGUE_SHORT = 0.5 * MM;
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {{ linear: number[][], translation: V3 }} Frame */
-/** A cabinet as a row sees it: its box and where it stands.
- * @typedef {{ id: number, name: string, width: number, depth: number, height: number, world: Frame }} Cab */
+/** What stands beside a cabinet's side in its row, from its side outward: a finished end panel,
+ * a filler, or an appliance opening (space where no cabinet goes), each its width along the row
+ * (trim.js trimEnds). `open` names an opening's appliance preset.
+ * @typedef {{ kind: "panel" | "filler" | "opening", width: number, label: string, open?: string }} Piece */
+/** A cabinet as a row sees it: its box and where it stands, and what stands beside its sides
+ * (none when nothing does: the row is then its boxes side by side, as before row features).
+ * @typedef {{ id: number, name: string, width: number, depth: number, height: number, world: Frame, ends?: { left: Piece[], right: Piece[] } }} Cab */
 /** Where a new cabinet goes against another.
  * @typedef {"right" | "left" | "cornerRight" | "cornerLeft"} Place */
 
@@ -94,13 +99,18 @@ export function nextName(name, taken = new Set()) {
 /** This name, or the next one not in use. @param {string} name @param {Set<string>} taken */
 export const freeName = (name, taken) => (taken.has(name) ? nextName(name, taken) : name);
 
-/** b stands against a's right side: turned the same way, backs in line, on a's floor (or tops level, as wall cabinets).
+/** How far a cabinet's row reaches past its side: the end panel, filler and opening beside it.
+ * @param {{ ends?: Cab["ends"] }} c @param {"left" | "right"} side */
+export const reach = (c, side) => (c.ends ? c.ends[side].reduce((t, p) => t + p.width, 0) : 0);
+
+/** b stands against a's right side (past what stands beside them: a filler, an end panel, an
+ * opening): turned the same way, backs in line, on a's floor (or tops level, as wall cabinets).
  * @param {Cab} a @param {Cab} b */
 export function touchesRight(a, b) {
   const r = relative(a, b);
   if (!unturned(r)) return false;
   const [x, y, z] = r.translation;
-  return Math.abs(x - a.width) < TOUCH && Math.abs(y + b.depth - a.depth) < TOUCH && (Math.abs(z) < TOUCH || Math.abs(z + b.height - a.height) < TOUCH);
+  return Math.abs(x - a.width - reach(a, "right") - reach(b, "left")) < TOUCH && Math.abs(y + b.depth - a.depth) < TOUCH && (Math.abs(z) < TOUCH || Math.abs(z + b.height - a.height) < TOUCH);
 }
 
 /** The row a cabinet is in, left to right (just itself when nothing touches it).
@@ -136,21 +146,23 @@ export function rightOf(cabs, id) {
 
 /**
  * Where a new cabinet (`size`) stands against `anchor`, as a world frame:
- * - right, left: against its side, backs in line, on its floor;
+ * - right, left: against its side (past the fillers, end panels and openings beside both), backs in line, on its floor;
  * - cornerRight, cornerLeft: around an inside corner at that end, turned a quarter, its back
  *   on the next wall (in line with the anchor's end) and its side `filler` in front of the
- *   anchor's carcass, for the doors and pulls to clear (a filler strip covers the gap).
- * @param {Cab} anchor @param {{ width: number, depth: number }} size @param {Place} where @param {number} [filler]
+ *   anchor's carcass, for the doors and pulls to clear (a filler strip covers the gap). The new
+ *   cabinet's own piece on that side (its end panel or filler) is counted too.
+ * @param {Cab} anchor @param {{ width: number, depth: number, ends?: Cab["ends"] }} size @param {Place} where @param {number} [filler]
  * @returns {Frame}
  */
 export function placeNext(anchor, size, where, filler = 0) {
   const { width: w, depth: d } = size;
   /** @type {Frame} */
   let local;
-  if (where === "right") local = translation([anchor.width, anchor.depth - d, 0]);
-  else if (where === "left") local = translation([-w, anchor.depth - d, 0]);
-  else if (where === "cornerRight") local = { linear: TURN_RIGHT, translation: [anchor.width - d, -filler, 0] };
-  else local = { linear: TURN_LEFT, translation: [d, -filler - w, 0] };
+  if (where === "right") local = translation([anchor.width + reach(anchor, "right") + reach(size, "left"), anchor.depth - d, 0]);
+  else if (where === "left") local = translation([-w - reach(size, "right") - reach(anchor, "left"), anchor.depth - d, 0]);
+  // Around a corner, the next wall is past what stands beside the anchor's end (a filler there).
+  else if (where === "cornerRight") local = { linear: TURN_RIGHT, translation: [anchor.width + reach(anchor, "right") - d, -filler - reach(size, "left"), 0] };
+  else local = { linear: TURN_LEFT, translation: [d - reach(anchor, "left"), -filler - w - reach(size, "right"), 0] };
   return compose(anchor.world, local);
 }
 
@@ -200,8 +212,9 @@ export function lineUp(cabs) {
  * @typedef {{
  *   height: number, setback: number, backInset: number, ends: "none" | "left" | "right" | "both",
  *   stock: "plywood" | "saw" | "lumber", thickness: number, joints: "dado" | "butt", dadoDepth: number, fit: number,
- *   spacing: number, maxLength: number,
+ *   spacing: number, maxLength: number, skin: "none" | "carcass" | "doors" | "back",
  * }} BaseSizes
+ * `skin`: a toe-kick skin on the front rail, in the row's first cabinet's carcass, door or back plywood, or none.
  */
 
 /** @param {boolean} metric @returns {BaseSizes} */
@@ -209,9 +222,9 @@ export function baseDefaults(metric) {
   return metric
     ? // 100 mm plinth, 75 mm toe space: the cabinet's own toe kick. A 1220 x 1220 sheet less a
       // 12 mm trim each side is 1196: rails up to 1190 nest on a 4 x 4 bed.
-      { height: 100 * MM, setback: 75 * MM, backInset: 0, ends: "none", stock: "plywood", thickness: 18 * MM, joints: "dado", dadoDepth: 6 * MM, fit: 0.2 * MM, spacing: 400 * MM, maxLength: 1190 * MM }
+      { height: 100 * MM, setback: 75 * MM, backInset: 0, ends: "none", stock: "plywood", thickness: 18 * MM, joints: "dado", dadoDepth: 6 * MM, fit: 0.2 * MM, spacing: 400 * MM, maxLength: 1190 * MM, skin: "none" }
     : // 4 x 3 in, as the toe kick; a 48 in sheet less the CNC preset's 1/2 in trim each side is 47.
-      { height: 4 * IN, setback: 3 * IN, backInset: 0, ends: "none", stock: "plywood", thickness: (23 / 32) * IN, joints: "dado", dadoDepth: 0.25 * IN, fit: 0.008 * IN, spacing: 16 * IN, maxLength: 47 * IN };
+      { height: 4 * IN, setback: 3 * IN, backInset: 0, ends: "none", stock: "plywood", thickness: (23 / 32) * IN, joints: "dado", dadoDepth: 0.25 * IN, fit: 0.008 * IN, spacing: 16 * IN, maxLength: 47 * IN, skin: "none" };
 }
 
 /** What lumber starts at: a 2x4 (1 1/2 in, 38 mm), 8 ft (2400 mm) long. @param {boolean} metric */
@@ -242,19 +255,66 @@ export function normalizeBase(saved, metric) {
     fit: num("fit"),
     spacing: num("spacing"),
     maxLength: num("maxLength"),
+    skin: s.skin === "carcass" || s.skin === "doors" || s.skin === "back" ? s.skin : "none",
   };
 }
 
 /** Lumber for a base frame: not sheet goods (its name has no "ply"), so the cut list counts boards. */
 export const BASE_LUMBER = { name: "Base lumber", color: /** @type {[number, number, number, number]} */ ([214, 184, 140, 255]) };
 
-/** The row laid out along its first cabinet: where each cabinet starts, the row's length and the frame's depth.
+/** One thing along a row, from x0 to x1 in the first cabinet's axes: a cabinet, or a piece
+ * beside one (its end panel, filler or opening; `cab` is that cabinet's place in the row, `side`
+ * the side it stands on).
+ * @typedef {{ kind: "cabinet" | Piece["kind"], x0: number, x1: number, cab: number, label: string, open?: string, side?: "left" | "right" }} RowItem */
+
+/** The row laid out along its first cabinet: where each cabinet starts, the row's length (to the
+ * last cabinet's right side) and the frame's depth, and everything along it, left to right
+ * (`items`: each cabinet, and the end panels, fillers and openings beside them).
  * @param {Cab[]} row */
 export function rowLayout(row) {
   const starts = row.map((c) => relative(row[0], c).translation[0]);
   const length = starts[starts.length - 1] + row[row.length - 1].width;
   const depth = Math.min(...row.map((c) => c.depth));
-  return { starts, length, depth, depths: new Set(row.map((c) => Math.round(c.depth / TOUCH))).size };
+  /** @type {RowItem[]} */
+  const items = [];
+  row.forEach((c, i) => {
+    let x = starts[i];
+    for (const p of c.ends?.left ?? []) {
+      items.push({ kind: p.kind, x0: x - p.width, x1: x, cab: i, label: p.label, ...(p.open ? { open: p.open } : {}), side: "left" });
+      x -= p.width;
+    }
+    items.push({ kind: "cabinet", x0: starts[i], x1: starts[i] + c.width, cab: i, label: c.name });
+    x = starts[i] + c.width;
+    for (const p of c.ends?.right ?? []) {
+      items.push({ kind: p.kind, x0: x, x1: x + p.width, cab: i, label: p.label, ...(p.open ? { open: p.open } : {}), side: "right" });
+      x += p.width;
+    }
+  });
+  items.sort((a, b) => a.x0 - b.x0 || a.x1 - b.x1);
+  return { starts, length, depth, depths: new Set(row.map((c) => Math.round(c.depth / TOUCH))).size, items };
+}
+
+/**
+ * What a base frame stands under: the cabinets and the fillers between and beside them, in runs
+ * that touch (an opening, where an appliance stands, breaks a run; an end panel is not in one),
+ * and the joints inside each run, left to right. A row of cabinets alone is one run from 0 to its
+ * length, with a joint at each cabinet's start but the first.
+ * @param {RowItem[]} items @returns {{ runs: [number, number][], joints: number[] }}
+ */
+export function solidRuns(items) {
+  /** @type {[number, number][]} */
+  const runs = [];
+  /** @type {number[]} */
+  const joints = [];
+  for (const it of items) {
+    if (it.kind !== "cabinet" && it.kind !== "filler") continue;
+    const last = runs[runs.length - 1];
+    if (last && Math.abs(it.x0 - last[1]) < TOUCH) {
+      joints.push(it.x0);
+      last[1] = it.x1;
+    } else runs.push([it.x0, it.x1]);
+  }
+  return { runs, joints };
 }
 
 /**
@@ -340,11 +400,14 @@ export function sleepers(a, b, joints, T, spacing) {
  * Plan the base frame of a row: its parts in the frame's own axes (x along the row from the
  * first cabinet's left side, y = 0 at the front of the shallowest carcass, z = 0 the floor),
  * where that frame sits in the first cabinet's axes (`at`, before it is dropped to the
- * floor), and its cut list.
- * @param {Cab[]} row @param {BaseSizes} b @param {string} [carcassMaterial]
+ * floor), and its cut list. The frame runs under the cabinets and the fillers between them, and
+ * stops at an opening (an appliance stands there) and at an end panel. A skin (`b.skin`) is a strip
+ * in front of each ladder's front rail, as long and as tall, in `skinStock` (the carcass stock when
+ * none is given).
+ * @param {Cab[]} row @param {BaseSizes} b @param {string} [carcassMaterial] @param {{ thickness: number, material: string }} [skinStock]
  */
-export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
-  const { starts, length, depth, depths } = rowLayout(row);
+export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name, skinStock) {
+  const { length, depth, depths, items } = rowLayout(row);
   const error = baseIssue(b, depth);
   /** @type {import("./cabinet.js").Part[]} */
   const parts = [];
@@ -353,9 +416,13 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   const H = b.height;
   const material = b.stock === "lumber" ? BASE_LUMBER.name : carcassMaterial;
   const dd = b.joints === "dado" ? b.dadoDepth : 0;
-  const x0 = b.ends === "left" || b.ends === "both" ? b.setback : 0;
-  const x1 = length - (b.ends === "right" || b.ends === "both" ? b.setback : 0);
-  const joints = starts.slice(1);
+  const { runs, joints } = solidRuns(items);
+  // An end that shows is set back like the front: the row's first run's left end, its last's right.
+  if (b.ends === "left" || b.ends === "both") runs[0][0] += b.setback;
+  if (b.ends === "right" || b.ends === "both") runs[runs.length - 1][1] -= b.setback;
+  const x0 = runs[0][0];
+  const x1 = runs[runs.length - 1][1];
+  const skin = b.skin === "none" ? null : skinStock ?? { thickness: T, material: carcassMaterial };
   const yf = b.setback;
   const yb = depth - b.backInset;
   const sleeperLen = yb - yf - 2 * T + 2 * Math.max(0, dd - TONGUE_SHORT);
@@ -363,19 +430,22 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   const refuse = (why) => ({ error: why, parts, length, depth, depths, at: /** @type {V3} */ ([0, 0, 0]), ladders: 0, sleepers: 0, notes: /** @type {string[][]} */ ([]), layout: /** @type {Layout} */ ({ ladders: [], front: 0, back: 0, thickness: 0, depth }) });
   // A row of thousands of ladders or sleepers is a damaged or hostile document, not a kitchen:
   // planned, it would take the plugin's memory.
+  if (skin && !(b.setback - skin.thickness > 0)) return refuse("The toe setback must be more than the skin's thickness, or the skin stands in front of the cabinets: set the frame back further, or turn the skin off.");
   if (!((x1 - x0) / b.maxLength <= MAX_LADDERS && (x1 - x0) / b.spacing <= MAX_SLEEPERS)) return refuse("This row is too long to plan a base frame for: check the cabinets' widths, the longest piece and the sleeper spacing.");
   /** The shortest ladder: a sleeper at each end, each in its dado, apart. */
   const shortest = 2 * T + b.fit + TOUCH;
   const shown = b.ends !== "none" ? "The ends' setback leaves too short a ladder under this row: set the ends back less, or let fewer ends show." : "A cabinet in this row is too narrow for a ladder of its own: make the longest piece longer.";
-  if (!(x1 - x0 >= shortest)) return refuse(shown);
-  const ladders = sections(x0, x1, joints, b.maxLength);
+  if (runs.some(([a, c]) => !(c - a >= shortest))) return refuse(shown);
+  const ladders = runs.flatMap(([a, c]) => sections(a, c, joints, b.maxLength));
   if (ladders.some(([a, c]) => !(c - a >= shortest))) return refuse(shown);
   /** Rails by shape, so identical ladders share one part. @type {Map<string, import("./cabinet.js").Part>} */
   const rails = new Map();
   /** @type {{ at: V3, name: string }[]} */
   const sleeperCopies = [];
   /** @type {Layout} */
-  const layout = { ladders: [], front: yf, back: yb, thickness: T, depth };
+  const layout = { ladders: [], front: yf, back: yb, thickness: T, depth, ...(x0 < 0 ? { start: x0 } : {}) };
+  /** Skins by length, so identical ladders share one part. @type {Map<string, import("./cabinet.js").Part>} */
+  const skins = new Map();
   ladders.forEach(([a, c], i) => {
     const xs = sleepers(a, c, joints, T, b.spacing);
     layout.ladders.push({ tag: letter(i), x0: a, x1: c, sleepers: xs });
@@ -395,9 +465,20 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
       part.copies.push({ at: [a, y, 0], name: `${which} rail ${tag}` });
     }
     xs.forEach((x, k) => sleeperCopies.push({ at: [x, yf + T - Math.max(0, dd - TONGUE_SHORT), 0], name: `Sleeper ${tag}${k + 1}` }));
+    if (skin) {
+      const key = len.toFixed(6);
+      let part = skins.get(key);
+      if (!part) {
+        const blank = /** @type {V3} */ ([len, skin.thickness, H]);
+        part = { name: "Toe kick skin", material: skin.material, blank, copies: [], mesh: partMesh("Toe kick skin", blank), grain: len >= H ? "length" : "width" };
+        skins.set(key, part);
+      }
+      part.copies.push({ at: [a, yf - skin.thickness, 0], name: `Toe kick skin ${tag}` });
+    }
   });
   parts.push(...rails.values());
   parts.push({ name: "Base sleeper", material, blank: [T, sleeperLen, H], copies: sleeperCopies, mesh: partMesh("Base sleeper", [T, sleeperLen, H]), grain: "none" });
+  parts.push(...skins.values());
   /** @type {string[][]} */
   const notes = [];
   if (ladders.length > 1) notes.push(["Ladders", `${ladders.length} ladders, each under whole cabinets where it can: set them side by side and screw them together through the end sleepers`]);
@@ -405,12 +486,15 @@ export function planBase(row, b, carcassMaterial = MATERIALS.carcass.name) {
   else notes.push(["Rails", "Sleepers butt between the rails: glue and screw through the rails into their ends, and check the diagonals"]);
   notes.push(["Setting", "Level the frame on the floor with shims under the sleepers, screw it down, then set the cabinets on it and screw down through their bottoms"]);
   if (depths > 1) notes.push(["Depth", "The cabinets differ in depth: the frame follows the shallowest, backs in line"]);
+  if (runs.length > 1) notes.push(["Openings", "The frame stops at each appliance opening: each side of one is its own ladder, its end flush with the opening"]);
+  if (skin) notes.push(["Skin", "A strip of the skin stock in front of each front rail, as long and as tall: glue and pin or screw it to the rail from behind. Scribe it to the floor as needed"]);
   return { error: null, parts, length, depth, depths, at: /** @type {V3} */ ([0, row[0].depth - depth, 0]), ladders: ladders.length, sleepers: sleeperCopies.length, notes, layout };
 }
 
 /** The planned ladders, in the frame's axes: each one's extent along the row and its sleepers'
  * left edges; the rails' front and back faces (y), the stock and the cabinets' depth.
- * @typedef {{ ladders: { tag: string, x0: number, x1: number, sleepers: number[] }[], front: number, back: number, thickness: number, depth: number }} Layout */
+ * `start` is where the row starts when a filler stands left of its first cabinet (below 0).
+ * @typedef {{ ladders: { tag: string, x0: number, x1: number, sleepers: number[] }[], front: number, back: number, thickness: number, depth: number, start?: number }} Layout */
 
 /** Every part's box in the frame's axes (each copy of each part), for a preview.
  * @param {import("./cabinet.js").Part[]} parts @returns {{ min: V3, max: V3 }[]} */
@@ -441,13 +525,17 @@ export function ladderPicture(layout, length, format, width = 640) {
   const pad = 14;
   const top = 34;
   const bottom = 30;
-  const scale = (width - 2 * pad - 48) / Math.max(length, 1e-6);
+  // A filler beyond the row's first or last cabinet: the drawing reaches it.
+  const s0 = layout.start ?? 0;
+  const end = Math.max(length, ...layout.ladders.map((l) => l.x1));
+  const span = end - s0;
+  const scale = (width - 2 * pad - 48) / Math.max(span, 1e-6);
   const H = Math.round(layout.depth * scale + top + bottom);
-  const X = (/** @type {number} */ x) => pad + x * scale;
+  const X = (/** @type {number} */ x) => pad + (x - s0) * scale;
   // y = 0 is the cabinets' front: at the bottom of the picture.
   const Y = (/** @type {number} */ y) => top + (layout.depth - y) * scale;
   /** @type {{ x: number, y: number, w: number, h: number, kind: "rail" | "sleeper" | "outline" }[]} */
-  const rects = [{ x: X(0), y: Y(layout.depth), w: length * scale, h: layout.depth * scale, kind: "outline" }];
+  const rects = [{ x: X(s0), y: Y(layout.depth), w: span * scale, h: layout.depth * scale, kind: "outline" }];
   /** @type {{ x1: number, y1: number, x2: number, y2: number }[]} */
   const lines = [];
   /** @type {{ x: number, y: number, text: string, align: "left" | "center" | "right", size: number }[]} */
@@ -471,7 +559,7 @@ export function ladderPicture(layout, length, format, width = 640) {
     }
   }
   // The depth, rail to rail, beside the row.
-  const xr = X(length) + 8;
+  const xr = X(end) + 8;
   lines.push({ x1: xr, y1: Y(layout.back), x2: xr, y2: Y(layout.front) });
   texts.push({ x: xr + 4, y: (Y(layout.back) + Y(layout.front)) / 2 + 4, text: format(layout.back - layout.front), align: "left", size: 10 });
   texts.push({ x: pad, y: H - 4, text: "Front", align: "left", size: 9 });

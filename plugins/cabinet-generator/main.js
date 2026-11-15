@@ -21,7 +21,8 @@ import { events, model, storage, ui, units } from "sawhorse";
 import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, CONFIRMAT, CONFIRMAT_LAYOUT, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
 import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
-import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
+import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, reach, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
+import { APPLIANCES, KCMA, openingStart, OTR, planCabinet, rowChecks, trimChecks, trimEnds } from "./trim.js";
 
 const IN = 0.0254;
 const MM = 0.001;
@@ -43,6 +44,8 @@ let editingKey = /** @type {string | null} */ (null);
 /** The edited cabinet's settings as built (null when they were never kept), and its units. */
 let kept = /** @type {Sizes | null} */ (null);
 let keptUnits = false;
+/** The row checks for the cabinet being edited (trim.js rowChecks), as of the last sync. @type {string[]} */
+let aroundChecks = [];
 /** Why the edited cabinet is not rebuilt as the panel changes (null: it is), and whether a
  * press of "replace" rebuilds it anyway. */
 let why = /** @type {string | null} */ (null);
@@ -245,7 +248,7 @@ async function placed(snap) {
     const parent = worldOf(byId, node.parent);
     const world = compose(compose(parent, /** @type {Frame} */ (node.transform)), frame);
     const s = e.sizes;
-    list.push({ id: node.id, name: s.name, width: s.width, depth: s.depth, height: s.height, world, node, sizes: s, frame, parent, metric: e.metric, owner: e.owner, kept: e.kept });
+    list.push({ id: node.id, name: s.name, width: s.width, depth: s.depth, height: s.height, world, ends: trimEnds(s), node, sizes: s, frame, parent, metric: e.metric, owner: e.owner, kept: e.kept });
   }
   return { list, byId };
 }
@@ -366,7 +369,26 @@ const SECTIONS = [
   { id: "secCuts", label: "8 · Cuts and holes", applies: () => true, summary: () => "Every cut and hole, and how it is made" },
   { id: "secTests", label: "9 · Test cuts", applies: () => true, summary: () => `${TEST_TITLES[testKind]} · prove the setup before the real sheet` },
   { id: "secBand", label: "10 · Edge banding", applies: () => true, summary: () => bandSummary() },
+  { id: "secTrim", label: "11 · Ends, fillers and openings", applies: () => true, summary: () => trimSummary() },
 ];
+
+/** What the Ends, fillers and openings group says while closed. */
+function trimSummary() {
+  const s = sizes;
+  /** @type {string[]} */
+  const out = [];
+  for (const [side, kind, w] of /** @type {const} */ ([["left", s.endLeft, s.fillerLeft], ["right", s.endRight, s.fillerRight]])) {
+    if (kind === "panel") out.push(`${side} end panel`);
+    else if (kind === "filler" || kind === "scribe") out.push(`${side} ${kind === "scribe" ? "scribe filler" : "filler"} ${f(w)}`);
+  }
+  for (const [side, kind, w] of /** @type {const} */ ([["left", s.openLeft, s.openLeftWidth], ["right", s.openRight, s.openRightWidth]])) if (kind !== "none") out.push(`${APPLIANCES[kind].short.toLowerCase()} ${side}${w > 0 ? ` ${f(w)}` : ""}`);
+  if (s.base === "toekick" && s.kickSkin !== "none") out.push("kick skin");
+  if (s.sinkWidth > 0 || s.sinkApron) out.push(s.sinkApron ? "farmhouse sink" : `${f(s.sinkWidth)} sink`);
+  if (s.otr) out.push("over a microwave");
+  if (!out.length) return "Nothing beside it: no end panels, fillers or openings";
+  const text = out.join(" · ");
+  return text[0].toUpperCase() + text.slice(1);
+}
 
 /** What the Edge banding group says while closed: off, or which parts take which band. */
 function bandSummary() {
@@ -510,7 +532,60 @@ function details() {
     out.push(...testFields());
   } else if (view === "secBand") {
     out.push(...bandFields());
+  } else if (view === "secTrim") {
+    out.push(...trimFields());
   }
+  return out;
+}
+
+/** The Ends, fillers and openings group's fields. @returns {Field[]} */
+function trimFields() {
+  const s = sizes;
+  const m = metric();
+  /** @type {Field[]} */
+  const out = [heading("Sides")];
+  /** @type {[string, string][]} */
+  const sideOptions = [["none", "Nothing: a cabinet or the bare side"], ["panel", "Finished end panel"], ["filler", "Filler"], ["scribe", "Scribe filler: cut wider, scribed by hand"]];
+  out.push(pick("endLeft", "Left side", s.endLeft, sideOptions));
+  if (s.endLeft === "filler" || s.endLeft === "scribe") out.push(len("fillerLeft", "Left filler width", s.fillerLeft));
+  out.push(pick("endRight", "Right side", s.endRight, sideOptions));
+  if (s.endRight === "filler" || s.endRight === "scribe") out.push(len("fillerRight", "Right filler width", s.fillerRight));
+  const panels = s.endLeft === "panel" || s.endRight === "panel";
+  const fillers = [s.endLeft, s.endRight].some((k) => k === "filler" || k === "scribe");
+  const scribes = panels || s.endLeft === "scribe" || s.endRight === "scribe";
+  if (panels || fillers) out.push(pick("endStock", panels && fillers ? "End panel and filler stock" : panels ? "End panel stock" : "Filler stock", s.endStock, [["carcass", "Carcass plywood"], ["doors", "Door plywood"]]));
+  if (panels) {
+    if (s.base === "toekick") out.push(pick("endDown", "Panel bottom", s.endDown, [["floor", "To the floor, over the toe kick"], ["box", "Flush with the cabinet's bottom"]]));
+    out.push(pick("endFront", "Panel front", s.endFront, [["doors", "Flush with the door faces"], ["carcass", "Flush with the carcass front"]]));
+    out.push(pick("endBand", "Panel edges banded", s.endBand, [["front", "Front edge"], ["frontBottom", "Front and bottom edges"], ["frontTopBottom", "Front, bottom and top edges"], ["none", "None"]]));
+    out.push(help(`An end panel is a part of its own on the side's outer face, its grain up, ${exactThickness(s.thickness, m)} thick (the stock's thickness in 4 · Materials). Screw it on from inside the cabinet: Decor's guide uses 1-1/8 in screws. It is not drilled: no source gives a hole pattern. Its edges take the band the carcass front edges take (10 · Edge banding${s.band ? "" : ", off now"}). On a base frame the panel stops at the cabinet's bottom: set the frame's showing end back (Rows and base frames › Ends) so the toe space turns the corner.`));
+  }
+  if (scribes) {
+    out.push(len("endScribe", "Scribe allowance", s.endScribe));
+    out.push(help("Your setting, not a standard: how much wider a scribe filler is cut, and how much deeper an end panel is cut at its back edge, to scribe to the wall by hand. The AWS standard allows scribes up to 1-1/2 in (38.1 mm) wide at wall-to-wall installations: wider is warned of."));
+  }
+  if (fillers) out.push(help(`A filler is a strip ${s.base === "toekick" ? "above the toe kick" : "the cabinet's height"}, its face flush with the carcass front, so doors and drawers clear a wall or the next cabinet: the row counts its width. KraftMaid ships a 3 in filler with each blind corner base; IKEA's planning guide puts at least 50 mm between a cabinet and a wall (its Canadian checklist says 1 in). No general table of filler widths was found. Screw through the cabinet's side into the filler (IKEA); not drilled.`));
+  out.push(heading("Appliance openings"));
+  /** @type {[string, string][]} */
+  const openOptions = [["none", "None"], ...Object.entries(APPLIANCES).map(([k, a]) => /** @type {[string, string]} */ ([k, a.label]))];
+  for (const [side, kind, w] of /** @type {const} */ ([["Left", s.openLeft, s.openLeftWidth], ["Right", s.openRight, s.openRightWidth]])) {
+    out.push(pick(`open${side}`, `${side} of it`, kind, openOptions));
+    if (kind !== "none") out.push(len(`open${side}Width`, `${side} opening width`, w), help(`${APPLIANCES[kind].source} Check your appliance's installation guide: models differ.`));
+  }
+  out.push(help("An opening is space in the row where no cabinet goes: the next cabinet stands past it, and nothing is cut. Picking a preset sets its width; every check is a warning."));
+  if (s.base === "toekick") {
+    out.push(heading("Toe kick"));
+    out.push(pick("kickSkin", "Toe-kick skin", s.kickSkin, [["none", "None"], ["carcass", "Carcass plywood"], ["doors", "Door plywood"], ["back", "Back plywood"]]));
+    if (s.kickSkin !== "none") out.push(help(`A strip in front of the toe kick, as tall as the kick, under the cabinet and its fillers. KCMA A161.1 asks a toe kick to be at least ${m ? `${KCMA.height.mm} mm` : `${KCMA.height.in} in`} high and ${m ? `${KCMA.depth.mm} mm` : `${KCMA.depth.in} in`} deep: less is warned of, never refused.`));
+  }
+  out.push(heading("Sink and microwave"));
+  out.push(len("sinkWidth", "Sink width (0: no sink)", s.sinkWidth), { type: "checkbox", id: "sinkApron", label: "Farmhouse (apron-front) sink", value: s.sinkApron });
+  out.push(help("Kohler's spec sheets: a 24 to 25 in sink needs a base at least 27 in (686 mm) wide; 32 to 33 in, 36 in; its 35 in sink, 36 in (which may need modifications); a farmhouse sink, at least 36 in (914 mm). A narrower cabinet is warned of. Check your sink's own spec sheet."));
+  if (s.base === "none") {
+    out.push({ type: "checkbox", id: "otr", label: "An over-the-range microwave hangs under it", value: s.otr });
+    if (s.otr) out.push(help(`${OTR.source} Check your microwave's installation guide.`));
+  }
+  out.push(heading("Checks"), { type: "note", id: "trimChecks", text: "" });
   return out;
 }
 
@@ -542,7 +617,7 @@ function bandFields() {
   out.push(pick("bandFronts", "Doors and drawer fronts, all four edges", s.bandFronts, /** @type {[string, string][]} */ (which)));
   out.push(pick("bandCarcass", "Front edges of the sides, top, bottom, fixed shelves and front stretcher", s.bandCarcass, /** @type {[string, string][]} */ (which)));
   out.push(pick("bandShelves", "Adjustable shelves, front edge", s.bandShelves, /** @type {[string, string][]} */ (which)));
-  out.push(help("The starting choices follow the AWS standard (2009): it counts the \"visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers\" as exposed, and an adjustable shelf's three hidden edges as concealed. Nailers are not banded here: they sit behind the back, at the rear edge. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. Finished ends are not made by this plugin yet."));
+  out.push(help("The starting choices follow the AWS standard (2009): it counts the \"visible front edges of stretchers, ends, divisions, tops, bottoms, shelves, and nailers\" as exposed, and an adjustable shelf's three hidden edges as concealed. Nailers are not banded here: they sit behind the back, at the rear edge. Doors and drawer fronts are banded all round, as one owner's spec asks (all exposed edges, 3 mm on fronts and 1 mm elsewhere: one spec, not a standard). The rear stretcher, the back, the toe kick, nailers and drawer boxes are never banded. An applied end panel (11 · Ends, fillers and openings) takes the carcass front edges' band on the edges picked there."));
   out.push(heading("Edgebander and waste"));
   out.push(len("bandPremill", "Edgebander pre-mill", s.bandPremill));
   out.push(help("Edgebanders only: what the jointing cutter takes off each edge before the band goes on (Felder and SCM: 0 to 3 mm). Each banded edge's blank is cut that much larger. Iron-on banding: 0."));
@@ -870,7 +945,10 @@ const panel = await ui.registerPanel({
       // Another runner has other lengths: back to Automatic.
       if ((id === "slides" || id === "catalog") && sizes.runner && !runnerLine(sizes).lengths.some((r) => r.nl === sizes.runner)) sizes = { ...sizes, runner: 0 };
       // Fields whose label or options name another choice are rebuilt with it.
-      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "lineBoring", "nailers", "base", "drawerPull", "doorPull", "doors"].includes(id) || before.runner !== sizes.runner) shown = "";
+      // A new opening starts at its preset's width (the maker's), or none to type.
+      if (id === "openLeft" && sizes.openLeft !== before.openLeft) sizes = { ...sizes, openLeftWidth: openingStart(sizes.openLeft, planMetric()) };
+      if (id === "openRight" && sizes.openRight !== before.openRight) sizes = { ...sizes, openRightWidth: openingStart(sizes.openRight, planMetric()) };
+      if (["doorPullFrom", "layout", "slides", "catalog", "front", "trashBins", "shelves", "drawerFronts", "top", "backType", "joinery", "lineBoring", "nailers", "base", "drawerPull", "doorPull", "doors", "endLeft", "endRight", "openLeft", "openRight", "kickSkin", "otr", "sinkApron"].includes(id) || before.runner !== sizes.runner) shown = "";
     }
     if (!SECTIONS.some((x) => x.id === view && x.applies())) view = "";
     if (editing === null) {
@@ -909,9 +987,11 @@ shown = idsOf(body());
 /** Keep the note, the summary and the button saying what Generate will do. */
 async function explain() {
   const m = planMetric();
-  const wrong = issue(sizes, m);
+  // Planned once, with its ends, fillers and skin: what cannot be built among them is refused too.
+  const all = planCabinet(sizes, m);
+  const wrong = all.error;
   const what = phrase(sizes, units.format, m);
-  const planned = wrong ? null : plan(sizes, m);
+  const planned = wrong ? null : all;
   /** @type {Record<string, Record<string, unknown>>} */
   const fields = {
     generate: { label: editing === null ? "Generate cabinet" : "Add another like this", disabled: !!wrong },
@@ -931,6 +1011,10 @@ async function explain() {
   if (view === "secCuts") fields.holes = { rows: planned ? planned.rows : [] };
   if (view === "secTests") explainTests(fields, planned);
   if (view === "secBand") explainBand(fields, planned);
+  if (view === "secTrim") {
+    const warn = [...trimChecks(sizes, m), ...(editing !== null ? aroundChecks : [])];
+    fields.trimChecks = warn.length ? { text: warn.join(" "), tone: "warning" } : { text: editing !== null ? "Nothing to warn of." : "Nothing to warn of in its own settings. The cabinets beside and over its openings are checked once it is made.", tone: "info" };
+  }
   await send(panel, fields);
 }
 
@@ -1029,6 +1113,8 @@ async function syncOnce() {
   const key = f ? f.key : null;
   const { list } = await placed(snap);
   taken = new Set(list.map((c) => c.name));
+  // What the cabinets around the edited one's openings, and over them, say (Ends, fillers and openings).
+  aroundChecks = id !== null && list.some((c) => c.id === id) ? rowChecks(rowOf(list, id), list, metric()) : [];
   // The last joint ladders added, while they are in the model: what the picks name. This session's
   // record first (its write to the document may have failed), then the document's; one whose
   // ladders are gone (an Undo of the Add, deleted) names nothing.
@@ -1249,7 +1335,7 @@ async function generateNow(mode, s, target = null, force = false) {
   const own = f0 ? f0.node : null;
   // A cabinet is planned in its own units, whatever the document's are now.
   const m = f0 ? f0.metric : metric();
-  const planned = plan(s, m);
+  const planned = planCabinet(s, m);
   if (planned.error) {
     // A live change that cannot be made: the panel's note says why.
     if (mode === "new" || force) await ui.notify(planned.error, { kind: "warning" });
@@ -1285,6 +1371,13 @@ async function generateNow(mode, s, target = null, force = false) {
     }
     // Open, a wider or narrower cabinet would move the cabinets right of it: they are not in it.
     if (inside && f0.sizes && Math.abs(s.width - f0.sizes.width) > 1e-9 && rightOf(list, own.id).length) return refuse("Close the cabinet (Esc) to change its width: the cabinets right of it move with it.");
+    // So would what stands beside it (a filler, an end panel, an opening): one on its left moves the cabinet itself.
+    if (inside && f0.sizes) {
+      const was = { ends: trimEnds(f0.sizes) };
+      const now = { ends: trimEnds(s) };
+      const moves = Math.abs(reach(now, "left") - reach(was, "left")) > 1e-9 || (Math.abs(reach(now, "right") - reach(was, "right")) > 1e-9 && rightOf(list, own.id).length);
+      if (moves) return refuse("Close the cabinet (Esc) to change what stands beside it: the cabinet, or the cabinets right of it, move with it.");
+    }
   } else {
     // Made in the open context, a new cabinet inside one of ours would go with it at its next rebuild.
     const holder = path.find((n) => focusOf(snap, n) || baseOf(snap, n));
@@ -1308,8 +1401,14 @@ async function generateNow(mode, s, target = null, force = false) {
     if (old) {
       // A deeper or shallower box keeps its back where it was: on the wall.
       if (Math.abs(old.depth - made.depth) > 1e-9) frame = compose(frame, translation([0, old.depth - made.depth, 0]));
-      // A wider or narrower one moves the cabinets right of it in its row along with its side.
-      const dw = made.width - old.width;
+      // A wider or narrower one moves the cabinets right of it in its row along with its side,
+      // and so does more or less beside it (a filler, an end panel, an opening). More or less on
+      // its left moves the cabinet itself, and those right of it, by that much.
+      const was = { ends: trimEnds(old) };
+      const now = { ends: trimEnds(made) };
+      const dl = reach(now, "left") - reach(was, "left");
+      const dw = dl + made.width + reach(now, "right") - old.width - reach(was, "right");
+      if (Math.abs(dl) > 1e-9) frame = compose(frame, translation([dl, 0, 0]));
       if (Math.abs(dw) > 1e-9) {
         const me = list.find((c) => c.id === own.id);
         if (me) for (const c of rightOf(list, own.id)) batch.transform([{ node: c.id }], slide(c.parent, applyVector(me.world, [dw, 0, 0])));
@@ -1321,7 +1420,7 @@ async function generateNow(mode, s, target = null, force = false) {
       // Against the anchor's row, at the end the place names.
       const row = rowOf(list, at.id);
       const end = place === "right" || place === "cornerRight" ? row[row.length - 1] : row[0];
-      frame = compose(invert(await contextFrame()), placeNext(end, made, place, filler));
+      frame = compose(invert(await contextFrame()), placeNext(end, { ...made, ends: trimEnds(made) }, place, filler));
       if (place === "cornerRight") turned = "right";
       else if (place === "cornerLeft") turned = "left";
     } else {
@@ -1535,6 +1634,8 @@ function baseFields(b) {
   out.push(pick("joints", "Sleepers", b.joints, [["dado", "In dados in the rails"], ["butt", "Butted between the rails"]]));
   if (b.joints === "dado") out.push(len("dadoDepth", "Dado depth", b.dadoDepth));
   out.push(len("spacing", "Sleepers at most", b.spacing), len("maxLength", "Longest piece", b.maxLength));
+  out.push(pick("skin", "Toe-kick skin", b.skin, [["none", "None"], ["carcass", "Carcass plywood"], ["doors", "Door plywood"], ["back", "Back plywood"]]));
+  if (b.skin !== "none") out.push(help(`A strip of the row's first cabinet's stock in front of each front rail, as long and as tall. KCMA A161.1 asks a toe kick to be at least ${metric() ? `${KCMA.height.mm} mm` : `${KCMA.height.in} in`} high and ${metric() ? `${KCMA.depth.mm} mm` : `${KCMA.depth.in} in`} deep: less is warned of, never refused.`));
   out.push(
     help(
       b.stock === "plywood"
@@ -1547,6 +1648,9 @@ function baseFields(b) {
   return out;
 }
 
+/** Whether anything stands beside a cabinet of the row (an end panel, a filler, an opening). @param {Placed[]} row */
+const hasPieces = (row) => row.some((c) => c.ends && (c.ends.left.length || c.ends.right.length));
+
 /** The rows panel for what is selected. @returns {Field[]} */
 function rowsBody() {
   const v = rowView;
@@ -1558,6 +1662,9 @@ function rowsBody() {
     return out;
   }
   out.push({ type: "note", id: "row", text: "", tone: "info" });
+  // What stands beside the cabinets (end panels, fillers, openings), along the row, and what its checks say.
+  if (hasPieces(v.row)) out.push({ type: "table", id: "rowItems", columns: ["Along the row", "What", "From", "Width"], rows: [], align: ["left", "left", "right", "right"] });
+  out.push({ type: "note", id: "rowChecks", text: "" });
   if (v.kind === "row" && v.selected.length > 1 && rowOf(v.selected, v.selected[0].id).length < v.selected.length) {
     out.push({ type: "button", id: "lineUp", label: "Line up the selected cabinets" }, help("The longest row among them stays put; the others butt against its ends in the order they stand, backs in line, on its floor."));
   }
@@ -1577,6 +1684,15 @@ function rowsBody() {
   out.push({ type: "table", id: "baseNotes", columns: ["Step", "How"], rows: [], align: ["left", "left"] });
   return out;
 }
+
+/** The stock a base frame's toe-kick skin is cut from: the row's first cabinet's carcass, door or
+ * back plywood (its measured thickness), or none. @param {Placed[]} row @param {BaseSizes} b */
+const skinOf = (row, b) => {
+  if (b.skin === "none" || !row[0]) return undefined;
+  const s0 = row[0].sizes;
+  const of = b.skin === "back" ? MATERIALS.back : b.skin === "doors" ? MATERIALS.doors : MATERIALS.carcass;
+  return { thickness: b.skin === "back" ? s0.backThickness : s0.thickness, material: of.name, of };
+};
 
 /** Each cabinet's top above the floor once on the frame (a toe kick comes off its box). @param {Placed[]} row @param {BaseSizes} b */
 const topsOnFrame = (row, b) => {
@@ -1602,6 +1718,24 @@ async function explainRows() {
     const lay = rowLayout(row);
     const on = v.kind === "row" && v.base ? ` · on ${v.base.node.name ?? "a base frame"}` : "";
     fields.row = { text: `Row of ${row.length}: ${row.map((c) => c.name).join(", ")} · ${f(lay.length)} long, ${f(lay.depth)} deep${on}`, tone: "info" };
+    const x0 = lay.items.length ? lay.items[0].x0 : 0;
+    const word = { cabinet: "Cabinet", panel: "End panel", filler: "Filler", opening: "Opening" };
+    // The table is there only when something stands beside a cabinet (rowsBody).
+    if (hasPieces(row)) fields.rowItems = { rows: lay.items.map((it) => [it.label, it.kind === "cabinet" ? word.cabinet : `${word[it.kind]}, ${it.side} of ${row[it.cab].name}`, f(it.x0 - x0), f(it.x1 - it.x0)]) };
+  }
+  {
+    const warn = row.length ? rowChecks(row, (await placed()).list, metric()) : [];
+    // KCMA's least toe space, against a frame with a skin: the draft frame, or the row's existing frame.
+    const bs = v.kind === "row" && v.base ? v.base.sizes : baseSizes;
+    const skin = skinOf(row, bs);
+    if (skin) {
+      const m = metric();
+      const h = m ? KCMA.height.mm * MM : KCMA.height.in * IN;
+      const d = m ? KCMA.depth.mm * MM : KCMA.depth.in * IN;
+      if (bs.height < h - 1e-6) warn.push(`The frame is ${f(bs.height)} tall: KCMA A161.1 asks a toe kick to be at least ${m ? `${KCMA.height.mm} mm` : `${KCMA.height.in} in`} high.`);
+      if (bs.setback - skin.thickness < d - 1e-6 && bs.setback - skin.thickness > 0) warn.push(`With the skin on, the toe space is ${f(bs.setback - skin.thickness)} deep: KCMA A161.1 asks for at least ${m ? `${KCMA.depth.mm} mm` : `${KCMA.depth.in} in`}.`);
+    }
+    fields.rowChecks = warn.length ? { text: warn.join(" "), tone: "warning" } : { text: "" };
   }
   if (!(v.kind === "row" && v.base)) {
     /** @type {ReturnType<typeof planBase> | null} */
@@ -1609,7 +1743,7 @@ async function explainRows() {
     /** Why planning failed outright (a row the plan's checks did not foresee), or null. */
     let broke = null;
     try {
-      if (row.length) p = planBase(row, baseSizes);
+      if (row.length) p = planBase(row, baseSizes, undefined, skinOf(row, baseSizes));
     } catch (e) {
       broke = `A base frame cannot be planned for this row: ${e instanceof Error ? e.message : String(e)}`;
     }
@@ -1961,7 +2095,7 @@ async function buildBaseNow(job) {
   // Made in the open context, a frame inside one of ours would go with it at its next rebuild.
   const holder = openPath(snap).find((n) => focusOf(snap, n) || baseOf(snap, n));
   if (holder) return refuse(`Leave ${holder.name ?? holder.label} first (Esc): a base frame cannot be made or changed inside a cabinet or a base frame.`);
-  const p = planBase(row, b);
+  const p = planBase(row, b, undefined, skinOf(row, b));
   if (p.error) return refuse(p.error);
   const ctxId = snap.context;
   const kicks = row.filter((c) => c.sizes.base === "toekick");
@@ -1997,7 +2131,7 @@ async function buildBaseNow(job) {
     if (c.sizes.base === "toekick") {
       const s = { ...c.sizes, name: c.name, base: /** @type {const} */ ("none"), height: c.sizes.height - c.sizes.toeKick };
       // Planned in the cabinet's own units, as an edit of it would be.
-      const planned = plan(s, c.metric);
+      const planned = planCabinet(s, c.metric);
       if (planned.error) return refuse(`${c.name} without its toe kick: ${planned.error}`);
       // Its origin goes from the floor to the frame's top: the box stays put when the frame is its kick tall.
       const frame = compose(invert(ctx), compose(translation(up), c.world));
@@ -2012,7 +2146,8 @@ async function buildBaseNow(job) {
   const frames = await placedBases(byId, snap);
   const name = old?.node.name ?? freeName(`Base frame ${frames.length + 1}`, new Set(frames.map((x) => x.node.name ?? "")));
   const frame = compose(invert(ctx), baseWorld);
-  const items = addParts(batch, p.parts, frame, add(b.stock === "lumber" ? [BASE_LUMBER] : [MATERIALS.carcass]));
+  const skin = skinOf(row, b);
+  const items = addParts(batch, p.parts, frame, add([...(b.stock === "lumber" ? [BASE_LUMBER] : [MATERIALS.carcass]), ...(skin ? [skin.of] : [])]));
   const ref = batch.makeComponent(items, `${name} ${f(p.length)}`);
   batch.rename({ node: ref.node }, name);
   if (old) carryOver(batch, ref, old.node);
