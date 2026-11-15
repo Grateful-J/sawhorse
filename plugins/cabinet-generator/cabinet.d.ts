@@ -27,6 +27,33 @@ export type Grain = "length" | "width" | "none";
 /** Blum CLIP top hinges with BLUMOTION (soft close) or self-closing: what the shopping list names. */
 export type HingeClose = "soft" | "self";
 /** What is bought for each copy of a part beyond its wood (the kernel's part attribute `bom`). */
+/** A band's thickness: one REHAU sells (0.018 in, 1, 2, 3 mm), or measured and typed. */
+export type BandSize = "0.018in" | "1" | "2" | "3" | "custom";
+/** Which band a kind of part takes: none, or band 1 to 3 of the list. */
+export type BandPick = "none" | "1" | "2" | "3";
+/** A part's edge: the front edge of a carcass part or shelf; a door's or drawer front's left, right, bottom or top. */
+export type EdgeName = "front" | "left" | "right" | "bottom" | "top";
+/** One banded edge of a part: which edge, its band (1 to 3), the band's thickness, width and name,
+ * and the edge's banded length, finished, from span[0] to span[1] along it (a notch at an end shortens it). */
+export interface PartBand {
+  edge: EdgeName;
+  band: number;
+  thickness: number;
+  width: number;
+  name: string;
+  length: number;
+  span: [number, number];
+  /** The edge's whole length, notches and all: the band an edgebander runs along it (and the band counted). */
+  run: number;
+}
+/** One band of the list: its number, thickness and width (metres), name, and how a row or the shopping list names it. */
+export interface Band {
+  n: number;
+  thickness: number;
+  width: number;
+  name: string;
+  label: string;
+}
 export interface BomItem {
   item: string;
   sku?: string;
@@ -112,6 +139,31 @@ export interface Sizes {
   /** The bin's lip above the tray's bottom: where the frame sits. */
   binHeight: number;
   trayHeight: number;
+  /** Edge banding on (off: every part is cut at its finished size, as before banding came). */
+  band: boolean;
+  /** How many bands are listed (1 to 3). */
+  bandCount: number;
+  /** Each band: a thickness REHAU sells or "custom" (then its typed `Thick`, metres), a name or colour, and its width. */
+  band1Size: BandSize;
+  band1Thick: number;
+  band1Name: string;
+  band1Width: number;
+  band2Size: BandSize;
+  band2Thick: number;
+  band2Name: string;
+  band2Width: number;
+  band3Size: BandSize;
+  band3Thick: number;
+  band3Name: string;
+  band3Width: number;
+  /** Which band doors and drawer fronts (all four edges), the carcass's front edges and adjustable shelves' front edges take. */
+  bandFronts: BandPick;
+  bandCarcass: BandPick;
+  bandShelves: BandPick;
+  /** What an edgebander's jointing cutter takes off each banded edge (metres, 0 to 3 mm; iron-on 0). */
+  bandPremill: number;
+  /** The waste allowance per banded side (metres; Microvellum's default, 1 in). Microvellum's 5% is the shopping list's banding overage. */
+  bandWasteEnd: number;
 }
 export interface Part {
   name: string;
@@ -120,8 +172,13 @@ export interface Part {
   copies: { at: V3; name?: string }[];
   mesh: Mesh;
   grain: Grain;
-  /** What is bought for each copy (hinges on a door, runners on a drawer front, pins on a shelf). */
+  /** What is bought for each copy (hinges on a door, runners on a drawer front, pins on a shelf, banding by the metre). */
   bom?: BomItem[];
+  /** A banded part: its finished size (blank plus bands; `blank` is then the cut size), how far the
+   * blank's corner sits inside the finished part's (each copy's `at` is the blank's corner), and its banded edges. */
+  finished?: V3;
+  offset?: V3;
+  bands?: PartBand[];
 }
 export interface RunnerLength {
   nl: number;
@@ -186,6 +243,29 @@ export function issue(s: Sizes, metric: boolean): string | null;
 /** The planner's checks on the settings alone, before any part is laid out: the message, or null. */
 export function validate(s: Sizes, metric: boolean): string | null;
 /** A hole keeps 3 mm of wood (WEB) to the part's edges and to every cut that reaches it. */
+/** Edge banding's constants: the thicknesses offered, the limits, Microvellum's default waste. */
+export const BAND: {
+  sizes: [Exclude<BandSize, "custom">, number, string][];
+  minThick: number;
+  maxThick: number;
+  maxWidth: number;
+  maxPremill: number;
+  maxWasteEnd: number;
+  maxName: number;
+  wasteEnd: number;
+};
+/** Where each edge is on a part's blank: its axis, and the low (0) or high (1) end. */
+/** What a banded edge with a notch at an end asks of you (a row of Cuts and holes says it). */
+export const END_NOTCH: string;
+export const EDGE_AXES: Record<EdgeName, [0 | 1 | 2, 0 | 1]>;
+/** The bands listed (1 to bandCount), each with its thickness. */
+export function bandList(s: Sizes, metric: boolean): Band[];
+/** The band a kind of part takes: null when not banded, undefined when it names a band past the list. */
+export function bandFor(s: Sizes, kind: "fronts" | "carcass" | "shelves", metric: boolean): Band | null | undefined;
+/** A part's blank with its banded edges cut short, every cut kept where it is in the finished part; throws what to change when banding would change the part or keep less than 3 mm of wood to a raw edge. */
+export function bandPart(name: string, size: V3, prisms: import("./mesh.js").Prism[], holes: import("./mesh.js").Hole[], edges: { edge: EdgeName; band: Band }[], premill: number): { blank: V3; prisms: import("./mesh.js").Prism[]; holes: import("./mesh.js").Hole[]; offset: V3; bands: PartBand[] };
+/** Whether a banded edge sits against another part (or in its dado or groove): null, or what. */
+export function bandClash(parts: Part[]): string | null;
 export function holeClear(size: V3, prisms: import("./mesh.js").Prism[], hole: import("./mesh.js").Hole): boolean;
 /** The least wood left between a drilled hole and a cut or an edge (metres). */
 export const WEB: number;

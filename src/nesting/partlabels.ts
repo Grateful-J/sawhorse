@@ -1,7 +1,8 @@
 // Printable part labels: one per part on a router sheet, from its job sheet (src/nesting/
 // jobsheet.ts). Each carries the part's tag and name, its cabinet, its sheet's number, its size,
-// a grain arrow when it has grain, which face was up on the router, and a line for edge banding
-// (a hook: Sawhorse does not know banding yet, so the line is left to write on).
+// a grain arrow when it has grain, which face was up on the router, and its edge banding: the
+// bands the part carries (the Cabinet generator's banded parts), or a line to write on. Which
+// edges take a band is not known here: the Cabinet generator's Edge banding group lists them.
 //
 // The labels are laid out edge to edge in a grid centred on the page, on letter or A4 paper, at
 // a size CNC setup keeps (src/cam/jobs.ts). No label product is named: Sawhorse found no source

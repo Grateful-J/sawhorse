@@ -35,8 +35,13 @@ export const SHOP_CATEGORIES: { id: ShopCategory; label: string }[] = [
   { id: "tools", label: "Tools (once for the shop)" },
 ];
 
-/** Overage to start with (percent): assumptions the view states as such, never facts. */
-export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 0, lumber: 20, banding: 15, hardware: 0, tools: 0 };
+/** Overage to start with (percent): assumptions the view states as such, never facts. Banding's is
+ * Microvellum's default 5% (its edgeband report adds 1 in per banded side, which the parts carry,
+ * then 5%: docs/research/edge-banding-sources.md), a software default, not a standard. */
+export const DEFAULT_OVERAGE: Record<ShopCategory, number> = { sheet: 0, lumber: 20, banding: 5, hardware: 0, tools: 0 };
+
+/** Where banding's starting overage comes from. */
+export const BANDING_OVERAGE_NOTE = "Microvellum's default, not a standard: its edgeband report adds 1 in per banded side (the Cabinet generator's parts carry that), then 5%";
 
 /** Why sheet goods start at no overage. */
 export const SHEET_OVERAGE_NOTE = "The nesting's sheet count is exact; add overage for spares or mistakes.";
@@ -375,7 +380,7 @@ export const SHOPPING_CSV_TYPE = { description: "Shopping list (CSV)", mime: "te
 
 /** Said wherever the list is written: how quantities are rounded, and what overage is. */
 export const ROUNDING_NOTE = "Quantities to buy are rounded up: whole sheets and boards, whole pairs, whole packs (and rolls, when a size is set). Overage is added before rounding.";
-export const BANDING_PLACEHOLDER = "Edge banding is not worked out yet: when a part says how much it takes (an item in metres), it is listed here.";
+export const BANDING_PLACEHOLDER = "No part carries edge banding. A part that does (an item in metres: the Cabinet generator adds one to each part it bands, with its waste) is listed here.";
 
 function money2(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);

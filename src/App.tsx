@@ -28,7 +28,7 @@ import { pieceFileName, pieceSvg, SVG_TYPE } from "./nesting/svg";
 import { grainOverlay } from "./cutlist/arrows";
 import { csvBytes, CSV_TYPE } from "./cutlist/csv";
 import { labelsPdf, reportPdf } from "./cutlist/documents";
-import { followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
+import { bandingByItem, followRounding, GRAIN_WORDS, resolveRounding, sizeStyle, type RoundingChoice } from "./cutlist/format";
 import { loadCutRounding, saveCutRounding } from "./cutlist/rounding-store";
 import { currencyForLocale, priceList, shoppingCsvBytes, shoppingList, SHOPPING_CSV_TYPE, type ShopPrefs } from "./cutlist/shopping";
 import { loadShopPrefs, saveShopPrefs } from "./cutlist/shop-store";
@@ -2654,6 +2654,15 @@ export function App() {
     },
     [assemblyOf],
   );
+  // Each part's edge banding for the part labels, from the cut list when it is of the model as it
+  // is (else none: a line to write on, never another moment's banding).
+  const bandingOfPlacement = useCallback(
+    (q: Placement): string | null => {
+      const fresh = !!cutList && sameStamp(cutStamps.current.get(cutList), stampOf(live.current.scene?.state, cutVisibleOnly));
+      return fresh ? bandingByItem(cutList)(q.item) : null;
+    },
+    [cutList, cutVisibleOnly],
+  );
   const saveNestCnc = useCallback(
     async (all: Nesting, prepared: NestCuts) => {
       // The router's sheets only: the track saw's are cut from their diagrams, by hand.
@@ -2689,7 +2698,7 @@ export function App() {
         // measurement. Its own save: cancelling it leaves the CNC files as they are.
         let jobs: { name: string; saved: boolean; sheets: number } | null = null;
         if (stoppedAt === null && files.length) {
-          const sheets = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf);
+          const sheets = jobSheets(all, features, loadShop(), nestUnits, cutTitle, ownerOf, bandingOfPlacement);
           const name = safeName(jobSheetsFileName(cutTitle, new Date()).replace(/\.txt$/, "")) + ".txt";
           const res = await saveFile(name, new TextEncoder().encode(jobSheetsText(sheets, cutTitle)), JOB_SHEETS_TYPE);
           jobs = { name: res?.name ?? name, saved: !!res, sheets: sheets.length };
@@ -2700,7 +2709,7 @@ export function App() {
         setMessage({ text: `Could not save the CNC files: ${e instanceof Error ? e.message : String(e)}`, error: true });
       }
     },
-    [cutTitle, nestUnits, ownerOfItem],
+    [cutTitle, nestUnits, ownerOfItem, bandingOfPlacement],
   );
   // The router's sheets measured for the Nesting section's job sheets: once per nesting of
   // one model, whichever sheet's job sheet is opened.
@@ -2713,9 +2722,9 @@ export function App() {
       const key = `${n.hash}:${live.current.scene?.state.stats.hash ?? ""}`;
       if (jobMeasure.current?.key !== key) jobMeasure.current = { key, measured: measureNesting(router) };
       const measured = await jobMeasure.current.measured;
-      return jobSheets(n, measured, loadShop(), nestUnits, cutTitle, (q) => ownerOfItem(q.item)).find((js) => js.index === piece.index) ?? null;
+      return jobSheets(n, measured, loadShop(), nestUnits, cutTitle, (q) => ownerOfItem(q.item), bandingOfPlacement).find((js) => js.index === piece.index) ?? null;
     },
-    [nesting, nestUnits, cutTitle, ownerOfItem, measureNesting],
+    [nesting, nestUnits, cutTitle, ownerOfItem, measureNesting, bandingOfPlacement],
   );
   const saveNestPdf = useCallback(async (n: Nesting) => {
     try {
@@ -2728,13 +2737,13 @@ export function App() {
       const router = routerShare(n);
       const measured = router.pieces.length ? await measureNesting(router) : null;
       const cam = loadShop();
-      const sheets = jobSheets(n, measured, cam, nestUnits, cutTitle, (q) => ownerOfItem(q.item));
+      const sheets = jobSheets(n, measured, cam, nestUnits, cutTitle, (q) => ownerOfItem(q.item), bandingOfPlacement);
       const res = await saveFile(`${cutTitle} nesting.pdf`, nestingPdf(n, cutTitle, nestUnits, shop, { sheets, prefs: cam.jobs }), PDF_TYPE);
       if (res) setMessage({ text: `Saved ${res.name}: what to buy${shop ? ", the shopping list with your prices" : ""}, then a page per sheet or board with its diagram and cut sequence${sheets.length ? ", each router sheet's job sheet, and its part labels at the end" : ""}.`, error: false });
     } catch (e) {
       setMessage({ text: `Could not save the nesting booklet: ${e instanceof Error ? e.message : String(e)}`, error: true });
     }
-  }, [cutTitle, nestUnits, cutList, shopShown, shopPrefs, cutVisibleOnly, measureNesting, ownerOfItem]);
+  }, [cutTitle, nestUnits, cutList, shopShown, shopPrefs, cutVisibleOnly, measureNesting, ownerOfItem, bandingOfPlacement]);
 
   const printCut = useCallback(() => {
     const body = document.body;

@@ -275,7 +275,7 @@ describe("money and the shop's prefs", () => {
     const p = readShopPrefs({ prices: { a: 12.5, b: -1, c: "9", __proto__: 3 }, packs: { a: 0, b: 100 }, overage: { sheet: 12, lumber: "x" }, currency: "XYZ!", labour: { hours: 3, rate: Infinity } }, "CAD");
     expect(p.prices).toEqual({ a: 12.5 });
     expect(p.packs).toEqual({ b: 100 });
-    expect(p.overage).toEqual({ sheet: 12, lumber: 20, banding: 15, hardware: 0, tools: 0 });
+    expect(p.overage).toEqual({ sheet: 12, lumber: 20, banding: 5, hardware: 0, tools: 0 });
     expect(p.currency).toBe("CAD");
     expect(p.labour).toEqual({ hours: 3, rate: null });
     expect(readShopPrefs("junk", null)).toEqual(defaultShopPrefs(null));
@@ -301,7 +301,7 @@ describe("the CSV", () => {
     expect([sheet[0], sheet[4], sheet[6], sheet[7], sheet[8], sheet[10], sheet[11]]).toEqual(["Sheet goods", "1 sheet", "1 sheet", "2 sheets", "40.00", "40.00", "80.00"]);
     const runners = rows.find((r) => r[2] === "563H5330B")!;
     expect([runners[4], runners[8], runners[10], runners[13]]).toEqual(["3 pairs", "price not set", "", "left out of the total"]);
-    expect(rows.find((r) => r[0] === "Edge banding")![13]).toMatch(/not worked out yet/);
+    expect(rows.find((r) => r[0] === "Edge banding")![13]).toMatch(/^No part carries edge banding\./);
     const total = rows.find((r) => r[0] === "Total")!;
     expect([total[10], total[11]]).toEqual([String((40 + 16).toFixed(2)), String((80 + 16).toFixed(2))]);
     expect(total[13]).toMatch(/^Leaves out 3 rows with no price: /);
