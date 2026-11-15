@@ -14,6 +14,26 @@ export function areaText(a: number, metric: boolean): string;
 export function clearanceSteps(fit: number, metric: boolean): number[];
 export function validSteps(v: unknown): number[] | null;
 export function partArea(parts: Part[]): number;
+/** A ladder as cut: the mating stock's thickness then, and each dado's width. */
+export interface CutLadder {
+  kind: LadderKind;
+  name: string;
+  mating: number;
+  widths: number[];
+}
+/** The joint ladders as added, kept in the document, with the node they were added as. */
+export interface LadderRecord {
+  steps: number[];
+  ladders: CutLadder[];
+  node: number;
+}
+export function matingNow(kind: LadderKind, s: Sizes): number;
+export function ladderRecord(t: TestCut, node: number): LadderRecord;
+export function validLadderRecord(v: unknown): LadderRecord | null;
+export function liveLadders(mine: LadderRecord | null, kept: LadderRecord | null, there: (node: number) => boolean): LadderRecord | null;
+export function pickOptions(l: CutLadder, s: Sizes, metric: boolean): [string, string][];
+/** The clearance the picks come to: the width that fit less the mating stock typed now, held to 0 to 1 mm. */
+export function fitFromPicks(ladders: CutLadder[], picks: Record<string, string>, s: Sizes, metric: boolean): { value: number | null; text: string; tone: "info" | "warning" };
 export interface MachineSpec {
   side: number;
   slot: { width: number; length: number; depth: number };
@@ -47,7 +67,7 @@ export interface TestCut {
   holes: string[][];
   columns: string[];
   steps: number[];
-  coupons: { kind: LadderKind; name: string; widths: number[]; depth: number }[];
+  coupons: { kind: LadderKind; name: string; widths: number[]; depth: number; mating: number }[];
   skipped: string[];
   sizes: Sizes | null;
 }

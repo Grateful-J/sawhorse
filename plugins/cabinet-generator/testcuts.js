@@ -43,6 +43,8 @@ export const LADDER_STEPS = 5;
  * a pocket toolpath with the same bit makes them), this deep, one for dado 1, two for dado 2 ... */
 const MARK_DEPTH = 2 * MM;
 const MARK_OVER = 1 * MM;
+/** Never within this of a dado's width. */
+const MARK_CLEAR = 0.25 * MM;
 /** A sheet's side for the squareness figure: 4 ft. */
 const SHEET = 48 * IN;
 
@@ -74,6 +76,107 @@ export function validSteps(v) {
   if (!Array.isArray(v) || v.length !== LADDER_STEPS) return null;
   if (!v.every((x, i) => typeof x === "number" && Number.isFinite(x) && x >= -1e-12 && x <= 1 * MM + 1e-12 && (i === 0 || x > v[i - 1]))) return null;
   return /** @type {number[]} */ ([...v]);
+}
+
+/**
+ * The joint ladders as they were cut, kept in the document when they are added: each ladder's
+ * kind and name, the mating stock's thickness then, and each dado's width as cut; the steps;
+ * and the node the ladders were added as, so a record whose ladders are gone (undone, deleted)
+ * is not used.
+ * @typedef {{ kind: LadderKind, name: string, mating: number, widths: number[] }} CutLadder
+ * @typedef {{ steps: number[], ladders: CutLadder[], node: number }} LadderRecord
+ */
+/** @type {Record<LadderKind, string>} */
+const LADDER_NAMES = { dado: "Dado ladder", back: "Back groove ladder", bottom: "Drawer bottom ladder" };
+/** The stock a ladder's mating piece is, in these settings: the carcass for the dado, the back plywood for the grooves.
+ * @param {LadderKind} kind @param {Sizes} s */
+export const matingNow = (kind, s) => (kind === "dado" ? s.thickness : s.backThickness);
+const stockWord = (/** @type {LadderKind} */ kind) => (kind === "dado" ? "carcass" : "back");
+
+/** The record of ladders just cut. @param {TestCut} t @param {number} node @returns {LadderRecord} */
+export function ladderRecord(t, node) {
+  return { steps: [...t.steps], ladders: t.coupons.map((c) => ({ kind: c.kind, name: c.name, mating: c.mating, widths: [...c.widths] })), node };
+}
+
+/** A record read from a document, checked: else null. @param {unknown} v @returns {LadderRecord | null} */
+export function validLadderRecord(v) {
+  if (!v || typeof v !== "object") return null;
+  const r = /** @type {Record<string, unknown>} */ (v);
+  const steps = validSteps(r.steps);
+  if (!steps || typeof r.node !== "number" || !Number.isInteger(r.node) || !Array.isArray(r.ladders) || !r.ladders.length || r.ladders.length > 3) return null;
+  /** @type {CutLadder[]} */
+  const ladders = [];
+  for (const l of r.ladders) {
+    if (!l || typeof l !== "object") return null;
+    const { kind, mating, widths } = /** @type {Record<string, unknown>} */ (l);
+    if (kind !== "dado" && kind !== "back" && kind !== "bottom") return null;
+    if (ladders.some((x) => x.kind === kind)) return null;
+    if (typeof mating !== "number" || !(mating > 0 && mating <= 2 * IN)) return null;
+    if (!Array.isArray(widths) || widths.length !== LADDER_STEPS || !widths.every((w, i) => typeof w === "number" && Number.isFinite(w) && w > 0 && w <= 2 * IN + 1 * MM && (i === 0 || w > widths[i - 1]))) return null;
+    ladders.push({ kind, name: LADDER_NAMES[kind], mating, widths: /** @type {number[]} */ ([...widths]) });
+  }
+  return { steps, ladders, node: r.node };
+}
+
+/**
+ * The ladders the picks name: this session's record while its ladders are in the model (its
+ * write to the document may have failed), else the document's while its ladders are; else none,
+ * so an Undo of the Add, or the ladders deleted, names nothing.
+ * @param {LadderRecord | null} mine @param {LadderRecord | null} kept @param {(node: number) => boolean} there
+ */
+export function liveLadders(mine, kept, there) {
+  if (mine && there(mine.node)) return mine;
+  if (kept && there(kept.node)) return kept;
+  return null;
+}
+
+/** The choices for a ladder's pick: each dado by its width as cut and the clearance it is with the
+ * stock typed now, then all too tight or all loose. @param {CutLadder} l @param {Sizes} s @param {boolean} metric @returns {[string, string][]} */
+export function pickOptions(l, s, metric) {
+  const now = matingNow(l.kind, s);
+  return [["", "Not tried yet"], ...l.widths.map((w, k) => /** @type {[string, string]} */ ([String(k + 1), `Dado ${k + 1} · ${metric ? `${r2(w / MM)} mm` : `${(w / IN).toFixed(3)} in`} wide · ${clearanceText(w - now, metric)} now`])), ["tight", "All too tight"], ["loose", "All loose"]];
+}
+
+/**
+ * What the picks come to. A dado that fit is a width, cut then: the clearance is that width less
+ * the mating stock typed NOW (the panel asks you to measure and retype it), held to the panel's
+ * 0 to 1 mm. The ladders must agree to a micrometre to set one Joint clearance.
+ * @param {CutLadder[]} ladders @param {Record<string, string>} picks @param {Sizes} s @param {boolean} metric
+ * @returns {{ value: number | null, text: string, tone: "info" | "warning" }}
+ */
+export function fitFromPicks(ladders, picks, s, metric) {
+  const c = (/** @type {number} */ v) => clearanceText(v, metric);
+  const M = (/** @type {number} */ v) => (metric ? `${r2(v / MM)} mm` : `${(v / IN).toFixed(3)} in`);
+  const changed = ladders
+    .filter((l) => Math.abs(l.mating - matingNow(l.kind, s)) > 1e-9)
+    .map((l) => `The ${stockWord(l.kind)} stock was ${M(l.mating)} when the ${l.name} was cut; it is ${M(matingNow(l.kind, s))} now, so each dado's clearance is its width less ${M(matingNow(l.kind, s))}.`);
+  const tail = changed.length ? ` ${changed.join(" ")}` : "";
+  const tried = ladders.filter((l) => picks[l.kind]);
+  if (!tried.length) return { value: null, text: `Cut the ladders, slide the mating stock into each dado, and pick the one it goes into with hand pressure.${tail}`, tone: "info" };
+  const tight = tried.find((l) => picks[l.kind] === "tight");
+  if (tight) return { value: null, text: `${tight.name}: even dado ${tight.widths.length} (${M(tight.widths[tight.widths.length - 1])} wide) is too tight, so that sheet is thicker than ${M(tight.widths[tight.widths.length - 1])}. Measure it again, type what it measures in 4 · Materials, and cut the ladder again.${tail}`, tone: "warning" };
+  const loose = tried.find((l) => picks[l.kind] === "loose");
+  if (loose) return { value: null, text: `${loose.name}: even dado 1 (${M(loose.widths[0])} wide) is loose, so that sheet is well under ${M(loose.widths[0])}. Measure it again, type what it measures in 4 · Materials, and cut the ladder again.${tail}`, tone: "warning" };
+  const got = tried.map((l) => {
+    const k = Number(picks[l.kind]) - 1;
+    const w = l.widths[k];
+    return { l, k, w, raw: w - matingNow(l.kind, s) };
+  });
+  if (got.some((g) => Math.abs(g.raw - got[0].raw) > 1e-6)) {
+    const said = got.map((g) => `${g.l.name}, dado ${g.k + 1} (${c(g.raw)})`).join("; ");
+    const backOnly = got.every((g) => g.l.kind !== "dado");
+    const why = backOnly
+      ? "The two back-plywood ladders try the same back plywood in grooves of the same widths, so they should agree: look at the two jobs' groove toolpaths (the bit, its diameter in the CAM program, Z zero) before the stock."
+      : "One Joint clearance serves every dado and groove, so the difference is in the stock: measure the sheets again, type what they measure in 4 · Materials, and cut the ladders again.";
+    return { value: null, text: `The ladders disagree: ${said}. ${why}${tail}`, tone: "warning" };
+  }
+  const raw = got[0].raw;
+  const v = Math.max(0, Math.min(1 * MM, raw));
+  const names = got.map((g) => `dado ${g.k + 1} on the ${g.l.name}`).join(" and ");
+  if (raw < -1e-9) return { value: v, text: `${names[0].toUpperCase()}${names.slice(1)} (${M(got[0].w)} wide) is narrower than the stock typed now (${M(matingNow(got[0].l.kind, s))}): a clearance of ${c(raw)}, held to 0, the least the panel takes. The sheet is likely thinner than typed: measure it again.${tail}`, tone: "warning" };
+  if (raw > 1 * MM + 1e-9) return { value: v, text: `${names[0].toUpperCase()}${names.slice(1)} (${M(got[0].w)} wide) is a clearance of ${c(raw)} over the stock typed now, held to 1 mm, the most the panel takes. The sheet is likely thicker than typed: measure it again.${tail}`, tone: "warning" };
+  const same = Math.abs(v - s.fit) < 1e-9;
+  return { value: same ? null : v, text: `${names[0].toUpperCase()}${names.slice(1)} (${M(got[0].w)} wide): a Joint clearance of ${c(v)}${same ? ", which it is already" : ` (it is ${c(s.fit)} now)`}.${tail}`, tone: "info" };
 }
 
 /** The area of plywood the parts are, every copy: the two larger sides of each blank. @param {Part[]} parts */
@@ -177,9 +280,11 @@ function ladderPart(name, material, stock, depth, widths, bit, metric) {
   if (!(depth > 0 && stock - depth >= WEB - 1e-9)) throw new Error(`${name}: a ${measureText(depth, metric)} groove leaves less than 3 mm of a ${measureText(stock, metric)} stock.`);
   const gap = metric ? 16 * MM : (5 / 8) * IN;
   const run = metric ? 50 * MM : 2 * IN;
-  const markD = bit + MARK_OVER;
   const n = widths.length;
   const wMax = Math.max(...widths);
+  // A dimple as wide as its dado would touch the grid line the dado's edge draws across the
+  // strip, and the mesh could not hold it: then it is made a little wider than the widest dado.
+  const markD = widths.some((w) => Math.abs(w - (bit + MARK_OVER)) < MARK_CLEAR) ? wMax + 2 * MARK_CLEAR : bit + MARK_OVER;
   const strip = WEB + n * markD + (n - 1) * WEB + WEB;
   const L = 2 * gap + n * wMax + (n - 1) * gap;
   const W = strip + run;
@@ -263,6 +368,9 @@ export function miniDrawer(s, metric) {
 /** The planner laid out two rows of shelf pins (front and rear): a shelf sits on four pins.
  * @param {ReturnType<typeof plan>} p */
 const twoPinRows = (p) => p.rows.some((r) => r[0] === "Sides" && /^Shelf pin holes, rows /.test(r[1]));
+/** No hinge cup was moved off its place to clear something: the test door's cups are where the
+ * cabinet's door's are, from its ends. @param {ReturnType<typeof plan>} p */
+const cupsInPlace = (p) => !p.rows.some((r) => /^Hinge cup, .*\(moved /.test(r[1]));
 
 /**
  * The mini door: one door with the real front type, gap, boring distance, hinge inset, pull
@@ -279,10 +387,15 @@ export function miniDoor(s, metric) {
   const base = { ...s, name: TEST_TITLES.door, layout: "doors", doors: "one", hingeSide: s.doors === "two" ? "left" : s.hingeSide, shelves: 1, shelfType: "adjustable", base: "none", nailers: "none", width };
   const step = metric ? 5 * MM : 0.25 * IN;
   const start = ceilTo(2 * t + 50 * MM, step);
-  const tall = smallest((h) => ({ ...base, height: h }), start, step, Math.max(s.height, start + 48 * IN), metric);
+  const most = Math.max(s.height, start + 48 * IN);
+  // Short enough to save plywood, tall enough that no cup is moved to clear the other (a cup moved
+  // on the test door but not on yours would prove nothing); failing that, the shortest it takes.
+  const placed = smallest((h) => ({ ...base, height: h }), start, step, most, metric, cupsInPlace);
+  const tall = placed.planned ? placed : smallest((h) => ({ ...base, height: h }), start, step, most, metric);
   if (!tall.planned) return { error: `${TEST_TITLES.door}: ${tall.error}`, sizes: null, planned: null };
   const d0 = Math.min(metric ? 100 * MM : 4 * IN, s.depth);
-  const deep = smallest((d) => ({ ...base, height: tall.value, depth: d }), d0, metric ? 10 * MM : 0.5 * IN, s.depth, metric, (p, d) => twoPinRows(p) || d >= s.depth - 1e-9);
+  const inPlace = placed.planned ? cupsInPlace : () => true;
+  const deep = smallest((d) => ({ ...base, height: tall.value, depth: d }), d0, metric ? 10 * MM : 0.5 * IN, s.depth, metric, (p, d) => inPlace(p) && (twoPinRows(p) || d >= s.depth - 1e-9));
   if (!deep.planned || !deep.sizes) return { error: `${TEST_TITLES.door}: ${deep.error}`, sizes: null, planned: null };
   return { error: null, sizes: deep.sizes, planned: deep.planned };
 }
@@ -302,7 +415,7 @@ export function miniDoor(s, metric) {
  *   holes: string[][],
  *   columns: string[],
  *   steps: number[],
- *   coupons: { kind: LadderKind, name: string, widths: number[], depth: number }[],
+ *   coupons: { kind: LadderKind, name: string, widths: number[], depth: number, mating: number }[],
  *   skipped: string[],
  *   sizes: Sizes | null,
  * }} TestCut
@@ -331,14 +444,14 @@ export function testCut(kind, s, metric, steps) {
     out.parts = [m.part];
     out.rows = [
       ["Slot width (calipers), first", L(slot.width), "The slot is one pass, so its width is your bit's real cutting width, runout included. Type it as the tool's diameter in the CAM program and as 7 · CNC › Bit diameter, then cut the square again before you judge it."],
-      ["Square: the side along X, the side along Y (mark which ran along X before you unclamp)", L(a), `With the CAM tool's diameter right, an axis that is off moves short or long: new steps per mm = old × ${r2(a / MM)} ÷ what you measured in mm, for that axis. An outside profile cut with a tool diameter typed larger than the bit's comes out larger by the difference. 25.4 times too big or small: the CAM program's units.`],
-      ["Square: both diagonals", `${L(diag)}, the two equal`, `Unequal: the axes are not square. Each 0.1 mm between the diagonals is ${metric ? `${r2((0.1 * MM * SHEET) / diag / MM)} mm` : `${((0.1 * MM * SHEET) / diag / IN).toFixed(3)} in`} out of square across a 4 ft sheet: square the gantry as the machine's manual says.`],
+      ["Square: the side along X, the side along Y (mark which ran along X before you unclamp)", L(a), "For gross errors only. 25.4 times too big or too small: the CAM program's units. Several millimetres off: the CAM job's units or scale, or the machine (its belts or drive): check them with your machine maker's support documents. A small difference here is measurement and the bit's deflection, not scale: do not change the machine's calibration from a 100 mm part. An outside profile cut with a tool diameter typed larger than the bit's comes out larger by the difference. To check the scale, measure a long cut, 500 mm or more, against what the file says: the mini drawer's sides are your cabinet's depth."],
+      ["Square: both diagonals", `${L(diag)}, the two equal`, `Unequal by clearly more than you can measure: the axes are not square. Each 0.1 mm between the diagonals is ${metric ? `${r2((0.1 * MM * SHEET) / diag / MM)} mm` : `${((0.1 * MM * SHEET) / diag / IN).toFixed(3)} in`} out of square across a 4 ft sheet: square the machine as its maker's documents say.`],
       ["Pocket depth (depth gauge, from the top face)", L(pocket.depth), "Off by the same amount as the slot's depth: Z zero. Zero Z on the top of the stock, or, with Z zeroed on the bed, type the stock's measured thickness in the CAM job: the depth is off by the difference."],
       ["Slot depth", L(slot.depth), "As the pocket."],
     ];
     out.holes = [
       ["Outline", `${L(a)} square`, "through", "Outside profile"],
-      ["Slot", `${L(slot.width)} wide (the bit), ${L(slot.length)} long overall`, L(slot.depth), "Pocket: one pass. If the CAM program makes no toolpath for a shape as wide as the tool, cut it as a profile on its centre line."],
+      ["Slot", `${L(slot.width)} wide (the bit), ${L(slot.length)} long overall`, L(slot.depth), "Pocket: one pass. If the CAM program makes no toolpath for a shape as wide as the tool, cut this slot as a profile on its centre line (this slot only: never for a joint ladder, whose dados would all come out one bit wide)."],
       ["Pocket", `${L(pocket.side)} square`, L(pocket.depth), "Pocket"],
     ];
   } else if (kind === "ladders") {
@@ -350,22 +463,39 @@ export function testCut(kind, s, metric, steps) {
     if (lad.error) return { ...out, error: lad.error };
     out.stock = lad.coupons.map((c) => `${c.name}: cut from the ${c.host} sheet (${L(c.stock)}), tried with ${c.mating}.`).join(" ");
     out.parts = lad.coupons.map((c) => c.part);
-    out.coupons = lad.coupons.map((c) => ({ kind: c.kind, name: c.name, widths: c.widths, depth: c.depth }));
+    out.coupons = lad.coupons.map((c) => ({ kind: c.kind, name: c.name, widths: c.widths, depth: c.depth, mating: c.matingStock }));
     out.rows = [
       ["The mating stock in each dado", "One dado takes it with hand pressure: no mallet, no wobble", "Pick that dado below and press Set Joint clearance. Dado 1 has one dimple in front of it, dado 5 five."],
       ["Each dado's width (calipers)", "As listed below", "All wider (or all narrower) by the same amount: the bit is not the size the CAM program thinks (Machine check: the slot)."],
       ["Each dado's depth", lad.coupons.map((c) => `${c.name.replace(/ ladder$/, "")}: ${L(c.depth)}`).join("; "), "Off: Z zero or the CAM job's thickness (Machine check: the pocket)."],
     ];
+    // A dado narrower than the bit cannot be cut with it, as plan() says for the cabinet's grooves
+    // ("Change bit"): each such ladder says the bit it needs. Never a profile on a centre line: it
+    // would cut every dado one bit wide, and the pick would mean nothing.
+    const small = 3 * MM;
+    for (const c of lad.coupons) {
+      const narrow = c.widths[0];
+      if (!(narrow < s.bit - 1e-9)) continue;
+      out.rows.push([`Bit for the ${c.name}`, `narrower than ${L(narrow)} (dado 1)${small < narrow - 1e-9 ? ": 1/8 in (3 mm) is" : ""}`, `The ${L(s.bit)} bit cannot cut it. Cut its pocket layer with a smaller end mill, its diameter typed in the CAM program, as pockets: never as a profile on a centre line, which would cut every dado one bit wide.`]);
+    }
     out.holes = lad.coupons.flatMap((c) => c.widths.map((w, k) => [c.name, `Dado ${k + 1} (${k + 1} ${k ? "dimples" : "dimple"})`, clearanceText(lad.steps[k], metric), L(w)]));
   } else {
     const mini = kind === "drawer" ? miniDrawer(s, metric) : miniDoor(s, metric);
-    out.columns = ["Part", "What", "Hole", "Depth"];
+    // The planner's own rows, with what it does not drill and why (its last column).
+    out.columns = ["Part", "What", "Hole", "Depth", "How"];
     const planned = mini.planned;
+    // What is drilled: every hole with hardware on, but with inset fronts the runner screws and
+    // the hinge plates are listed and not drilled (Blum's inset tables).
+    const drilled = s.hardware && s.front === "overlay";
     if (kind === "drawer") {
-      out.proves = "That the drawer runs: the runner fits its screw holes, the box's width, length and height suit it, its rear hooks find their holes and the locking devices fit. The runner and the depth are your cabinet's, so the holes and the box length are exactly its; only the width and the height are smaller, and Blum sizes the box from the opening, so the fit is the same.";
+      out.proves = drilled
+        ? "That the drawer runs: the runner fits its screw holes, the box's width, length and height suit it, its rear hooks find their holes and the locking devices fit. The runner and the depth are your cabinet's, so the holes and the box length are exactly its; only the width and the height are smaller, and Blum sizes the box from the opening, so the fit is the same."
+        : `That the drawer runs: the box's width, length and height suit the runner${s.hardware ? ", its rear hooks find their holes" : ""} and the locking devices fit. The runner and the depth are your cabinet's; only the width and the height are smaller, and Blum sizes the box from the opening, so the fit is the same. ${s.hardware ? "The runner screw holes are not drilled with inset fronts: place the runners by Blum's inset setback." : "Hardware holes are off: no runner screw or hook holes are drilled."}`;
       out.stock = "Cheap MDF or plywood of the thicknesses in 4 · Materials (carcass, drawer front, drawer box, back), for function. Buy the runners, locking devices and screws first.";
     } else {
-      out.proves = "That the hinge cups, the mounting plates and the reveal come out as on your doors (the same front type, gap, boring distance, hinge inset and pull), and that a shelf pin fits its hole and a shelf sits flat on four pins.";
+      out.proves = drilled
+        ? "That the hinge cups, the mounting plates and the reveal come out as on your doors (the same front type, gap, boring distance, hinge inset and pull), and that a shelf pin fits its hole and a shelf sits flat on four pins."
+        : `That ${s.hardware ? "the hinge cups and " : ""}the reveal come out as on your doors (the same front type, gap, boring distance, hinge inset and pull), and that a shelf pin fits its hole and a shelf sits flat on four pins. ${s.hardware ? "The mounting plate holes are not drilled with inset fronts: place the plates by Blum's inset tables." : "Hardware holes are off: no cups or plate holes are drilled."}`;
       out.stock = "Cheap MDF or plywood of the thicknesses in 4 · Materials, for function. Buy two hinges, two mounting plates and four shelf pins first.";
     }
     if (mini.error || !planned || !mini.sizes) return { ...out, error: mini.error };
@@ -387,29 +517,43 @@ export function testCut(kind, s, metric, steps) {
         ["Drawer box, outside width", L(outside), `The opening (${L(innerW)}) less ${BLUM.insideDeduct} mm inside, Blum's rule, plus the two sides. Tight or loose on the runners: measure the drawer box stock again (4 · Materials).`],
         ["Drawer box length", L(side.blank[1]), `${R.boxShort ? `The runner less ${R.boxShort} mm` : "The runner's length"} (Blum). Off: the CAM job's scale (Machine check).`],
         ["Drawer box height", L(sub.blank[2]), `The opening less ${R.heightDeduct} mm (Blum), rounded down.`],
-        ["Runner screw holes and rear hook holes", "As listed below (Cuts and holes)", "Off: X and Y zero, or the scale (Machine check)."],
+        ["Each side's length (a long cut: the machine's scale)", L(ms.depth), "Your cabinet's depth. Off by more than you can measure: the CAM job's units or scale, or the machine (its belts or drive): check them with your machine maker's support documents."],
+        ...(!ms.hardware
+          ? [["Hardware holes", "Off in 6 · Hardware: no runner screw or rear hook holes are drilled", "Turn Drill hinge, runner and pull holes on to test them."]]
+          : drilled
+            ? [["Runner screw holes and rear hook holes", "As listed below (Cuts and holes)", "Off: X and Y zero, or the scale (Machine check)."]]
+            : [
+                ["Runner screw holes", "Not drilled with inset fronts (listed below)", "Place the runners by Blum's inset setback (the front's thickness further back), by hand."],
+                ["Rear hook holes", "As listed below (Cuts and holes)", "Off: X and Y zero, or the scale (Machine check)."],
+              ]),
         ["The drawer in its runners", "Runs in and out freely, closes fully, the front's gaps even", "Fit the locking devices (listed below) and adjust them as Blum's instructions say. Rubbing: the box's width, above."],
       ];
-      if (!ms.hardware) out.rows.splice(4, 1, ["Hardware holes", "Off in 6 · Hardware: no runner screw or rear hook holes are drilled", "Turn Drill hinge, runner and pull holes on to test them."]);
       const ours = new Set(["Drawer", "Drawer box", "Drawer back", "Drawer front", "Left and right sides"]);
-      out.holes = planned.rows.filter((r) => ours.has(r[0])).map((r) => r.slice(0, 4));
+      out.holes = planned.rows.filter((r) => ours.has(r[0]));
     } else {
+      const door = planned.parts.find((p) => p.copies.some((c) => c.name === "Door"));
+      const x0 = door ? door.copies[0].at[0] : ms.gap / 2;
+      const moved = planned.rows.filter((r) => /^Hinge cup, .*\(moved /.test(r[1]));
       out.rows = [
         ["Hinge cup centre, from the door's hinge edge", L(CUP.radius * MM + ms.cupDistance), `${CUP.radius} mm plus the boring distance. Off: the door turned or mirrored in the CAM program, or X and Y zero.`],
         ["Hinge cup depth", `${CUP.depth} mm`, "Off: Z zero or the CAM job's thickness (Machine check)."],
-        ["Hinge cup centres, from the door's ends", `${L(ms.hingeInset)} (From top, bottom), unless Cuts and holes says one moved`, "Off at both ends the same way: the door turned end for end."],
-        ...(ms.front === "overlay" ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's front edge`, "Off: the side cut face down, or X and Y zero."]] : []),
+        ["Hinge cup centres, from the door's ends", moved.length ? `${L(ms.hingeInset)} (From top, bottom), but ${moved.length === 1 ? "one cup moved" : `${moved.length} cups moved`}: see the rows below that say moved` : `${L(ms.hingeInset)} (From top, bottom)`, "Off at both ends the same way: the door turned end for end."],
+        ...(ms.front === "overlay"
+          ? [["Mounting plate holes", `${PLATE_HOLE.dia} mm, ${PLATE_HOLE.depth} deep, ${CUP.plateSpacing} mm apart, ${CUP.plateSetback} mm from the side's front edge`, "Off: X and Y zero."]]
+          : [["Mounting plates", "Not drilled with inset fronts (listed below)", "Place them by Blum's inset tables, by hand."]]),
+        // The door as planned: where its edge is (half the gap, or less of the side where the
+        // hinge cannot reach that far), not what the gap alone would give.
         ms.front === "overlay"
-          ? ["The gap round the door, closed", `${L(ms.gap / 2)} at each edge of the cabinet; the door covers ${L(ms.thickness - ms.gap / 2)} of each side`, "Even but wrong: the boring distance (the Overlay row below says which matches). Uneven: the hinges' adjusting screws."]
-          : ["The gap round the door, closed", `${L(ms.gap / 2)} all round, inside the opening`, "Uneven: the hinges' adjusting screws. Even but wrong: the door's size (Machine check: the square)."],
+          ? ["The gap round the door, closed", `${L(x0)} at each edge of the cabinet; the door covers ${L(ms.thickness - x0)} of each side`, "Even but wrong: the boring distance (the Overlay row below says which matches). Uneven: the hinges' adjusting screws."]
+          : ["The gap round the door, closed", `${L(x0 - ms.thickness)} all round, inside the opening`, "Uneven: the hinges' adjusting screws. Even but wrong: the door's size (Machine check: the square)."],
         ["Shelf pins", `${PIN.dia} mm holes, ${PIN.depth} deep: a pin pushes in by hand and the shelf sits flat on four`, "Tight or loose: the end mill that bores the 5 mm holes is not the size the CAM program thinks."],
       ];
       // Blum asks for the top and bottom hinges to be farther apart than the door is wide; a short
-      // test door cannot be, and the planner says so. The cups and plates are placed the same.
-      if (planned.rows.some((r) => r[4] === "Check" && /less than the door is wide/.test(r[1]))) out.rows.push(["Hinge spacing", "Blum asks for the top and bottom hinges to be farther apart than the door is wide (the Check row below)", "This short test door cannot be. It moves no cup or plate: they are placed from the door's hinge edge and ends, as on your doors."]);
+      // test door cannot be, and the planner says so.
+      if (planned.rows.some((r) => r[4] === "Check" && /less than the door is wide/.test(r[1]))) out.rows.push(["Hinge spacing", "Blum asks for the top and bottom hinges to be farther apart than the door is wide (the Check row below)", `This short test door cannot be. ${moved.length ? "The rows below say which cup moved, and why" : "No cup moved for it: the cups are placed from the door's hinge edge and ends, as on your doors"}.`]);
       if (!ms.hardware) out.rows = [["Hardware holes", "Off in 6 · Hardware: no cups or plate holes are drilled", "Turn Drill hinge, runner and pull holes on to test the hinges."], ...out.rows.filter((r) => !/^(Hinge cup|Mounting plate)/.test(r[0]))];
       const ours = new Set(["Door", "Doors", "Left side", "Right side", "Sides"]);
-      out.holes = planned.rows.filter((r) => ours.has(r[0])).map((r) => r.slice(0, 4));
+      out.holes = planned.rows.filter((r) => ours.has(r[0]));
     }
   }
   // Coupons side by side, 1 in (25 mm) apart, in the assembly's axes.
