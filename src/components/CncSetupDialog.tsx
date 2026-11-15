@@ -9,12 +9,13 @@ import { PLUNGE, bothUnits, chiploadText, ipmToMmMin, mmMinToIpm, type FeedsOpti
 import { HOLE_LAYERS, OPERATIONS, holeOf, type Operation } from "../cam/layers";
 import { SCRAP_TEST } from "../cam/scrap";
 import { feedsFor, machineOf, routerOf, tableOf, toolById } from "../cam/shop";
+import { HOLD_DOWN_DEFAULT, JOB_KINDS, LABEL_SIZES, type JobKind, type JobPrefs, type LabelPaper } from "../cam/jobs";
 import { SOURCES, type Confidence, type Source, type SourceId } from "../cam/sources";
 import { CUSTOM_MACHINE, CUSTOM_ROUTER, defaultShop, loadShop, saveShop, type Shop } from "../cam/store";
 import { seedField, seedTools, toolProblem, type Tool, type ToolField } from "../cam/tools";
 import { parseLength, type UnitSystem } from "../lib/units";
 
-export type CncTab = "machine" | "tools" | "feeds";
+export type CncTab = "machine" | "tools" | "feeds" | "jobs";
 
 export interface CncSetupDialogProps {
   units: UnitSystem;
@@ -399,7 +400,8 @@ function ToolsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
   };
   const remove = (id: string) => {
     const tools = shop.tools.filter((x) => x.id !== id);
-    set({ ...shop, tools, profileTool: shop.profileTool === id ? null : shop.profileTool, feeds: { ...shop.feeds, tool: shop.feeds.tool === id ? (tools[0]?.id ?? null) : shop.feeds.tool } });
+    const jobTools = Object.fromEntries(Object.entries(shop.jobs.tools).map(([k, v]) => [k, v === id ? null : v])) as JobPrefs["tools"];
+    set({ ...shop, tools, profileTool: shop.profileTool === id ? null : shop.profileTool, feeds: { ...shop.feeds, tool: shop.feeds.tool === id ? (tools[0]?.id ?? null) : shop.feeds.tool }, jobs: { ...shop.jobs, tools: jobTools } });
     if (draft.id === id) setDraft(draftOf(null, metric));
   };
   const seedNote = (f: ToolField) => {
@@ -808,6 +810,78 @@ function FeedsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; un
   );
 }
 
+// ---------------------------------------------------------------------------------------
+// Job sheet
+
+function JobsTab({ shop, set, units }: { shop: Shop; set: (s: Shop) => void; units: UnitSystem }) {
+  const metric = isMetric(units);
+  const j = shop.jobs;
+  const setJ = (patch: Partial<JobPrefs>) => set({ ...shop, jobs: { ...j, ...patch } });
+  const setTool = (k: JobKind, v: string) => setJ({ tools: { ...j.tools, [k]: v === "" ? null : v } });
+  const profile = toolById(shop, shop.profileTool);
+  return (
+    <div role="tabpanel" aria-label="Job sheet" className="cam-panel">
+      <p className="note">
+        Each router sheet's job sheet (the Nesting section's Job sheet, the PDF, and the text file CNC files saves beside each DXF) gives every layer a bit from here, and checks that the bit is narrower than the narrowest shape on that layer in that sheet. Profiles take the Profile bit (Tools): {profile ? profile.name : "none is chosen"}.
+      </p>
+      <div className="cam-form">
+        {JOB_KINDS.map((k) => (
+          <label key={k.id} title={k.title}>
+            <span>{k.label}</span>
+            <select aria-label={`Bit for ${k.label}`} data-field={`job-${k.id}`} value={j.tools[k.id] ?? ""} onChange={(e) => setTool(k.id, e.currentTarget.value)}>
+              <option value="">{k.id === "cutout" ? "The profile bit" : "None"}</option>
+              {shop.tools.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <label>
+          <span>Material</span>
+          <select aria-label="Job sheet material" value={j.material} onChange={(e) => setJ({ material: e.currentTarget.value as MaterialId })}>
+            {MATERIALS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <LenInput label="Hold-down width" value={j.holdDown} units={units} onCommit={(v) => setJ({ holdDown: v })} placeholder={metric ? `${HOLD_DOWN_DEFAULT.metric * 1000} mm` : "4 in"} field="hold-down" />
+      </div>
+      <p className="note" data-testid="hold-down-note">
+        Parts this wide or narrower are flagged for hold-down. Left empty it is Sawhorse's default, {metric ? "100 mm" : "4 in"}: not a standard, since none was found. The docs name 3 in nailers and 4 in stretchers as the parts that need hold-down most.
+      </p>
+      <h5>Part labels</h5>
+      <div className="cam-form">
+        <label>
+          <span>Paper</span>
+          <select aria-label="Label paper" value={j.labels.paper} onChange={(e) => setJ({ labels: { ...j.labels, paper: e.currentTarget.value as LabelPaper } })}>
+            <option value="letter">Letter</option>
+            <option value="a4">A4</option>
+          </select>
+        </label>
+        <label>
+          <span>Label size</span>
+          <select aria-label="Label size" value={j.labels.size} onChange={(e) => setJ({ labels: { ...j.labels, size: e.currentTarget.value } })}>
+            {LABEL_SIZES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="check">
+          <input type="checkbox" aria-label="Cut lines" checked={j.labels.outlines} onChange={(e) => setJ({ labels: { ...j.labels, outlines: e.currentTarget.checked } })} />
+          <span>Cut lines round each label (for plain paper)</span>
+        </label>
+      </div>
+      <p className="note">The PDF lays the labels out edge to edge in a grid centred on the page. Sawhorse names no label product: print one page on plain paper and hold it against your label sheet before printing on labels.</p>
+    </div>
+  );
+}
+
 export function CncSetupDialog(p: CncSetupDialogProps) {
   const [shop, setShop] = useState<Shop>(() => p.initial ?? loadShop());
   const [tab, setTab] = useState<CncTab>(p.tab ?? "feeds");
@@ -820,6 +894,7 @@ export function CncSetupDialog(p: CncSetupDialogProps) {
     ["machine", "Machine"],
     ["tools", "Tools"],
     ["feeds", "Feeds"],
+    ["jobs", "Job sheet"],
   ];
   return (
     <section
@@ -842,7 +917,7 @@ export function CncSetupDialog(p: CncSetupDialogProps) {
           </button>
         ))}
       </div>
-      {tab === "machine" ? <MachineTab shop={shop} set={set} units={p.units} /> : tab === "tools" ? <ToolsTab shop={shop} set={set} units={p.units} /> : <FeedsTab shop={shop} set={set} units={p.units} />}
+      {tab === "machine" ? <MachineTab shop={shop} set={set} units={p.units} /> : tab === "tools" ? <ToolsTab shop={shop} set={set} units={p.units} /> : tab === "jobs" ? <JobsTab shop={shop} set={set} units={p.units} /> : <FeedsTab shop={shop} set={set} units={p.units} />}
       <div className="btnrow">
         <button type="button" className="btn" onClick={p.onClose}>
           Done
