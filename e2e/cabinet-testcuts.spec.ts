@@ -79,8 +79,8 @@ test("a test goes beside the model on the tag Test cuts, one undo step, and the 
   await expect(hint(page)).toContainText("Joint clearance is 0.016 in for new cabinets");
   await expect(section(page, "secCnc")).toContainText("0.016 in joint clearance");
   // The ladders in the model were cut at 0.004 to 0.020: the picks still name those.
-  await expect(note(page, "fitStatus")).toContainText("cut at 0.004 in to 0.020 in; Add makes 0.012 in to 0.028 in now");
-  await expect(fld(page, "fit_dado").locator("option").nth(1)).toHaveText("Dado 1 · 0.004 in");
+  await expect(note(page, "fitStatus")).toContainText("cut at 0.004 in to 0.020 in over their stock; Add makes 0.012 in to 0.028 in now");
+  await expect(fld(page, "fit_dado").locator("option").nth(1)).toHaveText("Dado 1 · 0.723 in wide · 0.004 in now");
 
   // A cabinet, edited: a mini drawer from its settings goes beside it and the panel stays on it.
   await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
@@ -118,4 +118,54 @@ test("a test goes beside the model on the tag Test cuts, one undo step, and the 
   await openSection(page, "secTests");
   await expect(note(page, "testStatus")).toContainText("takes drawer sides 12 to 16 mm (15/32 to 5/8 in) thick");
   await expect(action(page, "makeTest")).toBeDisabled();
+});
+
+async function typeIn(page: Page, sec: string, id: string, value: string) {
+  await openSection(page, sec);
+  await fld(page, id).fill(value);
+  await fld(page, id).press("Enter");
+  await openSection(page, "secTests");
+}
+
+test("a pick after the stock is retyped is the width that fit less the stock now; an Undo of the ladders names nothing; a refused rebuild is said", async ({ page }) => {
+  await start(page);
+  await openSection(page, "secTests");
+  await fld(page, "testKind").selectOption("ladders");
+  await expect(note(page, "fitStatus")).toContainText("No ladders were added to this model");
+  await action(page, "makeTest").click();
+  await expect(hint(page)).toContainText("Added Test cuts · Joint ladders");
+  await expect(note(page, "fitStatus")).not.toContainText("No ladders were added");
+  // The carcass measured again and retyped: dado 3 was cut 23/32 + 0.012 = 0.731 in wide, which
+  // over 0.725 in is a clearance of 0.006 in, not the step's 0.012 (C1). Its option says so (m2).
+  await typeIn(page, "secMaterials", "thickness", "0.725");
+  await expect(fld(page, "fit_dado").locator("option").nth(3)).toHaveText("Dado 3 · 0.731 in wide · 0.006 in now");
+  await expect(note(page, "fitStatus")).toContainText("The carcass stock was 0.719 in when the Dado ladder was cut; it is 0.725 in now");
+  await fld(page, "fit_dado").selectOption("3");
+  await expect(action(page, "applyFit")).toHaveText("Set Joint clearance to 0.006 in (new cabinets)");
+  // The back ladder, cut in back plywood not retyped, at its dado 3 is 0.012: they disagree.
+  await fld(page, "fit_back").selectOption("3");
+  await expect(note(page, "fitStatus")).toContainText("The ladders disagree");
+  await expect(action(page, "applyFit")).toBeDisabled();
+  // The ladders' Add undone: no ladders in the model, nothing named from them (m4).
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await tops(page)).length).toBe(0);
+  await expect(note(page, "fitStatus")).toContainText("No ladders were added to this model");
+  await expect(fld(page, "fit_dado").locator("option").nth(1)).toHaveText("Dado 1 · 0.729 in wide · 0.004 in now");
+  // Redone: named again.
+  await page.keyboard.press("Control+y");
+  await expect.poll(async () => (await tops(page)).length).toBe(1);
+  await expect(fld(page, "fit_dado").locator("option").nth(3)).toHaveText("Dado 3 · 0.731 in wide · 0.006 in now");
+
+  // A cabinet whose rebuild the planner refuses at the clearance picked: said, not "rebuilt" (m3).
+  // A back 1/8 in from the rear leaves under 3 mm behind a groove 0.020 in over the stock.
+  await typeIn(page, "secMaterials", "thickness", "23/32");
+  await typeIn(page, "secBuild", "backInset", "1/8");
+  await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
+  await expect(hint(page)).toContainText("Made Cabinet 1");
+  await expect(note(page, "status")).toContainText("Editing Cabinet 1");
+  await fld(page, "fit_dado").selectOption("5");
+  await expect(action(page, "applyFit")).toHaveText("Set Joint clearance to 0.020 in (Cabinet 1)");
+  await action(page, "applyFit").click();
+  await expect(hint(page)).toContainText("Cabinet 1 is not rebuilt with a Joint clearance of 0.020 in: The back's inset must be 0 (a rabbet) or at least");
+  await expect(hint(page)).not.toContainText("rebuilt with it");
 });

@@ -783,5 +783,11 @@ run("the track saw's hand work and metric sheets, through the kernel", () => {
     const testsOnly = JSON.parse(d.nest(JSON.stringify({ visible_only: true }))) as Nesting;
     expect(testsOnly.unplaced).toEqual([]);
     expect(count(testsOnly)).toBe(testPieces);
+    // One test alone, the joint ladders, for the real sheets: the other tests hidden as well.
+    const others = tests.filter((nd) => nd.name !== "Test cuts · Joint ladders");
+    d.apply_op(JSON.stringify({ op: "set_hidden", items: others.map((nd) => ({ node: nd.id })), hidden: true }));
+    const laddersOnly = JSON.parse(d.nest(JSON.stringify({ visible_only: true }))) as Nesting;
+    expect(laddersOnly.unplaced).toEqual([]);
+    expect(laddersOnly.pieces.flatMap((q) => q.placements.map((pl) => pl.name)).sort()).toEqual(["Back groove ladder", "Dado ladder", "Drawer bottom ladder"]);
   }, 120_000);
 });
