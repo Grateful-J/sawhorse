@@ -137,7 +137,7 @@ A toolpath template keeps each toolpath with a rule for choosing its shapes: "al
 
 ## Each sheet
 
-**Nothing applies on import by itself.** The report found no setting that applies a template when a DXF is opened (§ 0.2, § 3). Every sheet takes these steps:
+**Nothing applies on import by itself.** The report found no setting that applies a template when a DXF is opened (§ 0.2, § 3). Every sheet takes these steps. Print the sheet's **job sheet** first: **CNC files** saves every sheet's job sheet in one text file after the DXFs, each named by its DXF, and the PDF has it too ([Job sheet and part labels](CNC-CABINETS.md#job-sheet-and-part-labels)). It gives the thickness to measure, a box to tick for each of the file's layers with its bit, depth and starting feeds, and the cut order.
 
 1. **Make the job** ([Set up the job](#set-up-the-job)) with this sheet's measured thickness.
 2. **Import the DXF.** "The imported vectors will always be read in at the size and scale they were created in their original design software" (§ 1a).
@@ -149,9 +149,9 @@ A toolpath template keeps each toolpath with a rule for choosing its shapes: "al
    - the **Vector Validator** finds "overlapping contours or intersections... zero-length spans". It may flag the dados drawn past a part's edge, where they cross `PROFILE_THRU`: those are on purpose ([Leave the dados that cross the outline as they are](CNC-CABINETS.md#3-leave-the-dados-that-cross-the-outline-as-they-are)).
 6. **Toolpaths > Templates > Load Template** (§ 0.2). If the sheet lacks a layer the template has (no `CUTOUT_THRU`, say), the **Missing Layers for Template** dialog offers to create the layers, to delete the toolpaths tied to the missing layers, or to load as is (§ 3). None of the three applies a depth to the wrong layer. **Not known:** how each behaves when recalculated. Check the toolpath list afterwards.
 7. **Toolpaths > Recalculate All Toolpaths** (§ 0.2).
-8. **Check every layer has a toolpath** ([the safety rule](#templates-and-layer-names-the-safety-rule)). Go down the layer list: every layer except `STOCK` and `LABELS` must have a toolpath. A layer the template did not know has none: make it, at the depth in the layer's name.
+8. **Check every layer has a toolpath** ([the safety rule](#templates-and-layer-names-the-safety-rule)). Go down the layer list, ticking each layer on the job sheet as it gets one: every layer except `STOCK` and `LABELS` must have a toolpath. A layer the template did not know has none: make it, at the depth in the layer's name.
 9. **Preview each toolpath.** Every shape on its layer must be cut, and the pockets that cross the outline must run past the part's edge. The pocket "removes the areas contained inside the selected vectors" (§ 5). **Not known:** an explicit statement that other, unselected vectors do not limit it.
-10. **Check the order** in the Toolpath Tree.
+10. **Check the order** in the Toolpath Tree, against the job sheet's cut order.
 11. **Save the toolpaths** with the millimetre Shapeoko post ([Choose the post-processor](#choose-the-post-processor)).
 
 **Several sheets in one job.** A template "will offer to apply that template to all sheets... any toolpaths will be automatically calculated where possible", named "S1-Cut Out", "S2-Cut Out" and so on. To apply all toolpaths to all sheets even where a layer is empty, "hold down Ctrl when clicking Open" (§ 3). Sawhorse writes one file per sheet, so one job per sheet is the simpler way.

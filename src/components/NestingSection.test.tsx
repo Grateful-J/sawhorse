@@ -6,6 +6,9 @@ import { NestingSection, type NestingSectionProps } from "./NestingSection";
 import { StockDialog, type StockDialogProps } from "./StockDialog";
 import { CutListPane, type CutListPaneProps } from "./CutListPane";
 import { bookshelf } from "../cutlist/fixture";
+import { defaultShop } from "../cam/store";
+import { jobSheet } from "../nesting/jobsheet";
+import type { Nesting, StockPiece } from "../kernel/types";
 
 afterEach(cleanup);
 
@@ -488,3 +491,38 @@ describe("Nesting section: the track saw for what the CNC cannot take", () => {
     expect(screen.queryByRole("button", { name: /on the track saw/ })).toBeNull();
   });
 });
+
+describe("a router sheet's Job sheet", () => {
+  /** The job sheet of a piece, as the app works it out (outlines only, no cuts measured). */
+  const jobOf = (n: Nesting) => async (piece: StockPiece) => {
+    const shop = defaultShop();
+    shop.profileTool = "seed-compression";
+    return jobSheet({ n, index: n.pieces.indexOf(piece), measured: { features: new Map(), skipped: [], flipped: [] }, shop, units: "sixteenth", file: "K 02 CNC.dxf", ownerOf: () => null });
+  };
+
+  it("ticks a cut layer, has no box for STOCK and LABELS, keeps its lists valid, and starts its ticks again with a new nesting", async () => {
+    const n = smallNesting();
+    const p = props({ nesting: n, jobSheetOf: jobOf(n) });
+    const { rerender } = render(<NestingSection {...p} />);
+    const fig = document.querySelector('figure.nest-piece[data-piece="2"]') as HTMLElement;
+    fireEvent.click(within(fig).getByRole("button", { name: "Job sheet" }));
+    await within(fig).findByRole("heading", { name: /Layers: 0 of 1 with a toolpath/ });
+    const view = within(fig).getByTestId("job-sheet");
+    // STOCK and LABELS: reference, no box.
+    expect(view.querySelector('li[data-layer="STOCK"] input')).toBeNull();
+    expect(view.querySelector('li[data-layer="LABELS"] input')).toBeNull();
+    expect(view.querySelector('li[data-layer="STOCK"]')!.textContent).toContain("reference: no toolpath");
+    // A dl holds only dt, dd and div.
+    for (const dl of view.querySelectorAll("dl")) for (const c of dl.children) expect(["DT", "DD", "DIV"]).toContain(c.tagName);
+    fireEvent.click(within(view).getByRole("checkbox", { name: "PROFILE_THRU has its toolpath" }));
+    expect(within(view).getByRole("heading", { name: /Layers: 1 of 1 with a toolpath/ })).toBeTruthy();
+    // A new nesting (the same pieces, worked out again): the ticks start again.
+    const again: Nesting = { ...n, hash: `${n.hash}-2` };
+    rerender(<NestingSection {...p} nesting={again} jobSheetOf={jobOf(again)} />);
+    const fig2 = document.querySelector('figure.nest-piece[data-piece="2"]') as HTMLElement;
+    await within(fig2).findByRole("heading", { name: /Layers: 0 of 1 with a toolpath/ });
+    const fresh = within(fig2).getByTestId("job-sheet");
+    expect((within(fresh).getByRole("checkbox", { name: "PROFILE_THRU has its toolpath" }) as HTMLInputElement).checked).toBe(false);
+  });
+});
+

@@ -3,6 +3,7 @@
 // mark the document changed. Blocked storage means the built-in shop, every time.
 import { MATERIALS, type MaterialId } from "./chipload";
 import { ROUTERS, SHAPEOKO_5_PRO_4X4 } from "./data";
+import { defaultJobs, readJobs, type JobPrefs } from "./jobs";
 import { OPERATIONS, type Operation } from "./layers";
 import { readTool, seedTools, type Tool } from "./tools";
 
@@ -40,6 +41,9 @@ export interface Shop {
   profileTool: string | null;
   /** The calculator's last choices. */
   feeds: { tool: string | null; material: MaterialId; op: Operation };
+  /** A sheet's job sheet and part labels: a bit per kind of layer, the material, the
+   * hold-down width, the label paper (src/cam/jobs.ts). */
+  jobs: JobPrefs;
 }
 
 export function defaultShop(): Shop {
@@ -54,6 +58,7 @@ export function defaultShop(): Shop {
     tools,
     profileTool: null,
     feeds: { tool: tools[0].id, material: "baltic-birch", op: "profile" },
+    jobs: defaultJobs(tools),
   };
 }
 
@@ -95,6 +100,7 @@ export function readShop(x: unknown): Shop {
       material: MATERIALS.some((m) => m.id === f.material) ? (f.material as MaterialId) : d.feeds.material,
       op: OPERATIONS.some((p) => p.id === f.op) ? (f.op as Operation) : d.feeds.op,
     },
+    jobs: readJobs(o.jobs, unique),
   };
 }
 
