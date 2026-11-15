@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PanelField } from "../plugins/panel";
-import { PluginPanel } from "./PluginPanel";
+import { BUSY_MS, PluginPanel } from "./PluginPanel";
 
 const IN = 0.0254;
 
@@ -50,3 +50,53 @@ describe("plugin panel sections", () => {
   });
 });
 
+
+describe("plugin panel buttons", () => {
+  afterEach(cleanup);
+  const fields: PanelField[] = [{ type: "button", id: "go", label: "Go" }];
+  it("ignore the second click of a double-click", () => {
+    const onAction = vi.fn();
+    render(<PluginPanel panelKey="p" fields={fields} units="frac-in" onChange={() => {}} onAction={onAction} />);
+    const go = screen.getByRole("button", { name: "Go" });
+    fireEvent.click(go, { detail: 1 });
+    fireEvent.click(go, { detail: 2 });
+    expect(onAction).toHaveBeenCalledTimes(1);
+    // A click on its own later (a new click count) goes through; so does the keyboard (detail 0).
+    fireEvent.click(go, { detail: 1 });
+    fireEvent.click(go, { detail: 0 });
+    expect(onAction).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignore clicks while the press before is still being handled", async () => {
+    let finish = () => {};
+    const onAction = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    render(<PluginPanel panelKey="p" fields={fields} units="frac-in" onChange={() => {}} onAction={onAction} />);
+    const go = screen.getByRole("button", { name: "Go" });
+    fireEvent.click(go, { detail: 1 });
+    fireEvent.click(go, { detail: 1 });
+    expect(onAction).toHaveBeenCalledTimes(1);
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    fireEvent.click(go, { detail: 1 });
+    expect(onAction).toHaveBeenCalledTimes(2);
+  });
+
+  it("free a button whose press never finishes after BUSY_MS", () => {
+    vi.useFakeTimers();
+    try {
+      const onAction = vi.fn(() => new Promise<void>(() => {}));
+      render(<PluginPanel panelKey="p" fields={fields} units="frac-in" onChange={() => {}} onAction={onAction} />);
+      const go = screen.getByRole("button", { name: "Go" });
+      fireEvent.click(go, { detail: 1 });
+      vi.advanceTimersByTime(BUSY_MS - 1);
+      fireEvent.click(go, { detail: 1 });
+      expect(onAction).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      fireEvent.click(go, { detail: 1 });
+      expect(onAction).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

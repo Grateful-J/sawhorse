@@ -11,7 +11,9 @@ export interface PluginPanelProps {
   fields: PanelField[];
   units: UnitSystem;
   onChange: (id: string, value: FieldValue) => void;
-  onAction: (id: string) => void;
+  /** A button pressed. When it returns a promise (the plugin's handling of the press), the
+   * button ignores clicks until it settles. */
+  onAction: (id: string) => void | Promise<unknown>;
 }
 
 /**
@@ -125,8 +127,29 @@ function TextField({ f, onChange, domId }: { f: Extract<PanelField, { type: "tex
   );
 }
 
+/** The longest a button ignores clicks while its last press is being handled. */
+export const BUSY_MS = 10_000;
+
 function PluginPanelView({ panelKey, fields, units, onChange, onAction }: PluginPanelProps) {
   const domId = (id: string) => `pp-${panelKey.replace(/[^A-Za-z0-9_-]/g, "_")}-${id}`;
+  // A button's press still being handled: another click on it is ignored, as is the second
+  // click of a double-click (a plugin's "Generate" double-clicked made two of everything).
+  const busy = useRef(new Set<string>());
+  const press = (e: React.MouseEvent, id: string) => {
+    if (e.detail > 1 || busy.current.has(id)) return;
+    const r = onAction(id);
+    if (r && typeof r.then === "function") {
+      busy.current.add(id);
+      // Until the press is handled, or BUSY_MS at most: a handler that never settles must not
+      // leave its button dead until the page is reloaded.
+      const timer = setTimeout(() => busy.current.delete(id), BUSY_MS);
+      const done = () => {
+        clearTimeout(timer);
+        busy.current.delete(id);
+      };
+      r.then(done, done);
+    }
+  };
   const buttons: Extract<PanelField, { type: "button" }>[] = [];
   const out: React.ReactNode[] = [];
   const flush = (k: string) => {
@@ -135,7 +158,7 @@ function PluginPanelView({ panelKey, fields, units, onChange, onAction }: Plugin
     out.push(
       <div className="btnrow" key={`b-${k}`}>
         {row.map((b) => (
-          <button key={b.id} type="button" className={`btn${b.primary ? " primary" : ""}`} data-action={b.id} disabled={b.disabled} onClick={() => onAction(b.id)}>
+          <button key={b.id} type="button" className={`btn${b.primary ? " primary" : ""}`} data-action={b.id} disabled={b.disabled} onClick={(e) => press(e, b.id)}>
             {b.label}
           </button>
         ))}

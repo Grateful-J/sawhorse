@@ -144,7 +144,7 @@ export function PluginsPane(props: PluginsPaneProps) {
           <summary>
             <b>{p.pluginName}</b> <small>{p.title}</small>
           </summary>
-          <PluginPanel panelKey={p.key} fields={p.fields} units={units} onChange={(id, v) => void manager.panelEvent(p.key, "change", id, v)} onAction={(id) => void manager.panelEvent(p.key, "action", id)} />
+          <PluginPanel panelKey={p.key} fields={p.fields} units={units} onChange={(id, v) => void manager.panelEvent(p.key, "change", id, v)} onAction={(id) => manager.panelEvent(p.key, "action", id)} />
         </details>
       ))}
       <div className="plugin-manage">
