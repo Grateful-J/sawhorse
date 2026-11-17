@@ -569,6 +569,15 @@ pub fn check_nesting_of(
         StockKind,
     };
     use std::collections::BTreeSet;
+    // Scrap and test cuts: checked against the list as the nester saw it (sheet parts free to
+    // turn, none kept together). Thickness, fit, overlap and spacing are checked as ever.
+    let mixed;
+    let list = if n.settings.mix {
+        mixed = crate::nesting::mix_list(list);
+        &mixed
+    } else {
+        list
+    };
     // The saw's settings for a stock it cuts (`overflow`): a sheet of the saw's footprint
     // that is not the router's, with both set.
     let saw_of = |s: &StockDef| -> Option<SawOverflow> {

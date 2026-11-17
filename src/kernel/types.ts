@@ -1232,6 +1232,9 @@ export interface NestSettings {
   /** With a sheet size: sheet goods too large for it come from sheets of this footprint, cut on a
    * saw (a track saw): straight cuts edge to edge, the saw's kerf and trim. Absent: none. */
   overflow?: SawOverflow | null;
+  /** Scrap and test cuts: sheet parts of one thickness share sheets whatever their material,
+   * turn whatever their grain, and are not kept together. Absent: off. */
+  mix?: boolean;
 }
 
 /** The saw that cuts what a CNC router's sheet cannot take. */

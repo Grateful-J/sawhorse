@@ -1929,6 +1929,7 @@ fn resolve(f: &Fuzz, d: &Document) -> Op {
                 joint_loss: NEST_LENGTHS[(*k as usize / 3 + *t as usize) % NEST_LENGTHS.len()],
                 sheet_size: None,
                 overflow: None,
+                mix: false,
             },
         },
         Fuzz::ResetStock => Op::ResetStockLibrary,

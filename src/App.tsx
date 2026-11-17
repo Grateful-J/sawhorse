@@ -345,7 +345,7 @@ const STOCK_STEP: KernelOp = { op: "batch", ops: [] };
 
 /** The status line after the nesting settings change. */
 function nestSettingsText(s: NestSettings, u: Parameters<typeof fineU>[1]): string {
-  return `Nesting: kerf ${fineU(s.kerf, u)}, trim ${s.trim > 0 ? `${fineU(s.trim, u)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, u)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), u)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), u)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}.`;
+  return `Nesting: kerf ${fineU(s.kerf, u)}, trim ${s.trim > 0 ? `${fineU(s.trim, u)} per edge` : "none"}${s.jointLoss !== undefined ? `, joint loss ${fineU(s.jointLoss, u)}` : ""}${s.sheetSize ? `, sheets ${lenU(Math.min(s.sheetSize.width, s.sheetSize.length), u)} × ${lenU(Math.max(s.sheetSize.width, s.sheetSize.length), u)}` : ""}, ${s.algorithm === "guillotine" ? "table saw (straight cuts edge to edge)" : "tightest layout"}${s.mix ? ", scrap mode (grain and material ignored)" : ""}.`;
 }
 
 /** Lane 43 (#7): a selection and Push/Pull target to keep through an undo or a redo. */

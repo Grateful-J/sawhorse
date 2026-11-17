@@ -908,6 +908,7 @@ fn settings() -> impl Strategy<Value = NestSettings> {
                 kerf,
                 trim,
             }),
+            mix: false,
         }
     })
 }
@@ -1001,6 +1002,7 @@ fn oak(parts: &[(f64, f64, f64, usize)], joint_loss: f64) -> Nesting {
         joint_loss: joint_loss * IN,
         sheet_size: None,
         overflow: None,
+        mix: false,
     };
     let n = nest_list(&list, &lib, st);
     check_nesting_of(&list, &n).unwrap();
@@ -1235,6 +1237,7 @@ fn on_six_inch_boards(size: [f64; 3], joint: f64, kerf: f64) -> (CutList, Nestin
         joint_loss: joint,
         sheet_size: None,
         overflow: None,
+        mix: false,
     };
     let n = nest_list(&list, &lib, st);
     (list, n)
@@ -2526,6 +2529,7 @@ fn the_cuts_free_every_part_of_a_shrunk_guillotine_layout() {
         joint_loss: 0.003175,
         sheet_size: None,
         overflow: None,
+        mix: false,
     };
     let lib = front_ply_on_a_four_by_four();
     let n = nest_list(&l, &lib, st);

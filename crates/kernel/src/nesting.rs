@@ -1727,9 +1727,29 @@ fn block_stock(
     }
 }
 
+/// Scrap and test cuts ([`NestSettings::mix`]): every sheet-goods part may turn (its grain is
+/// not kept) and is not kept together. Its material still picks its stock, but sheets are
+/// grouped by stock alone (`nest_list`). Solid lumber is left as it is: a board part turned
+/// across the grain is not the same part.
+pub fn mix_list(list: &CutList) -> CutList {
+    let mut out = list.clone();
+    for row in out.rows.iter_mut().filter(|r| r.sheet) {
+        row.grain = Grain::None;
+        row.together = None;
+    }
+    out
+}
+
 /// Nest a cut list on a library's stock (see the module docs). Pure: the model's
 /// [`Model::nest`] calls this with its own cut list and library.
 pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> Nesting {
+    let mixed;
+    let list = if settings.mix {
+        mixed = mix_list(list);
+        &mixed
+    } else {
+        list
+    };
     let kerf = settings.kerf;
     let trim = effective_trim(settings.trim, kerf);
     let choice = choose_stock(
@@ -1846,7 +1866,13 @@ pub fn nest_list(list: &CutList, lib: &StockLibrary, settings: NestSettings) -> 
                                 .collect()
                         }
                     };
-                    let key = (*k, row.material.clone());
+                    // Scrap and test cuts: a sheet's parts share it whatever their material.
+                    let material = if settings.mix && row.sheet {
+                        None
+                    } else {
+                        row.material.clone()
+                    };
+                    let key = (*k, material);
                     for (strip, tag, orients) in strips {
                         let need = needs.len();
                         needs.push(Need {

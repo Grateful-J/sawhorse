@@ -415,6 +415,10 @@ export function NestingSection(p: NestingSectionProps) {
               <span>Track saw what won't fit</span>
             </label>
           ) : null}
+          <label className="check" title="For scrap and test cuts. Parts of the same thickness share sheets, whatever their material or grain, and matched fronts are not kept together. Thickness still matches, so parts build to the same size. Turn off for finished parts.">
+            <input type="checkbox" checked={!!settings.mix} onChange={(e) => set({ mix: e.currentTarget.checked })} data-field="mix" />
+            <span>Scrap mode</span>
+          </label>
           {saw ? (
             <>
               <LengthField label="Saw kerf" value={saw.kerf} units={p.units} rounding={r} max={KERF_MAX} onCommit={(kerf) => setSaw({ kerf })} />
@@ -447,6 +451,11 @@ export function NestingSection(p: NestingSectionProps) {
               <span>{s!.yieldLabel}</span>
             </div>
           </div>
+          {settings?.mix ? (
+            <p className="note" data-testid="nest-scrap">
+              Scrap mode: grain and material ignored. Turn off for finished parts.
+            </p>
+          ) : null}
           {n.unplaced.length ? (
             <div className="nest-unplaced" role="alert" data-testid="nest-unplaced">
               <b>

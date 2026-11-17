@@ -486,6 +486,69 @@ fn without_blocks_nothing_is_written() {
 
 /// The checker measures each block itself: a good nesting changed one way at a time is
 /// caught.
+/// Scrap and test cuts (`mix`): parts of one thickness share a sheet whatever their
+/// material, turn whatever their grain, and are not kept together; a part still never goes on
+/// a sheet of another thickness. Off, each of these takes its own sheet or is reported.
+#[test]
+fn scrap_mode_shares_sheets_across_materials_and_grain_but_never_thickness() {
+    let mut lib = shop();
+    lib.defaults
+        .insert("Box ply".into(), "4 x 4 sheet, 3/4".into());
+    for alg in ALGS {
+        let off = router(0.375, 0.25, alg, false);
+        let on = NestSettings { mix: true, ..off };
+        // Two materials on one stock: two sheets, or one.
+        let two = list(&[
+            r(20.0, 40.0, Grain::Length),
+            r(20.0, 40.0, Grain::Length).of("Box ply"),
+        ]);
+        assert_eq!(nested(&two, &lib, off).pieces.len(), 2, "{alg:?}");
+        let n = nested(&two, &lib, on);
+        assert_eq!(n.pieces.len(), 1, "{alg:?}");
+        assert_eq!(n.pieces[0].material, None);
+        assert_eq!(n.pieces[0].placements.len(), 2);
+        // Grain one way and the other: only turning one puts both on a sheet.
+        let grain = list(&[r(20.0, 40.0, Grain::Length), r(20.0, 40.0, Grain::Width)]);
+        assert_eq!(nested(&grain, &lib, off).pieces.len(), 2, "{alg:?}");
+        assert_eq!(nested(&grain, &lib, on).pieces.len(), 1, "{alg:?}");
+        // A block longer than the sheet: reported whole, or cut part by part.
+        let block = list(&[
+            r(30.0, 40.0, Grain::Length).kept("f", 0, Stack::Along),
+            r(30.0, 40.0, Grain::Length).kept("f", 1, Stack::Along),
+        ]);
+        let n = nested(&block, &lib, off);
+        assert_eq!(n.unplaced.len(), 2, "{alg:?}");
+        let n = nested(&block, &lib, on);
+        assert!(n.unplaced.is_empty(), "{alg:?}: {:?}", n.unplaced);
+        assert!(
+            n.pieces
+                .iter()
+                .flat_map(|p| &p.placements)
+                .all(|q| q.together.is_none())
+        );
+        // A 1/2 in part with no 4 x 4 of its thickness: never put on the 3/4.
+        let mut half = list(&[
+            r(20.0, 40.0, Grain::Length),
+            r(10.0, 20.0, Grain::Length).of("Box ply"),
+        ]);
+        let t = 0.47 * IN;
+        half.rows[1].size[0] = t;
+        half.rows[1].rounded[0] = t;
+        half.rows[1].nominal_thickness = t;
+        for o in &mut half.rows[1].occurrences {
+            o.bbox.size[0] = t;
+        }
+        for st in [off, on] {
+            let n = nested(&half, &lib, st);
+            assert_eq!(n.unplaced.len(), 1, "{alg:?}");
+            assert_eq!(n.unplaced[0].tag, "2");
+        }
+    }
+    // Unset, the settings are written and hashed as before.
+    let json = serde_json::to_value(router(0.375, 0.25, ALGS[0], false)).unwrap();
+    assert!(json.get("mix").is_none(), "{json}");
+}
+
 #[test]
 fn the_checker_catches_a_block_that_is_not_one() {
     let l = fronts(Stack::Along);
@@ -1079,5 +1142,21 @@ proptest! {
             return Err(TestCaseError::fail(e));
         }
         prop_assert_eq!(m.totals.placed, n.totals.placed);
+    }
+
+    /// Scrap and test cuts: every invariant but grain and blocks holds (thickness, fit,
+    /// overlap, spacing, cuts), it is deterministic, and it places every part the strict
+    /// nesting does.
+    #[test]
+    fn scrap_mode_keeps_every_other_invariant(l in a_list(), st in any_settings()) {
+        let mut lib = shop();
+        lib.defaults.insert("Oak".into(), "4 x 8 sheet, 3/4".into());
+        let on = NestSettings { mix: true, ..st };
+        let n = nest_list(&l, &lib, on);
+        if let Err(e) = check_nesting_of(&l, &n) {
+            return Err(TestCaseError::fail(e));
+        }
+        prop_assert_eq!(nest_list(&l, &lib, on).hash, n.hash.clone());
+        prop_assert!(n.totals.placed >= nest_list(&l, &lib, st).totals.placed);
     }
 }

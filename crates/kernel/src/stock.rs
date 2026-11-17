@@ -212,6 +212,16 @@ pub struct NestSettings {
     /// set, so older documents keep both.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overflow: Option<SawOverflow>,
+    /// Scrap and test cuts: sheet goods of one thickness share sheets whatever their
+    /// material, turn whatever their grain, and are not kept together. Each part is still cut
+    /// from a sheet of its own thickness, so it builds to the same size. Absent from the file
+    /// and the hash until it is set, so older documents keep both.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mix: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_kerf() -> f64 {
@@ -235,6 +245,7 @@ impl Default for NestSettings {
             joint_loss: DEFAULT_JOINT_LOSS,
             sheet_size: None,
             overflow: None,
+            mix: false,
         }
     }
 }
@@ -307,6 +318,9 @@ impl NestSettings {
             h.len(o.sheet_size.length);
             h.len(o.kerf);
             h.len(o.trim);
+        }
+        if self.mix {
+            h.tag("mix");
         }
     }
 }
