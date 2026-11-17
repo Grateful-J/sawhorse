@@ -52,7 +52,7 @@ export function touchesRight(a: Cab, b: Cab): boolean;
 export function rowOf<C extends Cab>(cabs: C[], id: number): C[];
 export function rightOf<C extends Cab>(cabs: C[], id: number): C[];
 export function placeNext(anchor: Cab, size: { width: number; depth: number; ends?: Cab["ends"] }, where: Place, filler?: number): Frame;
-export function lineUp(cabs: Cab[]): Map<number, Frame>;
+export function lineUp(cabs: Cab[], all?: Cab[]): Map<number, Frame>;
 export interface BaseSizes {
   height: number;
   setback: number;

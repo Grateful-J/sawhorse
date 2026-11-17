@@ -94,6 +94,19 @@ describe("rows", () => {
     expect(box(all[2])).toEqual([[r6(42 * IN), r6(78 * IN)], [0, r6(23.25 * IN)], [0, r6(30.5 * IN)]]);
     expect(box(all[3])[0]).toEqual([r6(-15 * IN), 0]);
   });
+
+  it("lines up a selection that is part of a longer row: the whole row stays, the stray joins its end", () => {
+    const a = cab(1, 30);
+    const b = { ...cab(2, 18), world: placeNext(a, { width: 18 * IN, depth: 23.25 * IN }, "right") };
+    // Two inches off the row's end.
+    const c = cab(3, 15, translation([50 * IN, 0, 0]));
+    // Only the last of the row and the stray are selected; the row is still the one that stays.
+    for (const sel of [[b, c], [c, b]]) {
+      const moved = lineUp(sel, [a, b, c]);
+      expect([...moved.keys()]).toEqual([3]);
+      expect(box({ ...c, world: moved.get(3)! })[0]).toEqual([r6(48 * IN), r6(63 * IN)]);
+    }
+  });
 });
 
 describe("base frame", () => {

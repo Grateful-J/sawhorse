@@ -2050,7 +2050,7 @@ async function lineUpNow(ids) {
   const { list } = await placed(await snapshot());
   const selected = list.filter((c) => ids.includes(c.id));
   if (selected.length < 2) return;
-  const moved = lineUp(selected);
+  const moved = lineUp(selected, list);
   if (!moved.size) {
     await ui.notify("They stand in one row already.");
     return;

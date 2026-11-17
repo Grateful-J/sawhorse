@@ -170,13 +170,17 @@ export function placeNext(anchor, size, where, filler = 0) {
  * Line cabinets up into one straight row: the longest row among them stays where it is; the
  * others join it in the order they stand along it (nearest its middle first, outward), each
  * turned its way, backs in line, on its floor. Returns each moved cabinet's new world frame.
- * @param {Cab[]} cabs @returns {Map<number, Frame>}
+ * Rows are found among `all` (every cabinet standing), not just the selection: a selected
+ * cabinet in a longer row brings the whole row, which stays; the others join its ends.
+ * @param {Cab[]} cabs the selected cabinets
+ * @param {Cab[]} [all]
+ * @returns {Map<number, Frame>}
  */
-export function lineUp(cabs) {
+export function lineUp(cabs, all = cabs) {
   /** @type {Cab[]} */
   let keep = [];
   for (const c of cabs) {
-    const r = rowOf(cabs, c.id);
+    const r = rowOf(all, c.id);
     if (r.length > keep.length) keep = r;
   }
   const out = new Map();
@@ -184,7 +188,7 @@ export function lineUp(cabs) {
   const inv = invert(keep[0].world);
   const along = (/** @type {Cab} */ c) => apply(inv, apply(c.world, [c.width / 2, c.depth / 2, c.height / 2]))[0];
   const keepLength = relative(keep[0], keep[keep.length - 1]).translation[0] + keep[keep.length - 1].width;
-  const rest = cabs.filter((c) => !keep.includes(c)).sort((a, b) => along(a) - along(b));
+  const rest = cabs.filter((c) => !keep.some((k) => k.id === c.id)).sort((a, b) => along(a) - along(b));
   const right = rest.filter((c) => along(c) >= keepLength / 2);
   const left = rest.filter((c) => along(c) < keepLength / 2).reverse();
   let end = keep[keep.length - 1];
