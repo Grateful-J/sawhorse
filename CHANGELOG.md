@@ -4,6 +4,12 @@ All notable changes to Sawhorse are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed (CNC cabinets, depth and scrap mode, 2026-11-17)
+
+- **Cabinet depth is overall, to the face of the doors** (cabinet generator 1.14.0). A 24 in base cabinet is now 24 in from the wall to the door's face: with 23/32 in doors its box is 23 9/32 in (it was 23 1/4 in, which came to 23 31/32 in with those doors). Every **Start from** depth is overall (base, sink, drawer, trash and pantry 24 in; wall 12 3/4 in; open shelves 12 in; in millimetres 578, 318 and 300, the same 560 and 300 mm boxes as before). A new **Depth is the box only, without doors** checkbox in **1 · Size** shows and takes the box's depth instead. When the fronts' stock changes, the box changes so the overall depth stays what you typed. The parts are always cut to the box, and a cabinet made before keeps its box: only the depth shown changes.
+- **Scrap mode for test cuts from offcuts.** A **Scrap mode** checkbox in the Nesting section nests sheet parts of one thickness together whatever their material or grain, and does not keep grain-matched fronts together, so drawer box and drawer front parts share a sheet, and doors share the carcass sheets. Each part is still cut from a sheet of its own thickness and builds to the same size. Kernel: `NestSettings.mix`, left out of files and hashes until set.
+- **Shorter warnings before saving CNC files.** One line per problem, with the parts on a quieter line; the CAM reminder is one footer line. Two one-click fixes: **Use** the suggested bit from your library, and **My sheets are as drawn** (sets each sheet's thickness in Stock to its parts' drawn thickness).
+
 ### Fixed (Shapeoko CAM preflight, 2026-11-15)
 
 - **A small hardware demo model:** 17 solid parts for an 18 in Blum TANDEM slide and a ¾ in hinged door, with ½ in drawer face and box and a ¼ in bottom. Its scrap layouts, cut list, recorded settings and regeneration script are in `examples/cnc-hardware-demo/`.
