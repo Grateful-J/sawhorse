@@ -18,7 +18,7 @@
 //
 // Sizes are metres inside; the panel shows and reads them in the document's units.
 import { events, model, storage, ui, units } from "sawhorse";
-import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, CONFIRMAT, CONFIRMAT_LAYOUT, exactThickness, flatImportOp, isMetric, issue, MATERIALS, phrase, plan, normalize, PRESETS, runnerLine, summary } from "./cabinet.js";
+import { applyPreset, BAND, bandList, END_NOTCH, BINS, binRoom, CONFIRMAT, CONFIRMAT_LAYOUT, exactThickness, boxDepth, flatImportOp, frontDepth, isMetric, issue, MATERIALS, overallDepth, phrase, plan, normalize, PRESETS, runnerLine, shownDepth, summary } from "./cabinet.js";
 import { BUDGET, describes, keep, keptFor, keptMetric, liveKeysOf, pack, prune, stampOf, strangers, unpack, validFrame } from "./keep.js";
 import { clearanceText, areaText, fitFromPicks, ladderRecord, liveLadders, partArea, pickOptions, testCut, TEST_TAG, TEST_TITLES, validLadderRecord } from "./testcuts.js";
 import { apply, applyVector, BASE_LUMBER, boxesOf, cncLength, edgesOf, freeName, ladderPicture, nextName, rigid, sawStripDefaults, compose, cutRows, IDENTITY, invert, lineUp, lumberDefaults, normalizeBase, placeNext, planBase, reach, rightOf, rowLayout, rowOf, TOUCH, translation, unturned } from "./row.js";
@@ -303,7 +303,15 @@ const read = (values) => {
   if (v.backType === "groove" || v.backType === "butt") Object.assign(v, { back: true, backMount: v.backType });
   else if (v.backType === "none") v.back = false;
   for (const k of ["preset", "view", "joinery", "backType", "place", "filler", ...TEST_FIELDS, ...SECTIONS.map((x) => x.id)]) delete v[k];
-  return normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (v) }, metric());
+  const next = normalize({ ...sizes, .../** @type {Partial<Sizes>} */ (v) }, metric());
+  // Depth was shown overall (to the face of the fronts): the overall depth is what was typed, or
+  // what it was, and stays so when the fronts change. The box is that less the fronts.
+  if (!sizes.depthBox) {
+    const was = overallDepth(sizes);
+    const typed = typeof v.depth === "number" && Number.isFinite(v.depth) && Math.abs(v.depth - was) > 1e-9;
+    next.depth = !typed && Math.abs(frontDepth(next) - frontDepth(sizes)) <= 1e-12 ? sizes.depth : boxDepth(typed ? /** @type {number} */ (v.depth) : was, next);
+  }
+  return next;
 };
 
 /** @param {string} id @param {string} label @param {number} value */
@@ -325,7 +333,7 @@ const joineryOf = (s) => (s.dados ? "dado" : s.fastener === "none" ? "butt" : s.
 
 /** The panel's groups, in a cabinet shop's order. Each says what is in it while closed. */
 const SECTIONS = [
-  { id: "secSize", label: "1 · Size", applies: () => true, summary: () => `${f(sizes.width)} × ${f(sizes.height)} × ${f(sizes.depth)} · ${sizes.base === "toekick" ? `${f(sizes.toeKick)} toe kick` : "no toe kick"}` },
+  { id: "secSize", label: "1 · Size", applies: () => true, summary: () => `${f(sizes.width)} × ${f(sizes.height)} × ${f(shownDepth(sizes))} · ${sizes.base === "toekick" ? `${f(sizes.toeKick)} toe kick` : "no toe kick"}` },
   {
     id: "secLayout",
     label: "2 · Layout",
@@ -413,10 +421,12 @@ function details() {
   /** @type {Field[]} */
   const out = [];
   if (view === "secSize") {
-    out.push(len("width", "Width", s.width), len("height", "Height", s.height), len("depth", "Depth", s.depth));
+    out.push(len("width", "Width", s.width), len("height", "Height", s.height), len("depth", s.depthBox ? "Box depth" : "Depth", shownDepth(s)));
+    out.push({ type: "checkbox", id: "depthBox", label: "Depth is the box only, without doors", value: s.depthBox });
     out.push(pick("base", "Toe kick", s.base, [["toekick", "Notched into the sides"], ["none", "None (on a separate base)"]]));
     if (s.base === "toekick") out.push(len("toeKick", "Kick height", s.toeKick), len("toeSetback", "Kick setback", s.toeSetback));
-    out.push(help("Height includes the toe kick. Depth is the box, without the doors."));
+    const fd = frontDepth(s);
+    out.push(help(`Height includes the toe kick. ${s.depthBox ? `Depth is the box; with the ${fd ? "doors" : "fronts"} it is ${f(overallDepth(s))} overall.` : fd ? `Depth is overall, to the face of the doors: box ${f(s.depth)} + doors ${f(fd)}.` : "Depth is overall: no fronts stand in front of the box."}`));
   } else if (view === "secLayout") {
     out.push(pick("layout", "Style", s.layout, [["doors", "Doors and shelves"], ["drawers", "Drawers"], ["mixed", "Drawers over a door"], ["trash", "Trash pull-out"], ["shelves", "Open shelves"]]));
     if (hasShelves()) {
@@ -1399,7 +1409,7 @@ async function generateNow(mode, s, target = null, force = false) {
   const name = mode === "new" ? (editing !== null ? nextName(s.name, new Set(list.map((c) => c.name))) : freeName(s.name, new Set(list.map((c) => c.name)))) : s.name;
   const made = { ...s, name };
   const f = units.format;
-  const label = `${name} ${f(made.width)} x ${f(made.height)} x ${f(made.depth)}`;
+  const label = `${name} ${f(made.width)} x ${f(made.height)} x ${f(shownDepth(made))}`;
   const batch = model.batch(own ? "Update cabinet" : "Generate cabinet");
   /** Where the cabinet's origin goes, in the coordinates the new parts are made in. @type {Frame} */
   let frame;
@@ -2146,7 +2156,7 @@ async function buildBaseNow(job) {
       // Its origin goes from the floor to the frame's top: the box stays put when the frame is its kick tall.
       const frame = compose(invert(ctx), compose(translation(up), c.world));
       const items = addParts(batch, planned.parts, frame, add(Object.values(MATERIALS)));
-      const ref = batch.makeComponent(items, `${s.name} ${f(s.width)} x ${f(s.height)} x ${f(s.depth)}`);
+      const ref = batch.makeComponent(items, `${s.name} ${f(s.width)} x ${f(s.height)} x ${f(shownDepth(s))}`);
       batch.rename({ node: ref.node }, c.name);
       carryOver(batch, ref, c.node);
       rebuilt.push({ c, s, frame, ref });

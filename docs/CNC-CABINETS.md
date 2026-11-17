@@ -144,7 +144,7 @@ It keeps everything else you have set: the thicknesses and the grain, the joiner
 
 | Preset | What you get |
 |---|---|
-| Base · door and shelf | 24 x 34 1/2 x 23 1/4 in (600 x 870 x 560 mm), a door, one adjustable shelf, two stretchers for a top, a 4 x 3 in toe kick |
+| Base · door and shelf | 24 x 34 1/2 x 24 in overall (600 x 870 x 578 mm), a door, one adjustable shelf, two stretchers for a top, a 4 x 3 in toe kick |
 | Drawer base · 3 drawers | Three drawers on Blum runners |
 | Sink base · 2 doors, open top | Two doors, stretchers, no shelf |
 | Base · drawer over 2 doors | A drawer front 6 in (150 mm) tall over a pair of doors |
@@ -153,7 +153,7 @@ It keeps everything else you have set: the thicknesses and the grain, the joiner
 | Tall pantry · needs sheets over 4 ft | Doors and shelves, 84 in tall: its sides, its door and its back need a sheet over 4 ft (see the track saw) |
 | Open shelves · no doors | No doors |
 
-A base cabinet is 23 1/4 in deep: 24 in with its door, the frameless standard, and its side and top share one 4 x 4 sheet.
+A base cabinet is 24 in deep overall, from the wall to the face of its door: with 23/32 in doors the box is 23 9/32 in. Its side and top share one 4 x 4 sheet. Every **Start from** depth is overall; a wall cabinet is 12 3/4 in, open shelves 12 in.
 
 ### The groups, and what each one dials in
 
@@ -163,7 +163,8 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 
 | Field | Starts at (in / mm) | Notes |
 |---|---|---|
-| Width, Height, Depth | 24 / 600, 34 1/2 / 870, 23 1/4 / 560 | Height includes the toe kick. Depth is the box, without the door. |
+| Width, Height, Depth | 24 / 600, 34 1/2 / 870, 24 / 560 | Height includes the toe kick. **Depth is overall**, from the back to the face of the doors or drawer fronts: the box is that less the fronts (overlay fronts only; inset fronts and open shelves add nothing). Change the fronts' stock and the box changes, so the cabinet stays as deep as you said. The panel's note gives the box and the fronts. The parts are always cut to the box. |
+| Depth is the box only, without doors | Off | Tick it to see and type the box's depth instead. It changes only how the depth is shown and typed, never the cabinet. |
 | Toe kick | Notched into the sides | **None (on a separate base)** for a cabinet that will sit on a base frame. A base frame takes the kick off for you, so you can leave it on. |
 | Kick height, Kick setback | 4 / 100, 3 / 75 | The height is at least 1 in (25 mm). The setback must leave the side standing. |
 
@@ -237,7 +238,7 @@ Click a group's title to open it; a closed group shows a one-line summary. Field
 **Where the holes go.** Each joint's holes are laid out as Häfele's case-dowelling drawing places dowels (Häfele America catalogue, ch. 11, FC 11.124):
 - one 37 mm from the joint's front edge and one 37 mm from its back edge (the rail's own edges: a fixed shelf behind an inset door starts further back, and its holes with it);
 - at least 3 a joint up to 18 in (457.2 mm) deep, at least 4 up to 24 in (609.6 mm). Sawhorse drills exactly that many. Häfele gives no count past 24 in, so a deeper joint is refused rather than guessed;
-- the ones between on the 32 mm grid counted from the front one, the grid points nearest to evenly spaced, each keeping 3 mm of wood to the back one. AWS says dowel joints are "often based on" 32 mm spacing: a description, not a rule. The 23 1/4 in base's bottom gets 37, 197, 389 and 553.6 mm; a 12 in wall cabinet's top and bottom 37, 165 and 267.8 mm.
+- the ones between on the 32 mm grid counted from the front one, the grid points nearest to evenly spaced, each keeping 3 mm of wood to the back one. AWS says dowel joints are "often based on" 32 mm spacing: a description, not a rule. The 23 1/4 in base's bottom gets 37, 197, 389 and 553.6 mm; the Wall starting point's top and bottom (a 12 1/32 in box, 12 3/4 in overall) 37, 165 and 268.6 mm.
 - Stretchers narrower than 117 mm (4.607 in) are made at least 117 mm (4-5/8 in) wide with dowels or Confirmat; the cut list says when they were widened. Any other joint too shallow for its count is refused with the least depth.
 
 | | Dowels | Confirmat screws |
@@ -1070,9 +1071,9 @@ For example, the Tall pantry's door and left side, with the starting sizes in in
   - 2 holes 4.76 mm (3/16 in) through at (46 7/8, 22 3/8), (49 7/8, 22 3/8)
 
 2 Left side (Sheet 1 of 1 · 4 x 8 sheet, 3/4 · Cabinet plywood)
-  - Pocket 79 13/64 × 15/64, 5/16 deep: 4 13/32 to 83 39/64 from end A, 22 19/64 to 22 17/32 from edge B
-  - Pocket 47/64 × 22 3/4, 1/4 deep: 4 to 4 47/64 from end A, 1/2 to 23 1/4 from edge B
-  - Pocket, 1/4 deep, in 2 rectangles that join: 23/32 × 22 3/4 at 83 9/32 to 84 from end A, 1/2 to 23 1/4 from edge B; 3 × 23/32 at 80 9/32 to 83 9/32 from end A, 22 17/32 to 23 1/4 from edge B
+  - Pocket 79 13/64 × 15/64, 5/16 deep: 4 13/32 to 83 39/64 from end A, 22 21/64 to 22 9/16 from edge B
+  - Pocket 47/64 × 22 25/32, 1/4 deep: 4 to 4 47/64 from end A, 1/2 to 23 9/32 from edge B
+  - Pocket, 1/4 deep, in 2 rectangles that join: 23/32 × 22 25/32 at 83 9/32 to 84 from end A, 1/2 to 23 9/32 from edge B; 3 × 23/32 at 80 9/32 to 83 9/32 from end A, 22 9/16 to 23 9/32 from edge B
   - 10 holes 5 mm × 11.5 mm deep at (6 15/16, 1 29/64), (8 3/16, 1 29/64), (25 5/32, 1 29/64), ...
   - 40 holes 5 mm × 10 mm deep at (17 35/64, 1 29/64), (17 35/64, 20 23/64), ...
   - Notch through, 4 × 3, cut out of the outline: 0 to 4 from end A, 0 to 3 from edge B
@@ -1103,7 +1104,7 @@ Measure B from the far edge, never from the near one: measured from the near edg
 | Line | What it is |
 |---|---|
 | Pocket 79 13/64 × 15/64, 5/16 deep | The back's groove: 79 13/64 in long and 15/64 in wide, near the rear edge. |
-| Pocket 47/64 × 22 3/4, 1/4 deep | The bottom's blind dado, 4 in up from the bottom end. It starts 1/2 in from the front edge and runs out of the rear edge at 23 1/4. |
+| Pocket 47/64 × 22 25/32, 1/4 deep | The bottom's blind dado, 4 in up from the bottom end. It starts 1/2 in from the front edge and runs out of the rear edge at 23 9/32. |
 | Pocket, 1/4 deep, in 2 rectangles that join | The top's dado and the top nailer's dado, which meet in an L. Rout the two rectangles the line gives: a 23/32 in strip across the top end (83 9/32 to 84 from A), and a strip 3 in long and 23/32 in wide along the rear edge below it (80 9/32 to 83 9/32 from A). Do not rout the box around them. |
 | 10 holes 5 mm × 11.5 mm deep | The hinge plates' holes, 1 29/64 in (37 mm) from the front edge. |
 | 40 holes 5 mm × 10 mm deep | The shelf-pin holes, in a front row and a rear row. |

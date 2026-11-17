@@ -258,7 +258,7 @@ test("#5 a cabinet from plugin 1.1.0 (no settings kept) is never replaced by the
   // A change is not the update here: the cabinet stays as it is (it became an 18 in drawer base).
   await field(page, panel, "height", "35");
   await page.waitForTimeout(1500);
-  expect(await extent(page)).toEqual([24, 23.25, 34.5]);
+  expect(await extent(page)).toEqual([24, 24, 34.5]);
   expect((await solids(page)).length).toBe(8);
   // The press replaces it, with the settings shown.
   await action(page, panel, "replace").click();
@@ -473,3 +473,33 @@ test("#19 a cabinet scaled by hand is not rebuilt from its settings; the panel s
   expect((await extent(page))[0]).toBe(36);
 });
 
+
+test("#21 depth is overall, to the face of the doors: a 24 in base cabinet is 24 in deep in the model; ticked, the depth typed is the box", async ({ page }) => {
+  test.setTimeout(90_000);
+  await start(page);
+  await fld(page, panel, "preset").selectOption("base");
+  await openSection(page, panel, "secSize");
+  await expect(fld(page, panel, "depth")).toHaveValue("24");
+  await expect(page.locator(`[data-panel="${panel}"]`)).toContainText("Depth is overall, to the face of the doors");
+  await gen(page).click();
+  await expect(hint(page)).toContainText("Made Base 1");
+  // Box and doors: 24 in from the back to the face of the doors.
+  await expect.poll(async () => (await extent(page))[1]).toBe(24);
+  // Ticked: the same cabinet, its box shown; 24 typed is a 24 in box, 24 23/32 overall.
+  await fld(page, panel, "depthBox").click();
+  await expect(fld(page, panel, "depthBox")).toBeChecked();
+  await expect(page.locator(`[data-panel="${panel}"]`)).toContainText("Depth is the box");
+  await page.waitForTimeout(800);
+  expect((await extent(page))[1]).toBe(24);
+  await field(page, panel, "depth", "24");
+  await expect.poll(async () => (await extent(page))[1]).toBe(24.719);
+  await page.waitForTimeout(800);
+  // Unticked: overall again, the cabinet unchanged; 24 typed is 24 overall.
+  await fld(page, panel, "depthBox").click();
+  await expect(fld(page, panel, "depthBox")).not.toBeChecked();
+  await expect(page.locator(`[data-panel="${panel}"]`)).toContainText("Depth is overall");
+  await page.waitForTimeout(800);
+  expect((await extent(page))[1]).toBe(24.719);
+  await field(page, panel, "depth", "24");
+  await expect.poll(async () => (await extent(page))[1]).toBe(24);
+});

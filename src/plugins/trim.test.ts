@@ -111,7 +111,7 @@ describe("end panels, fillers and skins are parts", () => {
     const l = part(parts, "Left end panel");
     const r = part(parts, "Right end panel");
     expect(frontProud(s)).toBeCloseTo(T, 12);
-    expect(v6(l.blank.map((v) => v / IN))).toEqual(v6([23 / 32, 23 / 32 + 23.25 + 0.25, 34.5]));
+    expect(v6(l.blank.map((v) => v / IN))).toEqual(v6([23 / 32, 23 / 32 + (24 - 23 / 32) + 0.25, 34.5]));
     expect(v6(l.copies[0].at.map((v) => v / IN))).toEqual(v6([-23 / 32, -23 / 32, 0]));
     expect(v6(r.copies[0].at.map((v) => v / IN))).toEqual(v6([24, -23 / 32, 0]));
     expect([l.grain, l.material, l.bands, l.bom]).toEqual(["length", "Cabinet plywood", undefined, undefined]);
@@ -120,7 +120,7 @@ describe("end panels, fillers and skins are parts", () => {
   it("an end panel flush with the box's bottom and the carcass front, in the door plywood", () => {
     const s = base(false, { endRight: "panel", endDown: "box", endFront: "carcass", endStock: "doors" });
     const r = part(trimParts(s, false).parts, "Right end panel");
-    expect(v6(r.blank.map((v) => v / IN))).toEqual(v6([23 / 32, 23.25, 30.5]));
+    expect(v6(r.blank.map((v) => v / IN))).toEqual(v6([23 / 32, 24 - 23 / 32, 30.5]));
     expect(v6(r.copies[0].at.map((v) => v / IN))).toEqual(v6([24, 0, 4]));
     expect(r.material).toBe("Door plywood");
     // No fronts to be flush with: open shelves, inset doors. Drawers: the drawer front stock.

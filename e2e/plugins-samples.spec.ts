@@ -212,9 +212,9 @@ test("cabinet generator: new cabinets stand in a row; the row goes on a base fra
     await page.locator(`[data-panel="${panel}"] [data-action="generate"]`).click();
     await expect(page.locator("#hint")).toContainText(`Made Cabinet ${n}`);
   }
-  // Side by side, backs in line: 78 x 23 1/4 x 34 1/2 in all told.
+  // Side by side, backs in line: 78 x 24 x 34 1/2 in all told.
   const cabinets = await solids(page);
-  expect(extent(cabinets)).toEqual([78, 23.25, 34.5]);
+  expect(extent(cabinets)).toEqual([78, 24, 34.5]);
 
   // The middle cabinet selected: the rows panel names its row and plans its frame.
   await page.getByRole("tab", { name: "Outliner" }).click();
@@ -240,7 +240,7 @@ test("cabinet generator: new cabinets stand in a row; the row goes on a base fra
   await page.locator(`[data-panel="${rows}"] [data-action="makeBase"]`).click();
   await expect(page.locator("#hint")).toContainText("Made Base frame 1 under 3 cabinets");
   const after = await solids(page);
-  expect(extent(after)).toEqual([78, 23.25, 34.5]);
+  expect(extent(after)).toEqual([78, 24, 34.5]);
   const sleepers = Number(table[4][1]);
   // Each cabinet loses its toe kick; the frame adds 4 rails and the sleepers.
   expect(after.length).toBe(cabinets.length - 3 + 4 + sleepers);
@@ -624,7 +624,7 @@ test("cabinet generator: a wider cabinet moves its row along; Line up butts cabi
   // Made shallower, it keeps its back on the wall: still in the row with Cabinet 2.
   await field(page, panel, "depth", "12");
   await expect(page.locator(`[data-panel="${CABINET}/rows"] [data-note="row"]`)).toContainText("Row of 2: Cabinet 1, Cabinet 2");
-  expect((await extent())[1]).toBe(23.25);
+  expect((await extent())[1]).toBe(24);
   await field(page, panel, "depth", "23 1/4");
   await expect(page.locator(`[data-panel="${CABINET}/rows"] [data-note="row"]`)).toContainText("23 1/4 deep");
   // One apart, 2 in off the end; then lined up against the row.
@@ -644,7 +644,7 @@ test("cabinet generator: a wider cabinet moves its row along; Line up butts cabi
   await empty();
   await choose(page, panel, "place", "cornerRight");
   await make(4, "24");
-  expect(await extent()).toEqual([63, 23.25 + 27, 34.5]);
+  expect(await extent()).toEqual([63, 24 + 27, 34.5]);
   // The row goes on down the new wall from there.
   await expect(page.locator(`[data-panel="${panel}"] [data-field="place"]`)).toHaveValue("right");
 });
@@ -763,7 +763,7 @@ test("model report: live counts that match the model, and an export as Markdown 
   // back (10 faces, 24 edges), one shelf, the back, the toe kick, and the cabinet.
   expect(truth).toEqual({ Solids: 7, Groups: 0, Components: 8, Instances: 8 });
   await expect.poll(counts).toMatchObject({ ...truth, Faces: 3 * 6 + 2 * 13 + 2 * 10, Edges: 3 * 12 + 2 * 30 + 2 * 24 });
-  await expect(report.locator('[data-note="size"]')).toContainText("Overall 24 wide x 23 1/4 deep x 34 1/2 high");
+  await expect(report.locator('[data-note="size"]')).toContainText("Overall 24 wide x 24 deep x 34 1/2 high");
   await expect(report.locator('[data-note="warnings"]')).toHaveText("No warnings.");
   // Units: millimetres, remembered by the plugin.
   await report.locator('[data-field="units"]').selectOption("mm");

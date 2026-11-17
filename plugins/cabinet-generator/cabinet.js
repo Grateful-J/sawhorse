@@ -57,7 +57,7 @@ const MM = 0.001;
 /**
  * @typedef {{
  *   name: string,
- *   width: number, height: number, depth: number,
+ *   width: number, height: number, depth: number, depthBox: boolean,
  *   thickness: number, frontThickness: number, drawerThickness: number, backThickness: number,
  *   layout: Layout, shelves: number, shelfType: ShelfType, drawers: number, drawerFronts: DrawerFronts, drawerFront: number,
  *   top: Top, stretcher: number,
@@ -531,17 +531,50 @@ export const PRESETS = [
   // Blum Inc. asks for the top and bottom hinges to be farther apart than the door is wide
   // (hinge catalog (c) 2016 p. 2): a 24 in (600 mm) base door's hinges go 3 in (80 mm) from its
   // ends, and a 600 mm wall door's 50 mm; a drawer over a door is a pair under the drawer.
-  { id: "base", label: "Base · door and shelf", name: "Base", layout: "doors", shelves: 1, drawers: 0, base: "toekick", in: [24, 34.5, 23.25], mm: [600, 870, 560], doorPullFrom: "top", top: "stretchers", hingeInset: [3, 80] },
-  { id: "drawers", label: "Drawer base · 3 drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], top: "stretchers" },
-  { id: "sink", label: "Sink base · 2 doors, open top", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 23.25], mm: [900, 870, 560], doorPullFrom: "top", top: "stretchers" },
-  { id: "mixed", label: "Base · drawer over 2 doors", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 23.25], mm: [600, 870, 560], doorPullFrom: "top", top: "stretchers", doors: "two" },
+  { id: "base", label: "Base · door and shelf", name: "Base", layout: "doors", shelves: 1, drawers: 0, base: "toekick", in: [24, 34.5, 24], mm: [600, 870, 578], doorPullFrom: "top", top: "stretchers", hingeInset: [3, 80] },
+  { id: "drawers", label: "Drawer base · 3 drawers", name: "Drawer base", layout: "drawers", shelves: 0, drawers: 3, base: "toekick", in: [18, 34.5, 24], mm: [450, 870, 578], top: "stretchers" },
+  { id: "sink", label: "Sink base · 2 doors, open top", name: "Sink base", layout: "doors", shelves: 0, drawers: 0, base: "toekick", in: [36, 34.5, 24], mm: [900, 870, 578], doorPullFrom: "top", top: "stretchers" },
+  { id: "mixed", label: "Base · drawer over 2 doors", name: "Base", layout: "mixed", shelves: 1, drawers: 1, base: "toekick", in: [24, 34.5, 24], mm: [600, 870, 578], doorPullFrom: "top", top: "stretchers", doors: "two" },
   // One bin: two Rev-A-Shelf bins need 27 in side by side, and front to back more depth than
   // a 21 in runner's box (their own double units ride 22 in slides).
-  { id: "trash", label: "Trash pull-out · one 50 qt bin", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 23.25], mm: [450, 870, 560], drawerPull: "top", top: "stretchers", trashBins: "one", bin: "rv50" },
-  { id: "wall", label: "Wall cabinet · doors, nailers", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12], mm: [600, 720, 300], doorPullFrom: "bottom", doorPullEnd: [2.5, 64], nailers: "both", hingeInset: [3.5, 50] },
-  { id: "tall", label: "Tall pantry · needs sheets over 4 ft", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 23.25], mm: [600, 2100, 560], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
+  { id: "trash", label: "Trash pull-out · one 50 qt bin", name: "Trash", layout: "trash", shelves: 0, drawers: 1, base: "toekick", in: [18, 34.5, 24], mm: [450, 870, 578], drawerPull: "top", top: "stretchers", trashBins: "one", bin: "rv50" },
+  { id: "wall", label: "Wall cabinet · doors, nailers", name: "Wall", layout: "doors", shelves: 2, drawers: 0, base: "none", in: [30, 30, 12.75], mm: [600, 720, 318], doorPullFrom: "bottom", doorPullEnd: [2.5, 64], nailers: "both", hingeInset: [3.5, 50] },
+  { id: "tall", label: "Tall pantry · needs sheets over 4 ft", name: "Pantry", layout: "doors", shelves: 4, drawers: 0, base: "toekick", in: [24, 84, 24], mm: [600, 2100, 578], doorPullFrom: "bottom", doorPullEnd: [30, 760], nailers: "top" },
   { id: "open", label: "Open shelves · no doors", name: "Shelves", layout: "shelves", shelves: 2, drawers: 0, base: "toekick", in: [30, 34.5, 12], mm: [600, 870, 300] },
 ];
+
+/**
+ * How far the fronts stand in front of the box: an overlay door (cut from the carcass stock)
+ * or drawer front (the drawer front stock), the thicker where there are both; nothing for inset
+ * fronts, which sit inside the box, or open shelves, which have none.
+ * @param {Pick<Sizes, "front" | "layout" | "thickness" | "frontThickness">} s @returns {number}
+ */
+export function frontDepth(s) {
+  if (s.front !== "overlay") return 0;
+  const door = s.layout === "doors" || s.layout === "mixed" ? s.thickness : 0;
+  const drawer = s.layout === "drawers" || s.layout === "mixed" || s.layout === "trash" ? s.frontThickness : 0;
+  return Math.max(door, drawer);
+}
+
+/** The cabinet's overall depth: the box (`depth`) and its fronts. What a kitchen plan measures.
+ * @param {Pick<Sizes, "depth" | "front" | "layout" | "thickness" | "frontThickness">} s @returns {number} */
+export function overallDepth(s) {
+  return s.depth + frontDepth(s);
+}
+
+/** The box's depth for an overall depth: that less the fronts, to the nanometre (so 578 mm less
+ * 18 mm is 560 mm, not 559.9999999).
+ * @param {number} overall @param {Pick<Sizes, "front" | "layout" | "thickness" | "frontThickness">} s @returns {number} */
+export function boxDepth(overall, s) {
+  const f = frontDepth(s);
+  return f ? Math.round((overall - f) * 1e9) / 1e9 : overall;
+}
+
+/** The depth the panel shows and names the cabinet by: overall, or the box when `depthBox` is on.
+ * @param {Pick<Sizes, "depth" | "depthBox" | "front" | "layout" | "thickness" | "frontThickness">} s @returns {number} */
+export function shownDepth(s) {
+  return s.depthBox ? s.depth : overallDepth(s);
+}
 
 /**
  * A starting point applied to the sizes: its style, sizes and name. The stock, joinery,
@@ -561,6 +594,8 @@ export function applyPreset(s, id, metric) {
   const n = /(\d+)$/.exec(s.name)?.[1] ?? "1";
   /** @type {Sizes} */
   const out = { ...s, name: `${p.name} ${n}`, layout: p.layout, shelves: p.shelves, drawers: p.drawers || d.drawers, base: p.base, width: w, height: h, depth: dp };
+  // A starting point's depth is overall, to the face of its doors: the box is that less the fronts.
+  out.depth = boxDepth(dp, out);
   out.doorPullFrom = p.doorPullFrom ?? d.doorPullFrom;
   out.doorPullEnd = p.doorPullEnd ? (metric ? p.doorPullEnd[1] * MM : p.doorPullEnd[0] * IN) : d.doorPullEnd;
   out.nailers = p.nailers ?? d.nailers;
@@ -643,7 +678,7 @@ export function defaults(metric) {
     ? {
         name: "Cabinet 1",
         // 870 with the toe kick: a 720 carcass on a 150 plinth, under a worktop at about 900.
-        width: 600 * MM, height: 870 * MM, depth: 560 * MM,
+        width: 600 * MM, height: 870 * MM, depth: 560 * MM, depthBox: false,
         // Drawer fronts are door stock, so a drawer over a door is flush with it.
         thickness: 18 * MM, frontThickness: 18 * MM, drawerThickness: 12 * MM, backThickness: 6 * MM,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 150 * MM,
@@ -670,8 +705,9 @@ export function defaults(metric) {
         name: "Cabinet 1",
         // "3/4" plywood is 23/32 in, "1/2" is 15/32, "1/4" is 7/32 (the stock library says the
         // same). Measure yours and type it in: every joint is cut to these numbers.
-        // A frameless box 23 1/4 in deep is 24 in with its door; and its side and top share a 4 x 4 sheet.
-        width: 24 * IN, height: 34.5 * IN, depth: 23.25 * IN,
+        // 24 in deep overall: open shelves have no fronts, so the box is 24 in. Its side and top
+        // share a 4 x 4 sheet.
+        width: 24 * IN, height: 34.5 * IN, depth: 24 * IN, depthBox: false,
         // Drawer fronts are door stock, so a drawer over a door is flush with it.
         thickness: (23 / 32) * IN, frontThickness: (23 / 32) * IN, drawerThickness: (15 / 32) * IN, backThickness: (7 / 32) * IN,
         layout: "shelves", shelves: 1, shelfType: "adjustable", drawers: 3, drawerFronts: "equal", drawerFront: 6 * IN,
@@ -719,6 +755,7 @@ export function normalize(saved, metric) {
     width: num("width"),
     height: num("height"),
     depth: num("depth"),
+    depthBox: !!s.depthBox,
     thickness: num("thickness"),
     frontThickness: num("frontThickness"),
     drawerThickness: num("drawerThickness"),

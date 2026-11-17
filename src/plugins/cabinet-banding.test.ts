@@ -134,8 +134,9 @@ describe("edge banding: geometry", () => {
             expect(got.max[k] + hi, `${label} ${size} ${name} max ${k}`).toBeCloseTo(want.max[k], 9);
             expect(part.blank[k] + lo + hi).toBeCloseTo(was.part.blank[k], 9);
           }
-          // The grain is the part's, banded or not.
-          expect(part.grain, `${label} ${name}`).toBe(was.part.grain);
+          // The grain runs the same way, banded or not. (Its name can change: "length" is the
+          // blank's longer side, and banding a near-square shelf can change which that is.)
+          expect(grainAxis(part.grain, part.blank), `${label} ${name}`).toBe(grainAxis(was.part.grain, was.part.blank));
         }
       }
     }
@@ -355,10 +356,21 @@ describe("edge banding: what is bought", () => {
   });
 });
 
+/** The axis a part's grain runs along: its blank's longer face side for "length", the shorter
+ * for "width", -1 for none. */
+function grainAxis(grain: string | undefined, blank: number[]): number {
+  if (!grain || grain === "none") return -1;
+  const t = blank.indexOf(Math.min(...blank));
+  const [a, b] = [0, 1, 2].filter((k) => k !== t);
+  const long = blank[a] >= blank[b] ? a : b;
+  return grain === "length" ? long : long === a ? b : a;
+}
+
 describe("edge banding is kept with the cabinet", () => {
   it("every band setting comes back exactly as it went in, in both units; banding untouched keeps nothing", () => {
     for (const metric of [false, true]) {
-      expect(pack(defaults(metric), metric).d).toEqual({});
+      // Nothing of the banding (the defaults' depth differs from the frozen baseline's: 24 in overall).
+      expect(Object.keys(pack(defaults(metric), metric).d).filter((k) => k.startsWith("band"))).toEqual([]);
       const s: Sizes = {
         ...applyPreset(defaults(metric), "mixed", metric),
         band: true,

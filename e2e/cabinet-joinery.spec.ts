@@ -68,7 +68,7 @@ test("joinery and line boring: dados to start; dowels for the router and a jig; 
   await expect(sideRows.first()).toContainText("CNC");
   const jig = holes.filter({ hasText: "for a doweling jig" });
   await expect(jig).toHaveCount(2);
-  await expect(jig.first()).toContainText("3 at 37, 165 and 267.8 mm (1.457, 6.496 and 10.543 in) from its front edge");
+  await expect(jig.first()).toContainText("3 at 37, 165 and 268.6 mm (1.457, 6.496 and 10.575 in) from its front edge");
   await expect(jig.first()).toContainText("25 mm");
   await expect(jig.first()).toContainText("Jig");
   await expect(holes.filter({ hasText: "Blind dados" })).toHaveCount(0);

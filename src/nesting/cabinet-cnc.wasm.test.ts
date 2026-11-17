@@ -614,10 +614,10 @@ run("the track saw's hand work and metric sheets, through the kernel", () => {
     // The top's dado (the 23/32 in stock and its clearance, to the part's end) across the
     // side from its 1/2 in stop to the rear edge, joined to the top nailer's dado along the
     // rear edge: 3 in long, as wide as the nailer is thick, behind the back's groove.
-    expect(left.lines).toContain("Pocket, 1/4 deep, in 2 rectangles that join: 23/32 × 22 3/4 at 83 9/32 to 84 from end A, 1/2 to 23 1/4 from edge B; 3 × 23/32 at 80 9/32 to 83 9/32 from end A, 22 17/32 to 23 1/4 from edge B");
+    expect(left.lines).toContain("Pocket, 1/4 deep, in 2 rectangles that join: 23/32 × 22 25/32 at 83 9/32 to 84 from end A, 1/2 to 23 9/32 from edge B; 3 × 23/32 at 80 9/32 to 83 9/32 from end A, 22 9/16 to 23 9/32 from edge B");
     // The bottom's dado is one rectangle (the back's groove through it is cut deeper anyway),
     // its width and its edges agreeing; the back's groove is the third pocket.
-    expect(left.lines).toContain("Pocket 47/64 × 22 3/4, 1/4 deep: 4 to 4 47/64 from end A, 1/2 to 23 1/4 from edge B");
+    expect(left.lines).toContain("Pocket 47/64 × 22 25/32, 1/4 deep: 4 to 4 47/64 from end A, 1/2 to 23 9/32 from edge B");
     expect(left.lines.filter((l) => l.startsWith("Pocket"))).toHaveLength(3);
     expect(left.pockets).toBe(3);
     // Nothing tells the reader to rout the box around the L away.

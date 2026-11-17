@@ -72,7 +72,10 @@ export interface Sizes extends TrimSizes {
   name: string;
   width: number;
   height: number;
+  /** The box's depth, without the fronts (what the parts are cut to). */
   depth: number;
+  /** The panel shows and takes the box's depth; off (the default), the overall depth, to the face of the fronts. */
+  depthBox: boolean;
   /** Cabinet and door stock, measured. */
   thickness: number;
   frontThickness: number;
@@ -249,6 +252,14 @@ export interface Preset {
 }
 export const PRESETS: Preset[];
 export function applyPreset(s: Sizes, id: string, metric: boolean): Sizes;
+/** How far the fronts stand in front of the box (overlay fronts' thickness; 0 inset or open). */
+export function frontDepth(s: Pick<Sizes, "front" | "layout" | "thickness" | "frontThickness">): number;
+/** The box and its fronts: what a kitchen plan measures. */
+export function overallDepth(s: Pick<Sizes, "depth" | "front" | "layout" | "thickness" | "frontThickness">): number;
+/** The box's depth for an overall depth (that less the fronts, to the nanometre). */
+export function boxDepth(overall: number, s: Pick<Sizes, "front" | "layout" | "thickness" | "frontThickness">): number;
+/** Overall, or the box with `depthBox` on. */
+export function shownDepth(s: Pick<Sizes, "depth" | "depthBox" | "front" | "layout" | "thickness" | "frontThickness">): number;
 export function exactThickness(m: number, metric: boolean): string;
 export function summary(s: Sizes, planned: { parts: Part[]; rows: string[][]; runner: RunnerLength | null; holes: number }, metric: boolean): string;
 export function backInsetOf(s: Sizes): number;

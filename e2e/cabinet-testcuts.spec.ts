@@ -100,7 +100,7 @@ test("a test goes beside the model on the tag Test cuts, one undo step, and the 
   await expect(note(page, "status")).toContainText("Editing Cabinet 1");
   await expect(section(page, "secCnc")).toContainText("0.016 in joint clearance");
   await fld(page, "testKind").selectOption("drawer");
-  await expect(note(page, "testArea")).toContainText("Test cuts · Mini drawer (10 × 4 3/4 × 23 1/4)");
+  await expect(note(page, "testArea")).toContainText("Test cuts · Mini drawer (10 × 4 3/4 × 24)");
   await action(page, "makeTest").dblclick();
   await expect(hint(page)).toContainText("Added Test cuts · Mini drawer");
   await page.waitForTimeout(800);

@@ -10,7 +10,7 @@
 //
 // Axes are the cabinet's (cabinet.js): x across from its left side, y back from the carcass
 // front, z up from its bottom (the floor, for a cabinet with a toe kick).
-import { bandFor, bandList, bandPart, exactThickness, MATERIALS, plan } from "./cabinet.js";
+import { bandFor, bandList, bandPart, exactThickness, frontDepth, MATERIALS, plan } from "./cabinet.js";
 import { partMesh } from "./mesh.js";
 import { apply, invert, TOUCH } from "./row.js";
 
@@ -169,10 +169,7 @@ export function trimUsed(s) {
 /** How far an overlay front stands in front of the carcass: the door or drawer front stock
  * (none for open shelves, or inset fronts). @param {Sizes} s */
 export function frontProud(s) {
-  if (s.front !== "overlay") return 0;
-  const door = s.layout === "doors" || s.layout === "mixed" ? s.thickness : 0;
-  const drawer = s.layout === "drawers" || s.layout === "mixed" || s.layout === "trash" ? s.frontThickness : 0;
-  return Math.max(door, drawer);
+  return frontDepth(s);
 }
 
 /**
