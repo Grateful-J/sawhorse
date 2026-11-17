@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cncSettings } from "../components/NestingSection";
-import { cncFileName, cncKerf, cncNotes, cncSpacingFits, cutProblems, KERF_MAX, nestProblems, openPockets, routerSheetProblems, safeName, sheetOps, spacingProblem, thicknessMismatches } from "./cnc";
+import { asDrawnOps, cncFileName, cncKerf, cncNotes, cncSpacingFits, cutProblems, KERF_MAX, nestProblems, openPockets, routerSheetProblems, safeName, sheetOps, spacingProblem, thicknessMismatches, type NestProblem } from "./cnc";
+import type { StockLibrary } from "../kernel/types";
 import DxfParser from "dxf-parser";
 import { nestingDxf, overcutLoop, pieceLabel, pocketOvercut, reachesEdge } from "./dxf";
 import { diffU, exactU, fineSteps, fineStep, fineU, pieceTitle } from "./format";
@@ -25,7 +26,7 @@ describe("CNC export notes", () => {
     expect(m[0].stock).toBe(piece.stock);
     expect(m[0].parts).toEqual([q.name]);
     const notes = cncNotes(off, { features: new Map(), skipped: [], flipped: [] }, "sixteenth");
-    expect(notes[0]).toMatch(/drawn .* thick but nested on/);
+    expect(notes[0]).toMatch(/^0\.77 in parts \(Shelf\): .* is .* thinner\. Joints will be loose\.$/);
     // A tenth of a millimetre is drawing noise, not a different sheet.
     q.size = [piece.thickness + 0.5e-4, q.size[1], q.size[2]];
     expect(thicknessMismatches(off)).toEqual([]);
@@ -254,14 +255,13 @@ describe("spacing for the router", () => {
     // dado as much as the one with it.
     const dado = { ...plain, features: new Map([["2", cutFeature({ pockets: [{ loop: [], depth: 0.006 }] })]]) };
     const asked = cutProblems(n, dado, "half_mm");
-    expect(asked.map((p) => [p.kind, p.name])).toEqual([
-      ["thickness", "Shelf"],
-      ["thickness", "Back panel"],
+    expect(asked.map((p) => [p.kind, p.name, p.detail])).toEqual([
+      ["thickness", "19.55 mm parts", "Shelf"],
+      ["thickness", "5.31 mm parts", "Back panel"],
     ]);
-    expect(asked[0].text).toBe(
-      "drawn 19.55 mm thick but nested on 4/4 x 12 x 96 (19.05 mm), a sheet 0.5 mm thinner: joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut",
-    );
-    expect(asked[1].text).toMatch(/^drawn 5\.31 mm thick but nested on 4 x 8 sheet, 1\/4 \(5\.56 mm\), a sheet 0\.25 mm thicker: /);
+    expect(asked[0].text).toBe("4/4 x 12 x 96 is 19.05 mm, 0.5 mm thinner. Joints will be loose.");
+    expect(asked[0].sheet).toEqual({ stock: "4/4 x 12 x 96", drawn: n.pieces[0].thickness + 0.5e-3 });
+    expect(asked[1].text).toBe("4 x 8 sheet, 1/4 is 5.56 mm, 0.25 mm thicker. Joints will be too tight.");
     // A hole, a cutout, a notched outline or a cut in the other face each count; the wording
     // is true of a file with only holes.
     const hole = { loop: [], center: [0, 0] as [number, number], diameter: 0.005, depth: 0.01, through: false };
@@ -272,7 +272,7 @@ describe("spacing for the router", () => {
     // Not measured: the file may hold cuts, so it is asked, with the cuts problem after.
     expect(cutProblems(n, null, "half_mm").map((p) => p.kind)).toEqual(["thickness", "thickness", "cuts"]);
     // The note after saving still names the mismatch, cuts or none.
-    expect(cncNotes(n, plain, "half_mm")[0]).toMatch(/^Shelf is drawn 19\.55 mm thick but nested on .* \(19\.05 mm\), a sheet 0\.5 mm thinner: joints and depths/);
+    expect(cncNotes(n, plain, "half_mm")[0]).toBe("19.55 mm parts (Shelf): 4/4 x 12 x 96 is 19.05 mm, 0.5 mm thinner. Joints will be loose.");
   });
 
   it("a small difference in thickness is a real number, never 0 in or the same fraction twice", () => {
@@ -285,10 +285,11 @@ describe("spacing for the router", () => {
     expect(fineU(0.15e-3, "sixteenth")).toBe("0 in");
     const dado = { features: new Map([["2", cutFeature({ pockets: [{ loop: [], depth: 0.006 }] })]]), skipped: [], flipped: [] };
     const [p] = cutProblems(n, dado, "sixteenth");
-    expect(p.text).toMatch(/^drawn 0\.225 in thick but nested on 4 x 8 sheet, 1\/4 \(7\/32 in\), a sheet 0\.006 in \(0\.15 mm\) thinner: /);
+    expect(p.name).toBe("0.225 in parts");
+    expect(p.text).toBe("4 x 8 sheet, 1/4 is 7/32 in, 0.006 in (0.15 mm) thinner. Joints will be loose.");
     expect(p.text).not.toContain(" 0 in");
     const note = cncNotes(n, dado, "sixteenth")[0];
-    expect(note).toMatch(/drawn 0\.225 in thick but nested on 4 x 8 sheet, 1\/4 \(7\/32 in\), a sheet 0\.006 in \(0\.15 mm\) thinner/);
+    expect(note).toMatch(/^0\.225 in parts \(.*\): 4 x 8 sheet, 1\/4 is 7\/32 in, 0\.006 in \(0\.15 mm\) thinner/);
     // The formatters: a fraction only when the length is that fraction.
     expect(exactU((23 / 32) * IN, "sixteenth")).toBe("23/32 in");
     expect(exactU(0.727 * IN, "sixteenth")).toBe("0.727 in");
@@ -414,3 +415,17 @@ describe("spacing for the router", () => {
     });
   });
 });
+
+describe("my sheets are as drawn", () => {
+  it("sets each named stock to its parts' drawn thickness, and skips a stock drawn two ways", () => {
+    const lib = { stocks: [
+      { name: "4 x 4 sheet, 3/4", kind: "sheet", length: 1.2192, width: 1.2192, thickness: (23 / 32) * 0.0254, nominal: "3/4", grain: "length" },
+      { name: "4 x 4 sheet, 1/2", kind: "sheet", length: 1.2192, width: 1.2192, thickness: (15 / 32) * 0.0254, nominal: "1/2", grain: "length" },
+    ], settings: { kerf: 0.003, trim: 0, algorithm: "guillotine" } } as unknown as StockLibrary;
+    const t = (stock: string, drawn: number): NestProblem => ({ kind: "thickness", tag: "", name: "", text: "", sheet: { stock, drawn } });
+    const made = asDrawnOps(lib, [t("4 x 4 sheet, 3/4", 0.75 * 0.0254), t("4 x 4 sheet, 1/2", 0.5 * 0.0254), t("4 x 4 sheet, 1/2", 0.52 * 0.0254), t("Gone", 0.01), { kind: "cuts", tag: "", name: "", text: "" }]);
+    expect(made.ops).toEqual([{ op: "define_stock", stock: { ...lib.stocks[0], thickness: 0.75 * 0.0254 }, replace: "4 x 4 sheet, 3/4" }]);
+    expect(made.drawn).toEqual([0.75 * 0.0254]);
+  });
+});
+

@@ -198,6 +198,9 @@ export interface JobLayer {
   tooWide: Tool | null;
   /** What the fit check says: a bit too wide, the smallest bit that fits, or none. */
   fitNotes: string[];
+  /** When no bit is set or it does not fit: the largest bit in the library that fits and
+   * reaches (the one `fitNotes` names), or null. */
+  suggested?: Tool | null;
   feeds: FeedLine[];
   warnings: Warning[];
 }
@@ -437,6 +440,10 @@ function fitting(shop: Shop, w: number, prefer: BitType[], except?: Tool | null)
  * own type first. A bit whose flute length is not typed is never said to reach: it is named as
  * one that would, if its flutes do. Says plainly when no bit is suitable.
  */
+function suggestedTool(shop: Shop, w: number, reach: number, prefer: BitType[]): Tool | null {
+  return fitting(shop, w, prefer).find((t) => t.cuttingLength !== null && t.cuttingLength >= reach - 1e-9) ?? null;
+}
+
 function suggestion(shop: Shop, w: number, reach: number, prefer: BitType[], metric: boolean): string {
   const ok = fitting(shop, w, prefer);
   const deep = ok.filter((t) => t.cuttingLength !== null && t.cuttingLength >= reach - 1e-9);
@@ -629,7 +636,10 @@ export function jobSheet(input: JobSheetInput): JobSheet {
     if ([layer.tooWide, pick.tool].some((t) => t && t.diameter !== null && Number.isFinite(w) && Math.abs(t.diameter - w) <= 1e-6)) {
       layer.fitNotes.push(`A bit exactly as wide as the shape (${bothUnits(w, metric, 3)}) cuts it only as a slot along its centre line (an on-line toolpath), not as a ${kind === "profile" || kind === "cutout" ? "profile beside it" : "pocket"}: Sawhorse counts it as not fitting.`);
     }
-    if (layer.fits === false || !pick.tool) layer.fitNotes.push(suggestion(shop, w, reach, prefer, metric));
+    if (layer.fits === false || !pick.tool) {
+      layer.fitNotes.push(suggestion(shop, w, reach, prefer, metric));
+      layer.suggested = suggestedTool(shop, w, reach, prefer);
+    }
     else if (layer.fits && pick.tool.diameter !== null) {
       // A larger bit that fits takes fewer passes: say so (never in place of the bit set).
       const own = pick.tool;

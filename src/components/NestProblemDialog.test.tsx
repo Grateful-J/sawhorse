@@ -27,7 +27,7 @@ describe("nest problem dialog with a fix", () => {
   it("shows a tool warning before saving and does not offer unrelated stock settings", () => {
     const onSave = vi.fn();
     const view = render(<NestProblemDialog req={{ what: "the DXF", problems: [{ kind: "toolfit", tag: "1", name: "Side", text: "POCKET_7.94MM: check cutter size in CAM" }], onSave, onStock: () => {} }} onClose={() => {}} />);
-    expect(view.container.textContent).toContain("Check cutter sizes in CAM");
+    expect(view.container.textContent).toContain("Check your bits");
     expect(within(view.container).queryByRole("button", { name: "Open Stock..." })).toBeNull();
     expect(onSave).not.toHaveBeenCalled();
     fireEvent.click(within(view.container).getByRole("button", { name: "Save the DXF anyway" }));
@@ -38,7 +38,7 @@ describe("nest problem dialog with a fix", () => {
     const onSave = vi.fn();
     const { container } = render(
       <NestProblemDialog
-        req={{ what: "the CNC files", problems: [{ kind: "spacing", tag: "", name: "Every sheet", text: "parts are 1/8 in apart" }], onSave, onStock: () => {}, fix: { label: "Use CNC spacing", run } }}
+        req={{ what: "the CNC files", problems: [{ kind: "spacing", tag: "", name: "Every sheet", text: "parts are 1/8 in apart" }], onSave, onStock: () => {}, fixes: [{ label: "Use CNC spacing", run }] }}
         onClose={() => {}}
       />,
     );
@@ -47,6 +47,32 @@ describe("nest problem dialog with a fix", () => {
     fireEvent.click(mine.getByRole("button", { name: "Use CNC spacing" }));
     expect(run).toHaveBeenCalledTimes(1);
     expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("nest problem dialog, short", () => {
+  it("one line per problem, the parts on a quieter line, every fix first", () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const { container } = render(
+      <NestProblemDialog
+        req={{
+          what: "the CNC files",
+          problems: [{ kind: "thickness", tag: "", name: "3/4 in parts", text: "4 x 4 sheet, 3/4 is 23/32 in, 1/32 in thinner. Joints will be loose.", detail: "Door, Left side" }],
+          onSave: () => {},
+          onStock: () => {},
+          fixes: [{ label: "Use Amana 46170", run: a }, { label: "My sheets are as drawn", run: b }],
+        }}
+        onClose={() => {}}
+      />,
+    );
+    expect(container.querySelector("header")?.textContent).toBe("Sheet thickness doesn't match the drawing");
+    expect(container.querySelector(".nest-problems .detail")?.textContent).toBe("Door, Left side");
+    const buttons = [...container.querySelectorAll("button")].map((x) => x.textContent);
+    expect(buttons.slice(0, 2)).toEqual(["Use Amana 46170", "My sheets are as drawn"]);
+    fireEvent.click(within(container).getByRole("button", { name: "My sheets are as drawn" }));
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(a).not.toHaveBeenCalled();
   });
 });
 

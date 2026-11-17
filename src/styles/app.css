@@ -251,7 +251,9 @@ button.chip:hover{border-color:var(--accent)}
 .nest-pick small{flex-basis:100%;color:var(--muted)}
 .nest-problem-dialog{width:min(460px,calc(100vw - 32px))}
 .nest-problems{max-height:40vh;overflow:auto;margin:0 0 10px;padding-left:16px;font-size:12px}
-.nest-problems li{margin:2px 0}
+.nest-problems li{margin:4px 0}
+.nest-problems .detail{color:var(--muted);font-size:11px;margin-top:1px}
+.nest-problem-dialog .note{font-size:11px;color:var(--muted);margin:0 0 10px}
 .nest-problem-dialog .btnrow{flex-wrap:wrap}
 .name-dialog label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:11px}
 .name-dialog input{font:13px var(--body);padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg)}

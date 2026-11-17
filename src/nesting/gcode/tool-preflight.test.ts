@@ -42,6 +42,14 @@ describe("export checks the assigned shop tools", () => {
     expect(problems.some((p) => p.text.includes("cutting length"))).toBe(true);
     expect(problems.some((p) => p.text.includes("choose a bit"))).toBe(true);
   });
+  it("says the bit to try in one short line, and offers it as a fix", () => {
+    const { n, m, shop } = setup();
+    shop.profileTool = null;
+    const p = cncToolProblems(n, m, shop, "half_mm").find((x) => x.name === "PROFILE_THRU")!;
+    expect(p.tag).toBe("Board 1 of 1");
+    expect(p.text).toBe("no bit chosen: choose a bit in CNC setup. Try My 1/8 inch end mill.");
+    expect(p.bit).toEqual({ kind: "profile", id: "fit", name: "My 1/8 inch end mill" });
+  });
   it.each([4.7625, 6.35])("refuses a %s mm cutter for the example's 3/16 inch hole", (d) => {
     const { n, m, shop } = setup();
     shop.tools[0].diameter = d * mm;

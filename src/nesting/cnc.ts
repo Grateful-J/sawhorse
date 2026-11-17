@@ -1,7 +1,7 @@
 // What a CNC export must say before anything is cut: parts drawn at one thickness and nested
 // on a sheet of another (every dado in the design is cut to the drawn thickness), parts closer
 // together than a bit, no margin at the sheet edge, and cuts that were left out.
-import type { Nesting, Placement, StockPiece } from "../kernel/types";
+import type { KernelOp, Nesting, Placement, StockLibrary, StockPiece } from "../kernel/types";
 import type { BlankFeatures } from "./machine";
 import { diffU, exactU, finePrecision, fineStep, fineSteps, fineU, kindWord, pieceNumber, sizeUnit, type Units } from "./format";
 import type { MeasuredNest } from "./measure";
@@ -35,15 +35,11 @@ export function thicknessMismatches(n: Nesting): ThicknessMismatch[] {
   return out;
 }
 
-/** What a sheet of another thickness spoils, true of a part with dados and of one with only
- * holes: whatever was sized to the drawn thickness. */
-const SIZED_TO_THE_DRAWING = "joints and depths sized to the drawing (a dado's width, a tongue's length, a hole's depth) will not fit this sheet";
-
 /** Warnings for a CNC export, each a sentence, most serious first. */
 export function cncNotes(n: Nesting, measured: MeasuredNest | null, units: Units): string[] {
   const notes: string[] = [];
   for (const m of thicknessMismatches(n)) {
-    notes.push(`${m.parts.join(", ")} ${m.parts.length === 1 ? "is" : "are"} drawn ${exactU(m.drawn, units)} thick but nested on ${m.stock} (${exactU(m.sheet, units)}), a sheet ${diffU(m.drawn - m.sheet, units)} ${m.drawn > m.sheet ? "thinner" : "thicker"}: ${SIZED_TO_THE_DRAWING}. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut.`);
+    notes.push(`${exactU(m.drawn, units)} parts (${m.parts.join(", ")}): ${thicknessText(m, units)}`);
   }
   if (!measured) notes.push("The cuts inside the parts could not be measured: only the outlines were written.");
   else {
@@ -569,7 +565,39 @@ export interface NestProblem {
   kind: "unplaced" | "glued" | "material" | "spacing" | "thickness" | "cuts" | "footprint" | "toolfit";
   tag: string;
   name: string;
+  /** One short line. */
   text: string;
+  /** A second, quieter line: the parts it is about. */
+  detail?: string;
+  /** A thickness problem: the stock, and the thickness its parts are drawn at. */
+  sheet?: { stock: string; drawn: number };
+  /** A tool problem a bit in the library would fix: which bit, for which kind of layer. */
+  bit?: { kind: string; id: string; name: string };
+}
+
+/**
+ * The stock edits that set each sheet named in thickness `problems` to the thickness its parts
+ * are drawn at ("my sheets are 3/4"): one `define_stock` per stock, none for a stock whose parts
+ * are drawn at two thicknesses (no one thickness is right for it) or that the library lacks.
+ */
+export function asDrawnOps(lib: StockLibrary, problems: NestProblem[]): { ops: KernelOp[]; drawn: number[] } {
+  const by = new Map<string, number[]>();
+  for (const p of problems) if (p.sheet) by.set(p.sheet.stock, [...(by.get(p.sheet.stock) ?? []), p.sheet.drawn]);
+  const ops: KernelOp[] = [];
+  const drawn: number[] = [];
+  for (const [name, ts] of by) {
+    const s = lib.stocks.find((x) => x.name === name);
+    if (!s || ts.some((t) => Math.abs(t - ts[0]) > 1e-9)) continue;
+    ops.push({ op: "define_stock", stock: { ...s, thickness: ts[0] }, replace: name });
+    if (!drawn.some((t) => Math.abs(t - ts[0]) <= 1e-9)) drawn.push(ts[0]);
+  }
+  return { ops, drawn: drawn.sort((a, b) => b - a) };
+}
+
+/** "4 x 4 sheet, 3/4 is 23/32 in, 1/32 in thinner. Joints will be loose." */
+function thicknessText(m: ThicknessMismatch, units: Units): string {
+  const thinner = m.drawn > m.sheet;
+  return `${m.stock} is ${exactU(m.sheet, units)}, ${diffU(m.drawn - m.sheet, units)} ${thinner ? "thinner" : "thicker"}. Joints will be ${thinner ? "loose" : "too tight"}.`;
 }
 
 /**
@@ -622,12 +650,7 @@ export function cutProblems(n: Nesting, measured: MeasuredNest | null, units: Un
   const out: NestProblem[] = [];
   if (!measured || hasCuts(measured)) {
     for (const m of thicknessMismatches(n)) {
-      out.push({
-        kind: "thickness",
-        tag: "",
-        name: m.parts.join(", "),
-        text: `drawn ${exactU(m.drawn, units)} thick but nested on ${m.stock} (${exactU(m.sheet, units)}), a sheet ${diffU(m.drawn - m.sheet, units)} ${m.drawn > m.sheet ? "thinner" : "thicker"}: ${SIZED_TO_THE_DRAWING}. Set the design to the sheet's measured thickness, or the sheet's thickness to what you will cut`,
-      });
+      out.push({ kind: "thickness", tag: "", name: `${exactU(m.drawn, units)} parts`, text: thicknessText(m, units), detail: m.parts.join(", "), sheet: { stock: m.stock, drawn: m.drawn } });
     }
   }
   if (!measured) {

@@ -11,8 +11,18 @@ export interface NestProblemRequest {
   onSave: () => void;
   onStock: () => void;
   onCnc?: () => void;
-  /** A one-click fix, offered first (e.g. space the parts for the router). */
-  fix?: { label: string; run: () => void };
+  /** One-click fixes, offered first (space the parts for the router, use a bit). */
+  fixes?: { label: string; title?: string; run: () => void }[];
+}
+
+/** The heading: what is wrong, in a few words. */
+function heading(problems: NestProblem[]): string {
+  const kinds = new Set(problems.map((p) => p.kind));
+  if (kinds.has("spacing")) return "Parts too close for the bit";
+  if ([...kinds].every((k) => k === "toolfit")) return "Check your bits";
+  if ([...kinds].every((k) => k === "thickness")) return "Sheet thickness doesn't match the drawing";
+  if ([...kinds].every((k) => PER_PART.includes(k))) return `${problems.length} part${problems.length === 1 ? "" : "s"} will not be cut as drawn`;
+  return "Some parts will not be cut as drawn";
 }
 
 /** Problems that are one part each: a heading can count them. The others (a thickness, cuts
@@ -20,8 +30,7 @@ export interface NestProblemRequest {
 const PER_PART: NestProblem["kind"][] = ["unplaced", "glued", "material"];
 
 export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; onClose: () => void }) {
-  const n = req.problems.length;
-  const countable = req.problems.every((p) => PER_PART.includes(p.kind));
+  const fixes = req.fixes ?? [];
   return (
     <section
       className="name-dialog nest-problem-dialog"
@@ -33,35 +42,39 @@ export function NestProblemDialog({ req, onClose }: { req: NestProblemRequest; o
       }}
     >
       <header>
-        <b>{req.problems.some((p) => p.kind === "spacing") ? "The parts are too close for the bit" : req.problems.every((p) => p.kind === "toolfit") ? "Check cutter sizes in CAM" : countable ? `${n} part${n === 1 ? "" : "s"} will not be cut as drawn` : "Some parts will not be cut as drawn"}</b>
+        <b>{heading(req.problems)}</b>
       </header>
       <ul className="nest-problems">
         {req.problems.map((p, i) => (
           <li key={`${p.tag}-${i}`}>
-            {p.tag ? <span className="tag">{p.tag}</span> : null} {p.name}: {p.text}
+            {p.tag ? <span className="tag">{p.tag}</span> : null} <b>{p.name}</b>: {p.text}
+            {p.detail ? <div className="detail">{p.detail}</div> : null}
           </li>
         ))}
       </ul>
+      {req.problems.some((p) => p.kind === "toolfit") ? <p className="note">Simulate every toolpath in CAM before cutting. Holes are pocketed with an end mill.</p> : null}
       <div className="btnrow">
         {req.onCnc && req.problems.some((p) => p.kind === "toolfit") ? <button type="button" className="btn" onClick={() => { onClose(); req.onCnc?.(); }}>Open CNC setup...</button> : null}
-        {req.fix ? (
+        {fixes.map((f, i) => (
           <button
+            key={f.label}
             type="button"
-            className="btn primary"
-            autoFocus
+            className={i === 0 ? "btn primary" : "btn"}
+            autoFocus={i === 0}
+            title={f.title}
             onClick={() => {
               onClose();
-              req.fix?.run();
+              f.run();
             }}
           >
-            {req.fix.label}
+            {f.label}
           </button>
-        ) : null}
+        ))}
         {req.problems.some((p) => p.kind !== "spacing" && p.kind !== "cuts" && p.kind !== "toolfit") ? (
           <button
             type="button"
-            className={req.fix ? "btn" : "btn primary"}
-            autoFocus={!req.fix}
+            className={fixes.length ? "btn" : "btn primary"}
+            autoFocus={!fixes.length}
             onClick={() => {
               onClose();
               req.onStock();

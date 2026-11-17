@@ -517,8 +517,9 @@ test("a cabinet drawn at a thickness its sheets are not is asked about before an
   await section.getByRole("button", { name: "CNC files" }).click();
   const ask = page.getByRole("dialog", { name: "The nesting has problems" });
   await expect(ask).toBeVisible();
-  await expect(ask).toContainText("Some parts will not be cut as drawn");
-  await expect(ask).toContainText("drawn 3/4 in thick but nested on 4 x 4 sheet, 3/4");
+  await expect(ask).toContainText("3/4 in parts");
+  await expect(ask).toContainText("4 x 4 sheet, 3/4 is 23/32 in, 1/32 in thinner. Joints will be loose.");
+  await expect(ask.getByRole("button", { name: "My sheets are as drawn" })).toBeVisible();
   expect(got).toHaveLength(0);
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask).toHaveCount(0);
@@ -532,7 +533,7 @@ test("a cabinet drawn at a thickness its sheets are not is asked about before an
   expect(files.filter((f) => f.name.endsWith(".dxf"))).toHaveLength(n.pieces.length);
   expect(files.filter((f) => f.name.endsWith(".txt"))).toHaveLength(1);
   await expect(page.locator("#hint")).toContainText(`Saved ${n.pieces.length} CNC files`);
-  await expect(page.locator("#hint")).toContainText("3/4 in thick");
+  await expect(page.locator("#hint")).toContainText("3/4 in parts");
   await expect(page.locator("#hint")).not.toContainText("Can't do that");
 });
 

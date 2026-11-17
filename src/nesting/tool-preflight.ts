@@ -2,7 +2,7 @@ import { layerJob } from "../cam/layers";
 import type { Shop } from "../cam/store";
 import type { Nesting } from "../kernel/types";
 import type { NestProblem } from "./cnc";
-import type { Units } from "./format";
+import { pieceNumber, type Units } from "./format";
 import { findPocketCutters } from "./gcode/tool-inventory";
 import { jobSheet } from "./jobsheet";
 import type { MeasuredNest } from "./measure";
@@ -19,18 +19,21 @@ export function cncToolProblems(n: Nesting, measured: MeasuredNest | null, shop:
       const tool = layer.tool;
       const width = layer.narrowest?.width ?? Math.max(piece.length, piece.width) + 1;
       const depth = layerJob(layer.name)?.depth ?? piece.thickness + 0.0005;
-      if (!tool) reasons.push("choose a bit in CNC setup > Tools / Job sheet");
+      if (!tool) reasons.push("no bit chosen: choose a bit in CNC setup");
       else {
-        if (tool.confirmedOwned !== true) reasons.push(`confirm you own ${tool.name} in CNC setup > Tools`);
-        if (layer.fits !== true) reasons.push("the assigned bit does not fit, or its diameter is unknown");
-        if (tool.cuttingLength == null || tool.cuttingLength < depth - 1e-9) reasons.push(`verify a cutting length of at least ${Number((depth * 1000).toFixed(3))} mm (including 0.5 mm breakthrough for through cuts)`);
+        if (tool.confirmedOwned !== true) reasons.push(`confirm you own ${tool.name}`);
+        if (layer.fits !== true) reasons.push(tool.diameter == null ? `${tool.name}'s diameter is unknown` : `${tool.name} does not fit`);
+        if (tool.cuttingLength == null || tool.cuttingLength < depth - 1e-9) reasons.push(`needs a cutting length of ${Number((depth * 1000).toFixed(3))} mm or more`);
         const match = findPocketCutters({ width, depth }, [{ ...tool, confirmedOwned: true }], shop.collets ?? null);
-        if (tool.shank == null || !shop.collets?.length || !shop.collets.some((s) => Number.isFinite(s) && tool.shank != null && Math.abs(s - tool.shank) <= 1e-6)) reasons.push("confirm the bit's shank and a matching collet in CNC setup > Tools");
+        if (tool.shank == null || !shop.collets?.length || !shop.collets.some((s) => Number.isFinite(s) && tool.shank != null && Math.abs(s - tool.shank) <= 1e-6)) reasons.push("confirm its shank and collet");
         // The matcher also rejects malformed dimensions and collet lists.
-        if (!match.found && !reasons.length) reasons.push("the cutter dimensions or collet sizes are incomplete or invalid");
+        if (!match.found && !reasons.length) reasons.push("its size or the collet sizes are incomplete");
       }
-      if (layer.narrowest?.approx) reasons.push("the width uses an approximate outline; verify the complete pocket in CAM");
-      if (reasons.length) out.push({ kind: "toolfit", tag: String(piece.index), name: `${piece.stock}: ${layer.name}`, text: `${reasons.join("; ")}. ${layer.fitNotes.join(" ")} Holes use a pocket toolpath with a smaller end mill, not a drilling toolpath. Check and simulate every CAM toolpath before cutting.` });
+      if (layer.narrowest?.approx) reasons.push("width is approximate: check it in CAM");
+      if (!reasons.length) continue;
+      const fix = layer.suggested && layer.suggested !== tool && layer.kind ? layer.suggested : null;
+      const text = `${reasons.join("; ")}.${fix ? ` Try ${fix.name}.` : !tool || layer.fits === false ? " No bit in your library fits." : ""}`;
+      out.push({ kind: "toolfit", tag: pieceNumber(piece), name: layer.name, text, ...(fix && layer.kind ? { bit: { kind: layer.kind, id: fix.id, name: fix.name } } : {}) });
     }
   }
   return out;

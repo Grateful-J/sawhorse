@@ -15,10 +15,10 @@ import { CncSetupDialog } from "./components/CncSetupDialog";
 import { nestingPdf } from "./nesting/booklet";
 import { JOB_SHEETS_TYPE, jobSheets, jobSheetsFileName, jobSheetsText, type JobSheet } from "./nesting/jobsheet";
 import { DXF_TYPE, nestingDxf, type DxfFlavour } from "./nesting/dxf";
-import { fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
+import { exactU, fineU, lenU, pieceTitle, reasonText } from "./nesting/format";
 import { measureNest, type MeasuredNest } from "./nesting/measure";
-import { CNC_BIT, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
-import { loadShop, profileBit, type Shop } from "./cam/shop";
+import { asDrawnOps, CNC_BIT, cncNotes, cncSpacingFits, cutProblems, HAND_WORK_TYPE, handWork, handWorkText, nestProblems, routerShare, routerSheetProblems, safeName, sawShare, spacingProblem, type HandWork, type NestProblem } from "./nesting/cnc";
+import { loadShop, profileBit, saveShop, type Shop } from "./cam/shop";
 import { cncSaveMessage, exportBlock, guardedSave, handWorkNote, NEST_REPLACED, sameStamp, shopExportBlock, stampOf, type NestStamp } from "./nesting/exportGuard";
 import { cncToolProblems } from "./nesting/tool-preflight";
 import { toolLayerNames } from "./nesting/tool-layers";
@@ -2556,14 +2556,52 @@ export function App() {
           const metric = units === "mm" || units === "cm" || units === "m";
           // CNC spacing is offered only when its gap is enough for the profile bit.
           const enough = cncSpacingFits(profileBit()?.diameter ?? CNC_BIT, metric);
-          const fix = enough && problems.some((x) => x.kind === "spacing") ? { label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) } : undefined;
-          setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), onCnc: () => setCncSetupOpen(true), fix });
+          const fixes: NonNullable<NestProblemRequest["fixes"]> = [];
+          if (enough && problems.some((x) => x.kind === "spacing")) fixes.push({ label: "Use CNC spacing", run: () => void patchNestSettings(cncSettings(metric)) });
+          // A bit from the library for the layers that have none or one that does not fit.
+          const bits = new Map<string, { name: string; kinds: Set<string> }>();
+          for (const x of problems) if (x.bit) bits.set(x.bit.id, { name: x.bit.name, kinds: (bits.get(x.bit.id)?.kinds ?? new Set()).add(x.bit.kind) });
+          for (const [id, b] of bits) {
+            fixes.push({
+              label: `Use ${b.name}`,
+              title: `Set ${b.name} for ${[...b.kinds].join(", ")} cuts in CNC setup`,
+              run: () => {
+                const shop = loadShop();
+                for (const k of b.kinds) {
+                  if (k === "profile") shop.profileTool = id;
+                  else if (k in shop.jobs.tools) shop.jobs.tools[k as keyof Shop["jobs"]["tools"]] = id;
+                }
+                saveShop(shop);
+                setMessage({ text: `${b.name} set for ${[...b.kinds].join(", ")} cuts. Save the CNC files again.`, error: false });
+              },
+            });
+          }
+          // The sheets as drawn: only when the user says their sheets measure that.
+          const drawn = problems.filter((x) => x.sheet);
+          if (drawn.length) {
+            fixes.push({
+              label: "My sheets are as drawn",
+              title: "Set each sheet's thickness in Stock to the drawn thickness. Only if you measured them.",
+              run: () => {
+                let said: number[] = [];
+                void applyFromStock(
+                  (lib) => {
+                    const made = asDrawnOps(lib, drawn);
+                    said = made.drawn;
+                    return { op: "batch", ops: made.ops };
+                  },
+                  () => (said.length ? `Sheets set to ${said.map((t) => exactU(t, nestUnits)).join(", ")}, as drawn.` : "No sheet changed."),
+                );
+              },
+            });
+          }
+          setProblemRequest({ what, problems, onSave: proceed, onStock: () => setStockOpen(true), onCnc: () => setCncSetupOpen(true), fixes });
         },
         refuse: (why) => setMessage({ text: why, error: true }),
         save,
       });
     },
-    [nesting, nestUnits, units, patchNestSettings, measureNesting, nestBlocked],
+    [nesting, nestUnits, units, patchNestSettings, applyFromStock, measureNesting, nestBlocked],
   );
   const saveNestSvg = useCallback(
     async (piece: StockPiece | null) => {
